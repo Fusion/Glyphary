@@ -410,6 +410,15 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.notEqual(config.app.windows[0].hiddenTitle, true);
 });
 
+test("native webview context menu is suppressed so chrome does not show refresh", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(app, /const suppressNativeContextMenu = \(event: MouseEvent\) => \{/);
+  assert.match(app, /event\.preventDefault\(\);/);
+  assert.match(app, /window\.addEventListener\("contextmenu", suppressNativeContextMenu\)/);
+  assert.match(app, /window\.removeEventListener\("contextmenu", suppressNativeContextMenu\)/);
+});
+
 test("app css exposes the Obsidian theme compatibility surface", () => {
   const css = readFileSync("src/App.css", "utf8");
   const app = readFileSync("src/App.tsx", "utf8");
@@ -627,6 +636,41 @@ test("toolbar state refreshes when editor selection changes", () => {
   assert.match(app, /setEditorStateVersion\(\(version\) => version \+ 1\)/);
   assert.match(app, /onSelectionUpdate: \(\{ editor \}: \{ editor: Editor \}\) => \{/);
   assert.match(app, /\[editor, editorFocused, editorStateVersion, markdown\]/);
+});
+
+test("code block language picker renders inside the active code block", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /function codeBlockContainsSelection\(selection: Selection, position: number, nodeSize: number\)/);
+  assert.match(app, /const contentStart = position \+ 1;/);
+  assert.match(app, /const contentEnd = position \+ nodeSize - 1;/);
+  assert.match(app, /selection\.from >= contentStart && selection\.to <= contentEnd/);
+  assert.match(app, /function codeBlockDecorationsContainLanguageControl/);
+  assert.match(app, /includes\("code-block-language-active"\)/);
+  assert.match(app, /function CodeBlockNodeView/);
+  assert.match(app, /new PluginKey\("codeBlockLanguageControl"\)/);
+  assert.match(app, /codeBlockContainsSelection\(state\.selection, position, node\.nodeSize\)/);
+  assert.match(app, /addKeyboardShortcuts\(\) \{/);
+  assert.match(app, /Tab: \(\) => \{/);
+  assert.match(app, /return this\.editor\.commands\.insertContent\("    "\);/);
+  assert.match(app, /"Shift-Tab": \(\) => this\.editor\.isActive\(this\.name\),/);
+  assert.match(app, /ReactNodeViewRenderer\(CodeBlockNodeView, \{\s*update: \(\{ updateProps \}\) => \{/);
+  assert.match(app, /updateProps\(\);/);
+  assert.match(app, /CodeBlockWithLanguageControl\.configure\(\{\s*lowlight,/);
+  assert.match(app, /class: "code-block-language-active"/);
+  assert.match(app, /className="code-block-language-control"/);
+  assert.match(app, /<NodeViewContent<"code"> as="code" \/>/);
+  assert.match(app, /<datalist id="code-language-options">/);
+  assert.doesNotMatch(app, /disabled=\{!codeBlockActive\}/);
+  assert.doesNotMatch(app, /function updateCodeLanguage/);
+  assert.doesNotMatch(app, /className="code-language-control"/);
+  assert.match(css, /\.editor-surface \.code-block-node/);
+  assert.match(css, /display: none;/);
+  assert.match(css, /\.editor-surface \.code-block-node\.active \.code-block-language-control/);
+  assert.match(css, /tab-size: 4;/);
+  assert.match(css, /\.code-block-language-control/);
+  assert.doesNotMatch(css, /\.code-language-control/);
 });
 
 test("tauri starts with the requested default window size", () => {

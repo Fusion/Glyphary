@@ -7,7 +7,7 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { Extension, mergeAttributes, Node } from "@tiptap/core";
-import type { Editor, JSONContent, MarkdownToken } from "@tiptap/core";
+import type { Editor, JSONContent, MarkdownToken, NodeViewProps } from "@tiptap/core";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { redo, undo } from "@tiptap/pm/history";
 import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
@@ -17,7 +17,13 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
-import { EditorContent, useEditor } from "@tiptap/react";
+import {
+  EditorContent,
+  NodeViewContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+} from "@tiptap/react";
 import { TableKit } from "@tiptap/extension-table";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
@@ -123,6 +129,117 @@ lowlight.register("md", markdownLanguage);
 // "toc" is a display mode layered over a normal fenced code block. Register it
 // as plain text so the block remains editable and round-trips as ```toc.
 lowlight.register("toc", plaintext);
+
+function codeBlockContainsSelection(selection: Selection, position: number, nodeSize: number) {
+  const contentStart = position + 1;
+  const contentEnd = position + nodeSize - 1;
+
+  return selection.from >= contentStart && selection.to <= contentEnd;
+}
+
+function codeBlockDecorationsContainLanguageControl(
+  decorations: NodeViewProps["decorations"],
+) {
+  return decorations.some((decoration) => {
+    const className = decoration.type.attrs.class;
+
+    return (
+      typeof className === "string" &&
+      className.split(/\s+/).includes("code-block-language-active")
+    );
+  });
+}
+
+function CodeBlockNodeView({ decorations, node, updateAttributes }: NodeViewProps) {
+  const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
+  const isLanguageControlActive = codeBlockDecorationsContainLanguageControl(decorations);
+
+  return (
+    <NodeViewWrapper
+      className={isLanguageControlActive ? "code-block-node active" : "code-block-node"}
+    >
+      <label className="code-block-language-control" contentEditable={false}>
+        <span>Lang</span>
+        <input
+          aria-label="Code block language"
+          list="code-language-options"
+          onChange={(event) => updateAttributes({ language: event.currentTarget.value })}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onMouseDown={(event) => event.stopPropagation()}
+          placeholder="plain"
+          spellCheck={false}
+          value={language}
+        />
+      </label>
+      <pre>
+        <NodeViewContent<"code"> as="code" />
+      </pre>
+    </NodeViewWrapper>
+  );
+}
+
+// Code block language is a property of the block being edited, not global
+// toolbar state. Rendering it as a node view keeps the control local to the
+// current block while Markdown still round-trips through the normal fence attrs.
+const CodeBlockWithLanguageControl = CodeBlockLowlight.extend({
+  addProseMirrorPlugins() {
+    const codeBlockName = this.name;
+
+    return [
+      ...(this.parent?.() ?? []),
+      new Plugin({
+        key: new PluginKey("codeBlockLanguageControl"),
+        props: {
+          decorations: (state) => {
+            const decorations: Decoration[] = [];
+
+            state.doc.descendants((node, position) => {
+              if (node.type.name !== codeBlockName) {
+                return true;
+              }
+
+              if (codeBlockContainsSelection(state.selection, position, node.nodeSize)) {
+                decorations.push(
+                  Decoration.node(position, position + node.nodeSize, {
+                    class: "code-block-language-active",
+                  }),
+                );
+              }
+
+              return false;
+            });
+
+            return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+    ];
+  },
+
+  addKeyboardShortcuts() {
+    return {
+      ...this.parent?.(),
+      Tab: () => {
+        if (!this.editor.isActive(this.name)) {
+          return false;
+        }
+
+        return this.editor.commands.insertContent("    ");
+      },
+      "Shift-Tab": () => this.editor.isActive(this.name),
+    };
+  },
+
+  addNodeView() {
+    return ReactNodeViewRenderer(CodeBlockNodeView, {
+      update: ({ updateProps }) => {
+        updateProps();
+        return true;
+      },
+    });
+  },
+});
 
 type ToolbarAction = {
   label: string;
@@ -2675,8 +2792,6 @@ function App() {
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [markdownDraft, setMarkdownDraft] = useState(initialMarkdown);
   const [editorFocused, setEditorFocused] = useState(false);
-  const [codeBlockActive, setCodeBlockActive] = useState(false);
-  const [codeLanguage, setCodeLanguage] = useState("");
   const [editorStateVersion, setEditorStateVersion] = useState(0);
   const [vaultRoot, setVaultRoot] = useState("");
   const [vaultSettings, setVaultSettings] = useState<VaultSettings>({
@@ -2944,6 +3059,17 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const suppressNativeContextMenu = (event: MouseEvent) => {
+      event.preventDefault();
+    };
+
+    window.addEventListener("contextmenu", suppressNativeContextMenu);
+    return () => {
+      window.removeEventListener("contextmenu", suppressNativeContextMenu);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!folderContextMenu) {
       return;
     }
@@ -2974,8 +3100,6 @@ function App() {
       return;
     }
 
-    setCodeBlockActive(nextEditor.isActive("codeBlock"));
-    setCodeLanguage(nextEditor.getAttributes("codeBlock").language ?? "");
     // Selection moves can change active marks/nodes without changing any
     // stored toolbar-specific state. This version tick forces the toolbar to
     // re-read editor.isActive(...) as the cursor moves through the document.
@@ -3428,7 +3552,7 @@ function App() {
         }),
         // Custom block extensions must be registered before Markdown so their
         // tokenizers participate in markdown parse/serialize round-trips.
-        CodeBlockLowlight.configure({
+        CodeBlockWithLanguageControl.configure({
           lowlight,
         }),
         TocCodeBlockRenderer,
@@ -5253,16 +5377,6 @@ function App() {
     }
   }
 
-  function updateCodeLanguage(language: string) {
-    if (!editor || !editor.isActive("codeBlock")) {
-      return;
-    }
-
-    editor.chain().focus().updateAttributes("codeBlock", { language }).run();
-    setCodeLanguage(language);
-    setEditorFocused(true);
-  }
-
   function jumpToHeading(entry: TocEntry) {
     jumpToHeadingInEditor(editor, entry, setStatus);
   }
@@ -5672,24 +5786,6 @@ function App() {
                 {action.icon ? renderToolbarIcon(action.icon) : action.label}
               </button>
             ))}
-            <label className="code-language-control">
-              <span>Lang</span>
-              <input
-                aria-label="Code block language"
-                list="code-language-options"
-                disabled={!codeBlockActive}
-                value={codeLanguage}
-                onChange={(event) => updateCodeLanguage(event.currentTarget.value)}
-                placeholder="plain"
-              />
-              <datalist id="code-language-options">
-                {codeLanguages.map((language) => (
-                  <option key={language.value || "plain"} value={language.value}>
-                    {language.label}
-                  </option>
-                ))}
-              </datalist>
-            </label>
           </div>
         ) : null}
 
@@ -5710,6 +5806,13 @@ function App() {
 
   return (
     <main className="app-shell">
+      <datalist id="code-language-options">
+        {codeLanguages.map((language) => (
+          <option key={language.value || "plain"} value={language.value}>
+            {language.label}
+          </option>
+        ))}
+      </datalist>
       <header className="titlebar">
         <div className="file-context">
           <span>{activeFile ? "Editing" : "No file open"}</span>

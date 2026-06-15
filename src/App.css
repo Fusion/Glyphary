@@ -409,7 +409,7 @@ h2 {
 .secondary-action,
 .tool-button,
 .inline-action,
-.code-language-control input,
+.code-block-language-control input,
 .metadata-shell input,
 .metadata-shell textarea {
   border: 1px solid var(--border-strong);
@@ -1180,37 +1180,10 @@ body.workspace-resizing * {
   stroke: none;
 }
 
-.code-language-control {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  color: var(--muted-strong);
-  font-size: 0.76rem;
-  font-weight: 800;
-}
-
-.code-language-control input {
-  height: 34px;
-  width: 124px;
-  padding: 0 10px;
-  color: var(--heading);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
 .tool-button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
   transform: none;
-}
-
-.code-language-control:has(input:disabled) {
-  opacity: 0.42;
-}
-
-.code-language-control input:disabled {
-  cursor: not-allowed;
 }
 
 .tool-button.active {
@@ -1520,24 +1493,81 @@ body.workspace-resizing * {
   color: var(--code-text);
 }
 
+.editor-surface .code-block-node {
+  position: relative;
+  margin: 1rem 0;
+  border-radius: 8px;
+  background: var(--code-bg);
+  color: var(--code-text);
+}
+
+.editor-surface .code-block-node pre {
+  margin: 0;
+  background: transparent;
+  tab-size: 4;
+}
+
+.editor-surface .code-block-node.active pre {
+  padding-top: 2.65rem;
+}
+
+.code-block-language-control {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-strong);
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  font-weight: 900;
+  line-height: 1;
+  user-select: none;
+}
+
+.editor-surface .code-block-node.active .code-block-language-control {
+  display: inline-flex;
+}
+
+.code-block-language-control input {
+  height: 28px;
+  width: 118px;
+  padding: 0 9px;
+  color: var(--heading);
+  font-size: 0.75rem;
+  font-weight: 800;
+}
+
 .editor-surface pre code {
   background: transparent;
   padding: 0;
   color: inherit;
 }
 
-.editor-surface pre.toc-code-block {
+.editor-surface pre.toc-code-block,
+.editor-surface .code-block-node.toc-code-block {
   border: 1px solid var(--border-soft);
   background: var(--surface-muted);
   color: var(--editor-text);
+}
+
+.editor-surface pre.toc-code-block {
   padding: 0;
 }
 
-.editor-surface pre.toc-code-block.rendered {
+.editor-surface .code-block-node.toc-code-block pre {
+  padding: 0;
+}
+
+.editor-surface pre.toc-code-block.rendered,
+.editor-surface .code-block-node.toc-code-block.rendered {
   display: none;
 }
 
-.editor-surface pre.toc-code-block.editing {
+.editor-surface pre.toc-code-block.editing,
+.editor-surface .code-block-node.toc-code-block.editing pre {
   padding: 1rem;
 }
 
