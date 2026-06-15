@@ -14,10 +14,13 @@ import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { TableKit } from "@tiptap/extension-table";
+import { TaskItem } from "@tiptap/extension-task-item";
+import { TaskList } from "@tiptap/extension-task-list";
 import bash from "highlight.js/lib/languages/bash";
 import css from "highlight.js/lib/languages/css";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -48,9 +51,11 @@ import {
   defaultVaultAssetDirectory,
   defaultVaultDrawerWidth,
   displayPath,
+  defaultTidbitPathPattern,
   emptyCalloutMarkdown,
   emptyColumnsMarkdown,
   emptyTableMarkdown,
+  expandDateTemplate,
   escapeMarkdownImageText,
   escapeMarkdownUrl,
   fileNameForDroppedImage,
@@ -131,6 +136,7 @@ type ToolbarAction = {
 type ToolbarIconName =
   | "bullet-list"
   | "ordered-list"
+  | "task-list"
   | "quote"
   | "code"
   | "table"
@@ -166,6 +172,18 @@ function renderToolbarIcon(icon: ToolbarIconName) {
           <path d="M10 6h8" />
           <path d="M10 12h8" />
           <path d="M10 18h8" />
+        </svg>
+      );
+    case "task-list":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="4.5" y="5.2" width="3.5" height="3.5" rx="0.7" />
+          <rect x="4.5" y="10.2" width="3.5" height="3.5" rx="0.7" />
+          <rect x="4.5" y="15.2" width="3.5" height="3.5" rx="0.7" />
+          <path d="m5.3 6.9 1 1 2-2.3" />
+          <path d="M10.5 7h8" />
+          <path d="M10.5 12h8" />
+          <path d="M10.5 17h8" />
         </svg>
       );
     case "quote":
@@ -1001,6 +1019,18 @@ type EditorBehaviorSettings = {
   vimMode: boolean;
 };
 
+type FileDisplaySettings = {
+  showDotfiles: boolean;
+};
+
+type AutosaveSettings = {
+  enabled: boolean;
+};
+
+type TidbitSettings = {
+  pathPattern: string;
+};
+
 type VaultAppearanceSettings = {
   glassEffect: boolean;
 };
@@ -1008,6 +1038,9 @@ type VaultAppearanceSettings = {
 type VaultSettings = {
   assetDirectory: string;
   frontmatterPills?: FrontmatterPillSettings | null;
+  files?: FileDisplaySettings | null;
+  autosave?: AutosaveSettings | null;
+  tidbits?: TidbitSettings | null;
   editor?: EditorBehaviorSettings | null;
   appearance?: VaultAppearanceSettings | null;
   theme?: VaultThemeSettings | null;
@@ -1057,12 +1090,33 @@ type FolderContextMenuState = {
   y: number;
 };
 
-type FolderActionKind = "create-note" | "create-folder" | "rename";
+type FolderActionKind =
+  | "create-note"
+  | "create-folder"
+  | "rename"
+  | "move-folder"
+  | "move-file"
+  | "delete-file";
 
 type FolderActionDialogState = {
   action: FolderActionKind;
   entry: VaultEntry;
   value: string;
+};
+
+type VaultFolderTreeNodeState = {
+  children: VaultEntry[];
+  error: string | null;
+  loaded: boolean;
+  loading: boolean;
+};
+
+type VaultFolderTreeProps = {
+  root: string;
+  selectedPath: string;
+  movingEntry?: VaultEntry | null;
+  onSelect: (relativePath: string) => void;
+  onStatus: (message: string) => void;
 };
 
 type PersistedWorkspace = {
@@ -1089,6 +1143,174 @@ type ThemePreset = {
   tokens: Record<string, string>;
 };
 
+function FolderIcon({ className = "vault-entry-icon folder-icon" }: { className?: string }) {
+  return (
+    <svg aria-hidden="true" className={className} viewBox="0 0 32 32">
+      <path
+        className="folder-tab"
+        d="M3.5 8.2c0-1.3 1-2.2 2.3-2.2h7.1c.8 0 1.5.3 2 .9l1.7 2h9.6c1.3 0 2.3 1 2.3 2.3v1.4h-25z"
+      />
+      <path
+        className="folder-back"
+        d="M2.5 10.6c0-1.4 1.1-2.5 2.5-2.5h22c1.4 0 2.5 1.1 2.5 2.5v13.1c0 1.4-1.1 2.5-2.5 2.5h-22c-1.4 0-2.5-1.1-2.5-2.5z"
+      />
+      <path
+        className="folder-front"
+        d="M3.2 13.1h25.6l-2.2 10.8c-.3 1.4-1.5 2.3-2.9 2.3h-19c-1.5 0-2.7-1.1-2.9-2.6z"
+      />
+      <path className="folder-shine" d="M5.1 14.3h21.8l-.4 1.6h-21.1z" />
+    </svg>
+  );
+}
+
+function isMoveFolderDestinationDisabled(relativePath: string, movingEntry?: VaultEntry | null) {
+  if (!movingEntry?.isDir) {
+    return false;
+  }
+
+  return (
+    relativePath === movingEntry.relativePath ||
+    relativePath.startsWith(`${movingEntry.relativePath}/`)
+  );
+}
+
+function isMoveAction(action: FolderActionKind) {
+  return action === "move-file" || action === "move-folder";
+}
+
+function VaultFolderTree({
+  root,
+  selectedPath,
+  movingEntry = null,
+  onSelect,
+  onStatus,
+}: VaultFolderTreeProps) {
+  const [nodes, setNodes] = useState<Record<string, VaultFolderTreeNodeState>>({});
+  const [expandedPaths, setExpandedPaths] = useState<string[]>([""]);
+
+  async function loadChildren(relativePath: string, force = false) {
+    const existing = nodes[relativePath];
+
+    if (!force && (existing?.loaded || existing?.loading)) {
+      return;
+    }
+
+    setNodes((current) => ({
+      ...current,
+      [relativePath]: {
+        children: current[relativePath]?.children ?? [],
+        error: null,
+        loaded: false,
+        loading: true,
+      },
+    }));
+
+    try {
+      const children = await invoke<VaultEntry[]>("list_vault_dir", {
+        root,
+        relative: relativePath,
+      });
+
+      setNodes((current) => ({
+        ...current,
+        [relativePath]: {
+          children: children.filter((entry) => entry.isDir),
+          error: null,
+          loaded: true,
+          loading: false,
+        },
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+
+      setNodes((current) => ({
+        ...current,
+        [relativePath]: {
+          children: current[relativePath]?.children ?? [],
+          error: message,
+          loaded: false,
+          loading: false,
+        },
+      }));
+      onStatus(message);
+    }
+  }
+
+  useEffect(() => {
+    setNodes({});
+    setExpandedPaths([""]);
+    void loadChildren("", true);
+  }, [root]);
+
+  function toggleExpanded(relativePath: string) {
+    setExpandedPaths((paths) =>
+      paths.includes(relativePath)
+        ? paths.filter((path) => path !== relativePath)
+        : [...paths, relativePath],
+    );
+    void loadChildren(relativePath);
+  }
+
+  function renderNode(relativePath: string, name: string, depth: number) {
+    const state = nodes[relativePath];
+    const isExpanded = expandedPaths.includes(relativePath);
+    const isSelected = selectedPath === relativePath;
+    const isDisabled = isMoveFolderDestinationDisabled(relativePath, movingEntry);
+    const children = state?.children ?? [];
+
+    return (
+      <div className="vault-folder-tree-node" key={relativePath || "vault-root"} role="none">
+        <div
+          className="vault-folder-tree-row"
+          role="treeitem"
+          aria-expanded={isExpanded}
+          aria-selected={isSelected}
+          style={{ "--folder-tree-depth": depth } as CSSProperties}
+        >
+          <button
+            className="folder-tree-expander"
+            type="button"
+            aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
+            onClick={() => toggleExpanded(relativePath)}
+          >
+            <svg aria-hidden="true" viewBox="0 0 16 16">
+              <path d={isExpanded ? "M4 6h8l-4 4z" : "M6 4l4 4-4 4z"} />
+            </svg>
+          </button>
+          <button
+            className={isSelected ? "folder-tree-select active" : "folder-tree-select"}
+            disabled={isDisabled}
+            type="button"
+            onClick={() => onSelect(relativePath)}
+          >
+            <FolderIcon />
+            <span>{name}</span>
+          </button>
+        </div>
+        {state?.loading ? <p className="vault-folder-tree-note">Loading...</p> : null}
+        {state?.error ? <p className="vault-folder-tree-note error">{state.error}</p> : null}
+        {isExpanded && children.length > 0 ? (
+          <div role="group">
+            {children.map((entry) => renderNode(entry.relativePath, entry.name, depth + 1))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="vault-folder-tree-picker">
+      <div className="folder-picker-header">
+        <span>Destination folder</span>
+        <strong>{displayPath(selectedPath)}</strong>
+      </div>
+      <div className="vault-folder-tree" role="tree" aria-label="Vault folders">
+        {renderNode("", "Vault root", 0)}
+      </div>
+    </div>
+  );
+}
+
 const workspaceStorageKey = "glyphary.workspace";
 const appearanceStorageKey = "glyphary.appearance";
 const closedDrawerWidth = 48;
@@ -1099,6 +1321,15 @@ const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
 };
 const defaultEditorBehaviorSettings: EditorBehaviorSettings = {
   vimMode: false,
+};
+const defaultFileDisplaySettings: FileDisplaySettings = {
+  showDotfiles: false,
+};
+const defaultAutosaveSettings: AutosaveSettings = {
+  enabled: true,
+};
+const defaultTidbitSettings: TidbitSettings = {
+  pathPattern: defaultTidbitPathPattern,
 };
 const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
   glassEffect: false,
@@ -1738,6 +1969,48 @@ function sameEditorBehaviorSettings(
     normalizeEditorBehaviorSettings(left).vimMode ===
     normalizeEditorBehaviorSettings(right).vimMode
   );
+}
+
+function normalizeFileDisplaySettings(settings: FileDisplaySettings | undefined | null) {
+  return {
+    showDotfiles: settings?.showDotfiles ?? defaultFileDisplaySettings.showDotfiles,
+  };
+}
+
+function sameFileDisplaySettings(
+  left: FileDisplaySettings | undefined | null,
+  right: FileDisplaySettings | undefined | null,
+) {
+  return (
+    normalizeFileDisplaySettings(left).showDotfiles ===
+    normalizeFileDisplaySettings(right).showDotfiles
+  );
+}
+
+function normalizeAutosaveSettings(settings: AutosaveSettings | undefined | null) {
+  return {
+    enabled: settings?.enabled ?? defaultAutosaveSettings.enabled,
+  };
+}
+
+function sameAutosaveSettings(
+  left: AutosaveSettings | undefined | null,
+  right: AutosaveSettings | undefined | null,
+) {
+  return normalizeAutosaveSettings(left).enabled === normalizeAutosaveSettings(right).enabled;
+}
+
+function normalizeTidbitSettings(settings: TidbitSettings | undefined | null) {
+  return {
+    pathPattern: settings?.pathPattern?.trim() || defaultTidbitSettings.pathPattern,
+  };
+}
+
+function sameTidbitSettings(
+  left: TidbitSettings | undefined | null,
+  right: TidbitSettings | undefined | null,
+) {
+  return normalizeTidbitSettings(left).pathPattern === normalizeTidbitSettings(right).pathPattern;
 }
 
 function normalizeVaultAppearanceSettings(
@@ -2409,6 +2682,9 @@ function App() {
   const [vaultSettings, setVaultSettings] = useState<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
     frontmatterPills: defaultFrontmatterPillSettings,
+    files: defaultFileDisplaySettings,
+    autosave: defaultAutosaveSettings,
+    tidbits: defaultTidbitSettings,
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
     theme: null,
@@ -2423,6 +2699,13 @@ function App() {
   const [editorBehavior, setEditorBehavior] = useState<EditorBehaviorSettings>(
     defaultEditorBehaviorSettings,
   );
+  const [fileDisplayDraft, setFileDisplayDraft] =
+    useState<FileDisplaySettings>(defaultFileDisplaySettings);
+  const [autosaveDraft, setAutosaveDraft] = useState<AutosaveSettings>(defaultAutosaveSettings);
+  const [autosaveSettings, setAutosaveSettings] =
+    useState<AutosaveSettings>(defaultAutosaveSettings);
+  const [tidbitDraft, setTidbitDraft] = useState<TidbitSettings>(defaultTidbitSettings);
+  const [tidbitSettings, setTidbitSettings] = useState<TidbitSettings>(defaultTidbitSettings);
   const [vaultAppearanceDraft, setVaultAppearanceDraft] =
     useState<VaultAppearanceSettings>(defaultVaultAppearanceSettings);
   const [selectedThemePresetIdDraft, setSelectedThemePresetIdDraft] = useState<string | null>(null);
@@ -2505,6 +2788,9 @@ function App() {
   const vaultSettingsRef = useRef<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
     frontmatterPills: defaultFrontmatterPillSettings,
+    files: defaultFileDisplaySettings,
+    autosave: defaultAutosaveSettings,
+    tidbits: defaultTidbitSettings,
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
     theme: null,
@@ -2604,6 +2890,14 @@ function App() {
 
     writePersistedAppearance(appearance);
   }, [appearance, resolvedAppearance]);
+
+  useEffect(() => {
+    if (!isTauri()) {
+      return;
+    }
+
+    void getCurrentWindow().setTheme(resolvedAppearance);
+  }, [resolvedAppearance]);
 
   useEffect(() => {
     document.documentElement.dataset.windowGlass = vaultAppearanceDraft.glassEffect
@@ -2725,6 +3019,18 @@ function App() {
     return normalizeEditorBehaviorSettings(vaultSettings.editor);
   }
 
+  function savedFileDisplaySettings() {
+    return normalizeFileDisplaySettings(vaultSettings.files);
+  }
+
+  function savedAutosaveSettings() {
+    return normalizeAutosaveSettings(vaultSettings.autosave);
+  }
+
+  function savedTidbitSettings() {
+    return normalizeTidbitSettings(vaultSettings.tidbits);
+  }
+
   function savedVaultAppearanceSettings() {
     return normalizeVaultAppearanceSettings(vaultSettings.appearance);
   }
@@ -2734,6 +3040,9 @@ function App() {
       settingsDraft !== vaultSettings.assetDirectory ||
       !sameFrontmatterPillSettings(frontmatterPillDraft, savedFrontmatterPillSettings()) ||
       !sameEditorBehaviorSettings(editorBehaviorDraft, savedEditorBehaviorSettings()) ||
+      !sameFileDisplaySettings(fileDisplayDraft, savedFileDisplaySettings()) ||
+      !sameAutosaveSettings(autosaveDraft, savedAutosaveSettings()) ||
+      !sameTidbitSettings(tidbitDraft, savedTidbitSettings()) ||
       !sameVaultAppearanceSettings(vaultAppearanceDraft, savedVaultAppearanceSettings()) ||
       selectedThemePresetIdDraft !== savedThemePresetId() ||
       !sameThemeTokens(themeDraft, savedThemeTokens())
@@ -2750,6 +3059,9 @@ function App() {
     setSettingsDraft(vaultSettings.assetDirectory);
     setFrontmatterPillDraft(savedFrontmatterPillSettings());
     setEditorBehaviorDraft(savedEditorBehaviorSettings());
+    setFileDisplayDraft(savedFileDisplaySettings());
+    setAutosaveDraft(savedAutosaveSettings());
+    setTidbitDraft(savedTidbitSettings());
     setVaultAppearanceDraft(savedVaultAppearanceSettings());
     setSelectedThemePresetIdDraft(savedThemePresetId());
     setThemeDraft(savedThemeTokens());
@@ -3109,6 +3421,10 @@ function App() {
       extensions: [
         StarterKit.configure({
           codeBlock: false,
+        }),
+        TaskList,
+        TaskItem.configure({
+          nested: true,
         }),
         // Custom block extensions must be registered before Markdown so their
         // tokenizers participate in markdown parse/serialize round-trips.
@@ -3472,6 +3788,13 @@ function App() {
         run: () => editor.chain().focus().toggleOrderedList().run(),
       },
       {
+        label: "Tasks",
+        icon: "task-list",
+        title: "Task list",
+        isActive: () => editorFocused && editor.isActive("taskList"),
+        run: () => editor.chain().focus().toggleTaskList().run(),
+      },
+      {
         label: "Quote",
         icon: "quote",
         title: "Blockquote",
@@ -3525,11 +3848,21 @@ function App() {
   }
 
   function finishPageNameEdit() {
+    const activeFile = activeFileRef.current;
+
     if (!pageNameRef.current.trim() && activeFileRef.current) {
       setActivePageName(fileNameWithoutMarkdownExtension(activeFileRef.current.name));
     }
 
     setPageNameEditing(false);
+
+    if (
+      activeFile &&
+      pageNameRef.current.trim() &&
+      pageNameRef.current.trim() !== fileNameWithoutMarkdownExtension(activeFile.name)
+    ) {
+      void saveCurrentFileRef.current();
+    }
   }
 
   function setActiveMetaHeader(
@@ -3621,6 +3954,9 @@ function App() {
       : {
           assetDirectory: defaultVaultAssetDirectory,
           frontmatterPills: defaultFrontmatterPillSettings,
+          files: defaultFileDisplaySettings,
+          autosave: defaultAutosaveSettings,
+          tidbits: defaultTidbitSettings,
           editor: defaultEditorBehaviorSettings,
           appearance: defaultVaultAppearanceSettings,
           theme: null,
@@ -3629,11 +3965,17 @@ function App() {
     const themePresetId = normalizeThemePresetId(settings.theme?.presetId);
     const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
     const editorSettings = normalizeEditorBehaviorSettings(settings.editor);
+    const fileDisplaySettings = normalizeFileDisplaySettings(settings.files);
+    const autosave = normalizeAutosaveSettings(settings.autosave);
+    const tidbits = normalizeTidbitSettings(settings.tidbits);
     const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
 
     const normalizedSettings = {
       ...settings,
       frontmatterPills,
+      files: fileDisplaySettings,
+      autosave,
+      tidbits,
       editor: editorSettings,
       appearance: vaultAppearanceSettings,
     };
@@ -3644,6 +3986,11 @@ function App() {
     setFrontmatterPillDraft(frontmatterPills);
     setEditorBehaviorDraft(editorSettings);
     setEditorBehavior(editorSettings);
+    setFileDisplayDraft(fileDisplaySettings);
+    setAutosaveDraft(autosave);
+    setAutosaveSettings(autosave);
+    setTidbitDraft(tidbits);
+    setTidbitSettings(tidbits);
     setVaultAppearanceDraft(vaultAppearanceSettings);
     setSelectedThemePresetIdDraft(themePresetId);
     setThemeDraft(themeTokens);
@@ -3671,6 +4018,9 @@ function App() {
         settings: {
           assetDirectory: settingsDraft,
           frontmatterPills: normalizeFrontmatterPillSettings(frontmatterPillDraft),
+          files: normalizeFileDisplaySettings(fileDisplayDraft),
+          autosave: normalizeAutosaveSettings(autosaveDraft),
+          tidbits: normalizeTidbitSettings(tidbitDraft),
           editor: normalizeEditorBehaviorSettings(editorBehaviorDraft),
           appearance: normalizeVaultAppearanceSettings(vaultAppearanceDraft),
           theme: Object.keys(normalizeThemeTokens(themeDraft)).length > 0
@@ -3685,10 +4035,16 @@ function App() {
       const themePresetId = normalizeThemePresetId(settings.theme?.presetId);
       const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
       const editorSettings = normalizeEditorBehaviorSettings(settings.editor);
+      const fileDisplaySettings = normalizeFileDisplaySettings(settings.files);
+      const autosave = normalizeAutosaveSettings(settings.autosave);
+      const tidbits = normalizeTidbitSettings(settings.tidbits);
       const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
       const normalizedSettings = {
         ...settings,
         frontmatterPills,
+        files: fileDisplaySettings,
+        autosave,
+        tidbits,
         editor: editorSettings,
         appearance: vaultAppearanceSettings,
       };
@@ -3703,6 +4059,11 @@ function App() {
       setFrontmatterPillDraft(frontmatterPills);
       setEditorBehaviorDraft(editorSettings);
       setEditorBehavior(editorSettings);
+      setFileDisplayDraft(fileDisplaySettings);
+      setAutosaveDraft(autosave);
+      setAutosaveSettings(autosave);
+      setTidbitDraft(tidbits);
+      setTidbitSettings(tidbits);
       setVaultAppearanceDraft(vaultAppearanceSettings);
       setSelectedThemePresetIdDraft(themePresetId);
       setThemeDraft(themeTokens);
@@ -3710,6 +4071,7 @@ function App() {
         root: vaultRoot,
         assetDirectory: settings.assetDirectory,
       });
+      await loadEntries(vaultRoot, currentDir);
       setStatus("Saved vault settings");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -3809,6 +4171,22 @@ function App() {
     setDirty(false);
     setStatus(`Saved ${file.name}`);
   }
+
+  useEffect(() => {
+    saveCurrentFileRef.current = saveCurrentFile;
+  });
+
+  useEffect(() => {
+    if (!vaultRoot || !autosaveSettings.enabled) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      void saveCurrentFileRef.current();
+    }, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, [vaultRoot, autosaveSettings.enabled]);
 
   async function openVault() {
     try {
@@ -4197,14 +4575,160 @@ function App() {
     });
   }
 
+  function replaceOpenFilePath(oldRelativePath: string, movedFile: ActiveFile) {
+    const nextId = tabIdForFile(movedFile.relativePath);
+    let nextActiveFile = activeFileRef.current;
+    const nextGroups = Object.fromEntries(
+      (Object.entries(editorGroupsRef.current) as Array<[EditorGroupId, EditorGroupState]>).map(
+        ([groupId, group]) => {
+          let nextActiveTabId = group.activeTabId;
+          const nextTabs = group.tabs.map((tab) => {
+            if (tab.activeFile?.relativePath !== oldRelativePath) {
+              return tab;
+            }
+
+            if (tab.id === group.activeTabId) {
+              nextActiveTabId = nextId;
+            }
+
+            return {
+              ...tab,
+              id: nextId,
+              activeFile: movedFile,
+              pageName: fileNameWithoutMarkdownExtension(movedFile.name),
+            };
+          });
+
+          return [
+            groupId,
+            {
+              ...group,
+              tabs: nextTabs,
+              activeTabId: nextActiveTabId,
+            },
+          ];
+        },
+      ),
+    ) as Record<EditorGroupId, EditorGroupState>;
+    const nextRecentFiles = recentFilesRef.current.map((file) =>
+      file.relativePath === oldRelativePath ? movedFile : file,
+    );
+
+    if (nextActiveFile?.relativePath === oldRelativePath) {
+      nextActiveFile = movedFile;
+      activeFileRef.current = movedFile;
+      setActiveFile(movedFile);
+      setPageName(fileNameWithoutMarkdownExtension(movedFile.name));
+    }
+
+    setEditorGroupsAndRef(nextGroups);
+    recentFilesRef.current = nextRecentFiles;
+    setRecentFiles(nextRecentFiles);
+    persistWorkspace({
+      activeFile: nextActiveFile,
+      recentFiles: nextRecentFiles,
+    });
+  }
+
+  function removeDeletedFileFromOpenState(relativePath: string) {
+    const removeFromGroup = (group: EditorGroupState) => {
+      const removedIndex = group.tabs.findIndex(
+        (tab) => tab.activeFile?.relativePath === relativePath,
+      );
+
+      if (removedIndex === -1) {
+        return { group, removedActive: false };
+      }
+
+      const nextTabs = group.tabs.filter((tab) => tab.activeFile?.relativePath !== relativePath);
+      const removedActive = group.tabs[removedIndex].id === group.activeTabId;
+      const activeTabId =
+        removedActive && nextTabs.length > 0
+          ? nextTabs[Math.min(removedIndex, nextTabs.length - 1)].id
+          : group.activeTabId;
+
+      return {
+        group: {
+          ...group,
+          tabs: nextTabs,
+          activeTabId,
+        },
+        removedActive,
+      };
+    };
+    const primary = removeFromGroup(editorGroupsRef.current.primary);
+    const secondary = removeFromGroup(editorGroupsRef.current.secondary);
+    let nextGroups: Record<EditorGroupId, EditorGroupState> = {
+      primary: primary.group,
+      secondary: secondary.group,
+    };
+    let nextSplitOpen = splitOpen;
+    let nextActiveGroupId = activeGroupIdRef.current;
+
+    if (!splitOpen && nextGroups.primary.tabs.length === 0) {
+      const tab = createUntitledTab();
+      nextGroups = createEditorGroups(tab);
+      nextActiveGroupId = "primary";
+    } else if (
+      splitOpen &&
+      nextGroups.primary.tabs.length === 0 &&
+      nextGroups.secondary.tabs.length > 0
+    ) {
+      const promotedPrimary: EditorGroupState = {
+        ...nextGroups.secondary,
+        id: "primary",
+      };
+
+      nextGroups = {
+        primary: promotedPrimary,
+        secondary: {
+          id: "secondary",
+          tabs: [],
+          activeTabId: "",
+        },
+      };
+      nextSplitOpen = false;
+      nextActiveGroupId = "primary";
+    } else if (splitOpen && nextGroups.secondary.tabs.length === 0) {
+      nextGroups = {
+        primary: nextGroups.primary,
+        secondary: {
+          id: "secondary",
+          tabs: [],
+          activeTabId: "",
+        },
+      };
+      nextSplitOpen = false;
+      nextActiveGroupId = "primary";
+    }
+
+    const activeGroup = nextGroups[nextActiveGroupId];
+    const activeTab = activeGroup.tabs.find((tab) => tab.id === activeGroup.activeTabId)
+      ?? activeGroup.tabs[0];
+    const nextRecentFiles = recentFilesRef.current.filter(
+      (file) => file.relativePath !== relativePath,
+    );
+
+    setSplitOpen(nextSplitOpen);
+    activeGroupIdRef.current = nextActiveGroupId;
+    setActiveGroupId(nextActiveGroupId);
+    setEditorGroupsAndRef(nextGroups);
+    recentFilesRef.current = nextRecentFiles;
+    setRecentFiles(nextRecentFiles);
+
+    if (activeTab) {
+      hydrateDocumentTab(activeTab, nextActiveGroupId);
+      persistWorkspace({
+        activeFile: activeTab.activeFile,
+        recentFiles: nextRecentFiles,
+      });
+    }
+  }
+
   function handleFolderContextMenu(
     entry: VaultEntry,
     event: ReactMouseEvent<HTMLButtonElement>,
   ) {
-    if (!entry.isDir) {
-      return;
-    }
-
     event.preventDefault();
     event.stopPropagation();
     suppressDirectoryClickRef.current = true;
@@ -4223,7 +4747,12 @@ function App() {
     setFolderActionDialog({
       action,
       entry,
-      value: action === "rename" ? entry.name : "",
+      value:
+        action === "rename"
+          ? entry.name
+          : action === "move-file" || action === "move-folder"
+            ? parentDirectory(entry.relativePath)
+            : "",
     });
   }
 
@@ -4236,12 +4765,28 @@ function App() {
       return "Create Folder";
     }
 
+    if (action === "move-file") {
+      return "Move File";
+    }
+
+    if (action === "move-folder") {
+      return "Move Folder";
+    }
+
+    if (action === "delete-file") {
+      return "Delete File";
+    }
+
     return "Rename Folder";
   }
 
   function folderActionDialogLabel(action: FolderActionKind) {
     if (action === "create-note") {
       return "Note name";
+    }
+
+    if (action === "move-file" || action === "move-folder") {
+      return "Destination folder";
     }
 
     return "Folder name";
@@ -4325,6 +4870,77 @@ function App() {
     }
   }
 
+  async function moveFolderFromContextMenu(entry: VaultEntry, destinationDirectory: string) {
+    if (!vaultRoot || !entry.isDir) {
+      return;
+    }
+
+    if (!destinationDirectory?.trim()) {
+      return;
+    }
+
+    try {
+      snapshotActiveTab();
+      const moved = await invoke<RenamedDirectory>("move_vault_directory", {
+        root: vaultRoot,
+        relative: entry.relativePath,
+        destinationDirectory,
+      });
+      const nextCurrentDir = rebasePathAfterDirectoryRename(currentDir, entry, moved);
+
+      applyRenamedDirectoryToOpenState(entry, moved);
+      await loadEntries(vaultRoot, nextCurrentDir);
+      setStatus(`Moved folder ${entry.name} to ${moved.relativePath}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function moveFileFromContextMenu(entry: VaultEntry, destinationDirectory: string) {
+    if (!vaultRoot || entry.isDir) {
+      return;
+    }
+
+    try {
+      snapshotActiveTab();
+      const moved = await invoke<OpenedFile>("move_vault_file", {
+        root: vaultRoot,
+        relative: entry.relativePath,
+        destinationDirectory,
+      });
+      const movedFile = {
+        name: moved.name,
+        relativePath: moved.relativePath,
+      };
+
+      replaceOpenFilePath(entry.relativePath, movedFile);
+      await loadEntries(vaultRoot, currentDir);
+      setStatus(`Moved ${entry.name} to ${moved.relativePath}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function deleteFileFromContextMenu(entry: VaultEntry) {
+    if (!vaultRoot || entry.isDir) {
+      return;
+    }
+
+    try {
+      snapshotActiveTab();
+      await invoke("delete_vault_file", {
+        root: vaultRoot,
+        relative: entry.relativePath,
+      });
+
+      removeDeletedFileFromOpenState(entry.relativePath);
+      await loadEntries(vaultRoot, currentDir);
+      setStatus(`Deleted ${entry.relativePath}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   async function submitFolderActionDialog(event: ReactFormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -4334,7 +4950,11 @@ function App() {
 
     const value = folderActionDialog.value.trim();
 
-    if (!value) {
+    if (
+      folderActionDialog.action !== "delete-file" &&
+      !isMoveAction(folderActionDialog.action) &&
+      !value
+    ) {
       return;
     }
 
@@ -4346,6 +4966,12 @@ function App() {
       await createNoteFromFolderMenu(entry, value);
     } else if (action === "create-folder") {
       await createFolderFromFolderMenu(entry, value);
+    } else if (action === "move-folder") {
+      await moveFolderFromContextMenu(entry, value);
+    } else if (action === "move-file") {
+      await moveFileFromContextMenu(entry, value);
+    } else if (action === "delete-file") {
+      await deleteFileFromContextMenu(entry);
     } else {
       await renameFolderFromFolderMenu(entry, value);
     }
@@ -4456,6 +5082,31 @@ function App() {
     setEditorBody(`${markdown.trimEnd()}\n\n${emptyCalloutMarkdown}`, false);
   }
 
+  async function createTidbit() {
+    if (!vaultRoot) {
+      setStatus("Open a vault before creating a tidbit");
+      return;
+    }
+
+    try {
+      const relative = expandDateTemplate(tidbitSettings.pathPattern);
+      const file = await invoke<OpenedFile>("create_vault_markdown_file", {
+        root: vaultRoot,
+        relative,
+      });
+      const tab = createDocumentTabFromFile(file);
+
+      snapshotActiveTab();
+      addTabToGroup(tab);
+      hydrateDocumentTab(tab);
+      persistActiveFile(tab.activeFile);
+      await loadEntries(vaultRoot, currentDir);
+      setStatus(`Created tidbit ${file.relativePath}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function openRichLinkDialog() {
     if (!editor) {
       return;
@@ -4550,6 +5201,12 @@ function App() {
     // the cursor state instead of permanently crowding the formatting toolbar.
     ...tableCommandPaletteCommands,
     {
+      id: "create-tidbit",
+      title: "Create Tidbit",
+      description: "Create a fast note from the vault tidbit path pattern",
+      run: createTidbit,
+    },
+    {
       id: "insert-rich-link",
       title: "Insert rich link",
       description: "Fetch a URL preview and insert a rich link card",
@@ -4591,7 +5248,7 @@ function App() {
     await command.run();
     closeCommandPalette();
     setEditorFocused(true);
-    if (command.id !== "insert-rich-link") {
+    if (command.id !== "insert-rich-link" && command.id !== "create-tidbit") {
       setStatus(command.title);
     }
   }
@@ -5292,25 +5949,7 @@ function App() {
                         type="button"
                       >
                         {entry.isDir ? (
-                          <svg
-                            aria-hidden="true"
-                            className="vault-entry-icon folder-icon"
-                            viewBox="0 0 32 32"
-                          >
-                            <path
-                              className="folder-tab"
-                              d="M3.5 8.2c0-1.3 1-2.2 2.3-2.2h7.1c.8 0 1.5.3 2 .9l1.7 2h9.6c1.3 0 2.3 1 2.3 2.3v1.4h-25z"
-                            />
-                            <path
-                              className="folder-back"
-                              d="M2.5 10.6c0-1.4 1.1-2.5 2.5-2.5h22c1.4 0 2.5 1.1 2.5 2.5v13.1c0 1.4-1.1 2.5-2.5 2.5h-22c-1.4 0-2.5-1.1-2.5-2.5z"
-                            />
-                            <path
-                              className="folder-front"
-                              d="M3.2 13.1h25.6l-2.2 10.8c-.3 1.4-1.5 2.3-2.9 2.3h-19c-1.5 0-2.7-1.1-2.9-2.6z"
-                            />
-                            <path className="folder-shine" d="M5.1 14.3h21.8l-.4 1.6h-21.1z" />
-                          </svg>
+                          <FolderIcon />
                         ) : (
                           <svg
                             aria-hidden="true"
@@ -5758,6 +6397,32 @@ function App() {
                         placeholder={defaultVaultAssetDirectory}
                       />
                     </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={fileDisplayDraft.showDotfiles}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setFileDisplayDraft({
+                            showDotfiles: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                      <span>Show dotfiles and dot folders</span>
+                    </label>
+                    <label>
+                      <span>Tidbit path pattern</span>
+                      <input
+                        disabled={!vaultRoot}
+                        value={tidbitDraft.pathPattern}
+                        onChange={(event) =>
+                          setTidbitDraft({
+                            pathPattern: event.currentTarget.value,
+                          })
+                        }
+                        placeholder={defaultTidbitPathPattern}
+                      />
+                    </label>
                   </section>
                   <section className="settings-section" aria-label="Metadata settings">
                     <div className="settings-section-header">
@@ -5814,6 +6479,19 @@ function App() {
                         }
                       />
                       <span>Use Vim keybindings</span>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={autosaveDraft.enabled}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setAutosaveDraft({
+                            enabled: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                      <span>Autosave current page once per minute</span>
                     </label>
                   </section>
                 </div>
@@ -6095,38 +6773,74 @@ function App() {
           className="folder-context-menu"
           style={{ left: folderContextMenu.x, top: folderContextMenu.y }}
           role="menu"
-          aria-label={`Folder actions for ${folderContextMenu.entry.name}`}
+          aria-label={`${folderContextMenu.entry.isDir ? "Folder" : "File"} actions for ${
+            folderContextMenu.entry.name
+          }`}
           onClick={(event) => event.stopPropagation()}
           onContextMenu={(event) => event.preventDefault()}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              openFolderActionDialog("create-note", folderContextMenu.entry);
-            }}
-          >
-            Create Note
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              openFolderActionDialog("create-folder", folderContextMenu.entry);
-            }}
-          >
-            Create Folder
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              openFolderActionDialog("rename", folderContextMenu.entry);
-            }}
-          >
-            Rename
-          </button>
+          {folderContextMenu.entry.isDir ? (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("create-note", folderContextMenu.entry);
+                }}
+              >
+                Create Note
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("create-folder", folderContextMenu.entry);
+                }}
+              >
+                Create Folder
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("rename", folderContextMenu.entry);
+                }}
+              >
+                Rename
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("move-folder", folderContextMenu.entry);
+                }}
+              >
+                Move
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("move-file", folderContextMenu.entry);
+                }}
+              >
+                Move
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  openFolderActionDialog("delete-file", folderContextMenu.entry);
+                }}
+              >
+                Delete
+              </button>
+            </>
+          )}
         </div>
       ) : null}
       {folderActionDialog ? (
@@ -6147,25 +6861,46 @@ function App() {
               <h2>{folderActionDialogTitle(folderActionDialog.action)}</h2>
               <span>{folderActionDialog.entry.relativePath}</span>
             </div>
-            <label>
-              <span>{folderActionDialogLabel(folderActionDialog.action)}</span>
-              <input
-                autoFocus
-                spellCheck="false"
-                value={folderActionDialog.value}
-                onChange={(event) =>
+            {folderActionDialog.action === "delete-file" ? (
+              <p className="folder-action-dialog-warning">
+                Delete this file from the vault? This cannot be undone.
+              </p>
+            ) : isMoveAction(folderActionDialog.action) && vaultRoot ? (
+              <VaultFolderTree
+                key={`${folderActionDialog.action}:${folderActionDialog.entry.relativePath}`}
+                root={vaultRoot}
+                selectedPath={folderActionDialog.value}
+                movingEntry={
+                  folderActionDialog.action === "move-folder" ? folderActionDialog.entry : null
+                }
+                onStatus={setStatus}
+                onSelect={(relativePath) =>
                   setFolderActionDialog((dialog) =>
-                    dialog ? { ...dialog, value: event.currentTarget.value } : dialog,
+                    dialog ? { ...dialog, value: relativePath } : dialog,
                   )
                 }
-                onKeyDown={(event) => {
-                  if (event.key === "Escape") {
-                    event.preventDefault();
-                    setFolderActionDialog(null);
-                  }
-                }}
               />
-            </label>
+            ) : (
+              <label>
+                <span>{folderActionDialogLabel(folderActionDialog.action)}</span>
+                <input
+                  autoFocus
+                  spellCheck="false"
+                  value={folderActionDialog.value}
+                  onChange={(event) =>
+                    setFolderActionDialog((dialog) =>
+                      dialog ? { ...dialog, value: event.currentTarget.value } : dialog,
+                    )
+                  }
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      setFolderActionDialog(null);
+                    }
+                  }}
+                />
+              </label>
+            )}
             <div className="folder-action-dialog-actions">
               <button
                 className="inline-action"
@@ -6176,7 +6911,11 @@ function App() {
               </button>
               <button
                 className="inline-action"
-                disabled={!folderActionDialog.value.trim()}
+                disabled={
+                  folderActionDialog.action !== "delete-file" &&
+                  !isMoveAction(folderActionDialog.action) &&
+                  !folderActionDialog.value.trim()
+                }
                 type="submit"
               >
                 {folderActionDialogTitle(folderActionDialog.action)}

@@ -254,6 +254,7 @@ button {
 }
 
 .app-shell {
+  position: relative;
   display: flex;
   height: 100vh;
   min-height: 0;
@@ -1255,6 +1256,46 @@ body.workspace-resizing * {
 .editor-surface ul,
 .editor-surface ol {
   padding-left: 1.35rem;
+}
+
+.editor-surface ul[data-type="taskList"] {
+  display: grid;
+  gap: 0.35rem;
+  padding-left: 0;
+  list-style: none;
+}
+
+.editor-surface li[data-type="taskItem"],
+.editor-surface ul[data-type="taskList"] > li[data-checked] {
+  display: flex;
+  align-items: start;
+  gap: 0.45rem;
+}
+
+.editor-surface li[data-type="taskItem"] > label,
+.editor-surface ul[data-type="taskList"] > li[data-checked] > label {
+  flex: 0 0 1.15rem;
+  padding-top: 0.25rem;
+  line-height: 1;
+}
+
+.editor-surface li[data-type="taskItem"] input[type="checkbox"],
+.editor-surface ul[data-type="taskList"] > li[data-checked] input[type="checkbox"] {
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.editor-surface li[data-type="taskItem"] > div,
+.editor-surface ul[data-type="taskList"] > li[data-checked] > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.editor-surface li[data-type="taskItem"] > div > p,
+.editor-surface ul[data-type="taskList"] > li[data-checked] > div > p {
+  margin: 0;
 }
 
 .editor-surface blockquote {
@@ -2363,7 +2404,7 @@ body.workspace-resizing * {
 
 .folder-action-dialog-card {
   display: grid;
-  width: min(420px, 100%);
+  width: min(520px, 100%);
   gap: 18px;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
@@ -2410,6 +2451,127 @@ body.workspace-resizing * {
   color: var(--text);
   font: inherit;
   font-size: 0.88rem;
+}
+
+.vault-folder-tree-picker {
+  display: grid;
+  gap: 8px;
+}
+
+.folder-picker-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.folder-picker-header strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--heading);
+  font-size: 0.78rem;
+  font-weight: 850;
+  text-align: right;
+  text-overflow: ellipsis;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.vault-folder-tree {
+  max-height: 300px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 6px;
+}
+
+.vault-folder-tree-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  padding-left: calc(var(--folder-tree-depth) * 16px);
+}
+
+.folder-tree-expander,
+.folder-tree-select {
+  border: 0;
+  background: transparent;
+  color: var(--heading);
+  font: inherit;
+}
+
+.folder-tree-expander {
+  display: grid;
+  width: 26px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.folder-tree-expander:hover {
+  background: var(--hover);
+}
+
+.folder-tree-expander svg {
+  width: 16px;
+  height: 16px;
+  fill: currentcolor;
+}
+
+.folder-tree-select {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  border-radius: 6px;
+  cursor: pointer;
+  padding: 5px 7px;
+  text-align: left;
+}
+
+.folder-tree-select:hover,
+.folder-tree-select.active {
+  background: var(--hover);
+}
+
+.folder-tree-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.folder-tree-select span {
+  overflow: hidden;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-folder-tree-note {
+  margin: 4px 0 4px 44px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+}
+
+.vault-folder-tree-note.error {
+  color: var(--danger, #c94848);
+}
+
+.folder-action-dialog-warning {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .folder-action-dialog-actions {

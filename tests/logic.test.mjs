@@ -15,9 +15,12 @@ import {
   defaultVaultDrawerWidth,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
+  defaultTidbitPathPattern,
   emptyCalloutMarkdown,
   emptyColumnsMarkdown,
   emptyTableMarkdown,
+  expandDateFormat,
+  expandDateTemplate,
   escapeMarkdownUrl,
   fileNameForDroppedImage,
   findTabAcrossSplitGroups,
@@ -57,6 +60,17 @@ test("frontmatter supports toml delimiters and ignores unterminated headers", ()
     metaDelimiter: "---",
     body: "---\ntitle: Alpha\n# Body\n",
   });
+});
+
+test("date templates expand centrally for tidbit paths", () => {
+  const date = new Date(2026, 5, 15, 9, 4, 7);
+
+  assert.equal(expandDateFormat("YYYY-MM-DD-HH-mm-ss", date), "2026-06-15-09-04-07");
+  assert.equal(expandDateFormat("YYYY-mm-DD-hh-mm-ss", date), "2026-06-15-09-04-07");
+  assert.equal(
+    expandDateTemplate(defaultTidbitPathPattern, date),
+    "__transit__/Objects/tidbit-2026-06-15-09-04-07.md",
+  );
 });
 
 test("frontmatter tags are extracted as display pills", () => {
@@ -153,10 +167,20 @@ test("drag and paste image filtering accepts supported image formats", () => {
 });
 
 test("macOS platform detection controls platform-specific window actions", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const capabilities = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
+  const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+
   assert.equal(isMacOsPlatform("MacIntel"), true);
   assert.equal(isMacOsPlatform("", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), true);
   assert.equal(isMacOsPlatform("Win32"), false);
   assert.equal(isMacOsPlatform("Linux x86_64"), false);
+  assert.match(app, /getCurrentWindow\(\)\.setTheme\(resolvedAppearance\)/);
+  assert.doesNotMatch(app, /mac-window-title/);
+  assert.doesNotMatch(app, /app-brand/);
+  assert.ok(capabilities.permissions.includes("core:window:allow-set-theme"));
+  assert.equal(config.app.windows[0].theme, "Dark");
+  assert.notEqual(config.app.windows[0].hiddenTitle, true);
 });
 
 test("calendar filenames match the requested note naming scheme and dot marker keys", () => {
@@ -330,10 +354,11 @@ test("vault drawer exposes files search and recent views", () => {
   assert.match(css, /\.recent-entry em/);
 });
 
-test("folder rows expose context menu actions for notes folders and renaming", () => {
+test("vault rows expose context menu actions for folders and files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
 
   assert.match(app, /onContextMenu=\{\(event\) => handleFolderContextMenu\(entry, event\)\}/);
   assert.match(app, /suppressDirectoryClickRef/);
@@ -345,20 +370,44 @@ test("folder rows expose context menu actions for notes folders and renaming", (
   assert.match(app, /createNoteFromFolderMenu/);
   assert.match(app, /createFolderFromFolderMenu/);
   assert.match(app, /renameFolderFromFolderMenu/);
+  assert.match(app, /moveFolderFromContextMenu/);
+  assert.match(app, /moveFileFromContextMenu/);
+  assert.match(app, /deleteFileFromContextMenu/);
+  assert.match(app, /function VaultFolderTree/);
+  assert.match(app, /isMoveFolderDestinationDisabled/);
+  assert.match(app, /children\.filter\(\(entry\) => entry\.isDir\)/);
   assert.match(app, /folderActionDialog/);
   assert.match(app, /openFolderActionDialog\("create-folder"/);
+  assert.match(app, /openFolderActionDialog\("move-folder"/);
+  assert.match(app, /openFolderActionDialog\("move-file"/);
+  assert.match(app, /openFolderActionDialog\("delete-file"/);
   assert.match(app, /aria-label=\{folderActionDialogTitle\(folderActionDialog\.action\)\}/);
   assert.match(app, /"create_note_in_directory"/);
   assert.match(app, /"create_directory_in_directory"/);
   assert.match(app, /"rename_vault_directory"/);
+  assert.match(app, /"move_vault_directory"/);
+  assert.match(app, /"move_vault_file"/);
+  assert.match(app, /"delete_vault_file"/);
   assert.match(app, /Create Note/);
   assert.match(app, /Create Folder/);
+  assert.match(app, /Move Folder/);
+  assert.match(app, /Move File/);
+  assert.match(app, /Delete File/);
+  assert.match(app, /<VaultFolderTree/);
+  assert.match(app, /<FolderIcon \/>/);
   assert.match(app, /Rename/);
   assert.match(css, /\.folder-context-menu/);
   assert.match(css, /\.folder-action-dialog-card/);
+  assert.match(css, /\.folder-action-dialog-warning/);
+  assert.match(css, /\.vault-folder-tree/);
+  assert.match(css, /\.folder-tree-select/);
   assert.match(backend, /fn create_note_in_directory/);
   assert.match(backend, /fn create_directory_in_directory/);
   assert.match(backend, /fn rename_vault_directory/);
+  assert.match(backend, /fn move_vault_directory/);
+  assert.match(backend, /fn move_vault_file/);
+  assert.match(backend, /fn delete_vault_file/);
+  assert.notEqual(config.app.windows[0].hiddenTitle, true);
 });
 
 test("app css exposes the Obsidian theme compatibility surface", () => {
@@ -389,10 +438,26 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /--glyphary-accent/);
   assert.match(app, /Reset Theme/);
   assert.match(app, /type VaultAppearanceSettings/);
+  assert.match(app, /type FileDisplaySettings/);
+  assert.match(app, /type AutosaveSettings/);
+  assert.match(app, /type TidbitSettings/);
+  assert.match(app, /defaultFileDisplaySettings/);
+  assert.match(app, /showDotfiles: false/);
+  assert.match(app, /defaultAutosaveSettings/);
+  assert.match(app, /enabled: true/);
+  assert.match(app, /defaultTidbitSettings/);
+  assert.match(app, /Tidbit path pattern/);
+  assert.match(app, /defaultTidbitPathPattern/);
+  assert.match(app, /Show dotfiles and dot folders/);
+  assert.match(app, /Autosave current page once per minute/);
+  assert.match(app, /window\.setInterval/);
+  assert.match(app, /60_000/);
   assert.match(app, /glassEffect/);
   assert.match(app, /Use glass window effect/);
   assert.match(app, /set_window_glass_effect/);
   assert.match(css, /data-window-glass="enabled"/);
+  assert.match(backend, /Could not keep titlebar contrast material/);
+  assert.doesNotMatch(backend, /set_effects\(None/);
   assert.match(css, /\.theme-preset-grid/);
   assert.match(css, /\.theme-preset-card/);
   assert.equal(config.app.macOSPrivateApi, true);
@@ -462,12 +527,25 @@ test("command save shortcut is wrapped in the webview", () => {
   assert.match(app, /window\.addEventListener\("keydown", handleGlobalCommandPaletteShortcut\)/);
 });
 
+test("renaming a page title immediately saves the active file", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(app, /function finishPageNameEdit\(\)/);
+  assert.match(app, /pageNameRef\.current\.trim\(\) !== fileNameWithoutMarkdownExtension\(activeFile\.name\)/);
+  assert.match(app, /void saveCurrentFileRef\.current\(\)/);
+});
+
 test("quick command palette exposes initial editor commands", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
 
   assert.match(app, /type CommandPaletteCommand/);
   assert.match(app, /commandPaletteCommands/);
+  assert.match(app, /id: "create-tidbit"/);
+  assert.match(app, /title: "Create Tidbit"/);
+  assert.match(app, /expandDateTemplate\(tidbitSettings\.pathPattern\)/);
+  assert.match(app, /"create_vault_markdown_file"/);
   assert.match(app, /id: "insert-rich-link"/);
   assert.match(app, /title: "Insert rich link"/);
   assert.match(app, /id: "insert-columns"/);
@@ -480,6 +558,8 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(css, /\.command-palette-screen/);
   assert.match(css, /\.command-palette-card/);
   assert.match(css, /\.command-palette-results/);
+  assert.match(backend, /fn create_vault_markdown_file/);
+  assert.match(backend, /create_vault_markdown_file,/);
 });
 
 test("table row and column actions are contextual command palette entries", () => {
@@ -507,14 +587,21 @@ test("table row and column actions are contextual command palette entries", () =
   assert.doesNotMatch(app, /label: "Drop Table"/);
 });
 
-test("list quote code table columns and callout toolbar actions render as icons", () => {
+test("list task quote code table columns and callout toolbar actions render as icons", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
+  assert.match(app, /import \{ TaskItem \} from "@tiptap\/extension-task-item"/);
+  assert.match(app, /import \{ TaskList \} from "@tiptap\/extension-task-list"/);
+  assert.match(app, /TaskItem\.configure\(\{\s*nested: true,/);
+  assert.match(app, /TaskList/);
+  assert.match(app, /toggleTaskList\(\)/);
   assert.match(app, /type ToolbarIconName/);
   assert.match(app, /function renderToolbarIcon/);
   assert.match(app, /icon: "bullet-list"/);
   assert.match(app, /icon: "ordered-list"/);
+  assert.match(app, /icon: "task-list"/);
   assert.match(app, /icon: "quote"/);
   assert.match(app, /icon: "code"/);
   assert.match(app, /icon: "table"/);
@@ -523,6 +610,14 @@ test("list quote code table columns and callout toolbar actions render as icons"
   assert.match(app, /aria-label=\{action\.title\}/);
   assert.match(app, /action\.icon \? renderToolbarIcon\(action\.icon\) : action\.label/);
   assert.match(css, /\.tool-button svg/);
+  assert.match(css, /ul\[data-type="taskList"\]/);
+  assert.match(css, /li\[data-type="taskItem"\]/);
+  assert.match(css, /li\[data-checked\]/);
+  assert.match(css, /display: flex;/);
+  assert.match(css, /flex: 0 0 1\.15rem;/);
+  assert.match(css, /li\[data-type="taskItem"\] > div > p/);
+  assert.equal(packageJson.dependencies["@tiptap/extension-task-item"], "^3.26.1");
+  assert.equal(packageJson.dependencies["@tiptap/extension-task-list"], "^3.26.1");
 });
 
 test("toolbar state refreshes when editor selection changes", () => {

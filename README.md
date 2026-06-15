@@ -8,12 +8,15 @@ Glyphary is a Tauri desktop Markdown editor built with React, TypeScript, and Ti
 - Tiptap WYSIWYG Markdown editing.
 - Optional local Vim-style editor keybindings.
 - Markdown source editing and export/stats view in the right drawer.
+- Vault-scoped autosave can save the active page once per minute and is enabled by default.
+- Tidbits can be created quickly from the command palette using a vault-scoped path pattern.
 - Multiple editable documents using tabs.
 - Optional split editor layout with independent tabs in each pane.
 - Frontmatter is hidden from the main editor, preserved on save, and editable from a collapsed plain-text metadata area.
 - Configurable frontmatter pills can show a chosen metadata list, defaulting to `tags`.
 - Page name can be edited by double-clicking the displayed page title; saving can rename the file.
 - Table support through Tiptap table extensions.
+- Task lists support GitHub-flavored Markdown checkboxes such as `- [ ]` and `- [x]`.
 - Column layout blocks using `::: columns` and nested `::: column` containers.
 - Callout blocks using `::: callout <type> "Optional title"` containers.
 - Rich link cards that fetch page metadata and render URL previews.
@@ -36,13 +39,15 @@ When a vault is open:
 - The left side is a collapsible vault drawer.
 - The vault drawer opens expanded by default.
 - The file icon view shows files and directories.
+- Dot-prefixed files and directories are hidden by default and can be enabled in Settings.
 - The search icon view searches the vault.
 - The recent icon view shows recently opened vault files, newest first.
 - Single-clicking a directory makes it the current top-level view.
 - The Back button returns up one directory level until the selected vault root is reached.
 - Double-clicking a file opens it in an editor tab.
 - Double-clicking a directory opens or creates a shadow note inside that directory named `<directory name>.md`.
-- Right-clicking a directory opens actions to create a note inside it, create a child folder, or rename the directory.
+- Right-clicking a directory opens actions to create a note inside it, create a child folder, rename it, or move it to another vault folder selected from a folder tree.
+- Right-clicking a file opens actions to move it to a folder-tree destination or delete it after confirmation.
 - Directory renames also rename a matching shadow note from `<old>/<old>.md` to `<new>/<new>.md` when that note exists.
 - The currently open file is highlighted when it appears in the file drawer.
 - File and directory rows use icons rather than text badges.
@@ -215,6 +220,9 @@ Currently supported setting:
 - `assetDirectory`: where local image assets are stored and resolved from. Defaults to `_assets_`.
 - `frontmatterPills.enabled`: whether to show a frontmatter list as pills above the editor. Defaults to `true`.
 - `frontmatterPills.headerName`: the frontmatter header used for pills. Defaults to `tags`.
+- `files.showDotfiles`: whether the vault file drawer shows files and directories whose names start with `.`. Defaults to `false`.
+- `autosave.enabled`: whether the active page is saved automatically once per minute. Defaults to `true`.
+- `tidbits.pathPattern`: where `Create Tidbit` creates fast notes. Defaults to `__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md`.
 - `editor.vimMode`: whether editor panes use Vim-style keybindings. Defaults to `false`.
 - `appearance.glassEffect`: whether the app window previews a translucent native glass material. Defaults to `false`.
 - `theme.presetId`: the selected theme template, when one is active.
@@ -224,6 +232,8 @@ The settings screen is separate from the right drawer and can be opened through 
 
 - `Main`: vault asset directory, metadata pill settings, and editor behavior.
 - `Appearance`: window glass effect, theme builder, and vault-specific color tokens.
+
+Tidbit path patterns support `{{date:...}}` expansions. Supported date tokens include `YYYY`, `YY`, `MM`, `DD`, `HH`, `hh`, `mm`, and `ss`; the default lowercase `YYYY-mm-DD` date segment is kept compatible and expands `mm` as the month in that position.
 
 Theme tokens are allowlisted and validated by the Tauri backend before they are written to `.glyphary`.
 
@@ -480,7 +490,8 @@ Rust unit tests cover backend behavior such as:
 - Directory listing.
 - File read/write.
 - Directory shadow notes.
-- Folder note creation, child folder creation, and shadow-note preserving folder renames.
+- Folder note creation, child folder creation, shadow-note preserving folder renames, and folder moves.
+- File moves and confirmed file deletion.
 - Calendar note creation/listing.
 - Search.
 - Recent file ordering and capping.

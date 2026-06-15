@@ -34,7 +34,7 @@ struct SavedAsset {
     relative_path: String,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RenamedDirectory {
     name: String,
@@ -44,9 +44,16 @@ struct RenamedDirectory {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct VaultSettings {
+    #[serde(default = "default_asset_directory")]
     asset_directory: String,
     #[serde(default)]
     frontmatter_pills: FrontmatterPillSettings,
+    #[serde(default)]
+    files: FileDisplaySettings,
+    #[serde(default)]
+    autosave: AutosaveSettings,
+    #[serde(default)]
+    tidbits: TidbitSettings,
     #[serde(default)]
     editor: EditorSettings,
     #[serde(default)]
@@ -59,6 +66,25 @@ struct VaultSettings {
 #[serde(rename_all = "camelCase")]
 struct EditorSettings {
     vim_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FileDisplaySettings {
+    show_dotfiles: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutosaveSettings {
+    enabled: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TidbitSettings {
+    #[serde(default = "default_tidbit_path_pattern")]
+    path_pattern: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Default)]
@@ -133,6 +159,8 @@ const MAX_RICH_LINK_HTML_BYTES: u64 = 2 * 1024 * 1024;
 const RICH_LINK_IMAGE_SCAN_BYTES: usize = 160 * 1024;
 const DEFAULT_ASSET_DIRECTORY: &str = "_assets_";
 const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
+const DEFAULT_TIDBIT_PATH_PATTERN: &str =
+    "__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md";
 const SETTINGS_FILE_NAME: &str = ".glyphary";
 const THEME_TOKEN_ALLOWLIST: &[&str] = &[
     "--glyphary-accent",
@@ -166,11 +194,22 @@ const THEME_TOKEN_ALLOWLIST: &[&str] = &[
     "--syntax-yellow",
 ];
 
+fn default_asset_directory() -> String {
+    DEFAULT_ASSET_DIRECTORY.into()
+}
+
+fn default_tidbit_path_pattern() -> String {
+    DEFAULT_TIDBIT_PATH_PATTERN.into()
+}
+
 impl Default for VaultSettings {
     fn default() -> Self {
         Self {
             asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             frontmatter_pills: FrontmatterPillSettings::default(),
+            files: FileDisplaySettings::default(),
+            autosave: AutosaveSettings::default(),
+            tidbits: TidbitSettings::default(),
             editor: EditorSettings::default(),
             appearance: AppearanceSettings::default(),
             theme: None,
@@ -183,6 +222,20 @@ impl Default for FrontmatterPillSettings {
         Self {
             enabled: true,
             header_name: DEFAULT_FRONTMATTER_PILL_HEADER.into(),
+        }
+    }
+}
+
+impl Default for AutosaveSettings {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for TidbitSettings {
+    fn default() -> Self {
+        Self {
+            path_pattern: DEFAULT_TIDBIT_PATH_PATTERN.into(),
         }
     }
 }
@@ -240,6 +293,7 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
 
     let theme = clean_theme(settings.theme)?;
     let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
+    let tidbits = clean_tidbit_settings(settings.tidbits);
 
     if asset_directory.is_empty() {
         Err("Asset directory cannot be empty".into())
@@ -247,10 +301,25 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
         Ok(VaultSettings {
             asset_directory,
             frontmatter_pills,
+            files: settings.files,
+            autosave: settings.autosave,
+            tidbits,
             editor: settings.editor,
             appearance: settings.appearance,
             theme,
         })
+    }
+}
+
+fn clean_tidbit_settings(settings: TidbitSettings) -> TidbitSettings {
+    let path_pattern = settings.path_pattern.trim();
+
+    TidbitSettings {
+        path_pattern: if path_pattern.is_empty() {
+            DEFAULT_TIDBIT_PATH_PATTERN.into()
+        } else {
+            path_pattern.into()
+        },
     }
 }
 
@@ -350,6 +419,36 @@ fn resolve_for_write(root: &str, relative: &str) -> Result<(PathBuf, PathBuf), S
     }
 
     Ok((root, target))
+}
+
+fn ensure_vault_parent_dirs(root: &Path, relative_parent: &Path) -> Result<PathBuf, String> {
+    let mut current = root.to_path_buf();
+
+    for component in relative_parent.components() {
+        let Component::Normal(part) = component else {
+            continue;
+        };
+
+        current.push(part);
+
+        if current.exists() {
+            let canonical = fs::canonicalize(&current)
+                .map_err(|err| format!("Could not resolve target directory: {err}"))?;
+
+            if !canonical.starts_with(root) {
+                return Err("Path escapes the vault".into());
+            }
+
+            if !canonical.is_dir() {
+                return Err("Target parent path is not a directory".into());
+            }
+        } else {
+            fs::create_dir(&current)
+                .map_err(|err| format!("Could not create target directory: {err}"))?;
+        }
+    }
+
+    Ok(current)
 }
 
 fn relative_string(root: &Path, target: &Path) -> Result<String, String> {
@@ -931,11 +1030,22 @@ fn list_vault_dir(root: String, relative: String) -> Result<Vec<VaultEntry>, Str
         return Err("Vault path is not a directory".into());
     }
 
+    let show_dotfiles = read_vault_settings(root.to_string_lossy().into_owned())?
+        .files
+        .show_dotfiles;
     let mut entries = fs::read_dir(&dir)
         .map_err(|err| format!("Could not list directory: {err}"))?
         .filter_map(|entry| match entry {
-            // .glyphary is vault-local application state, not a user note.
-            Ok(entry) if entry.file_name().to_string_lossy() == SETTINGS_FILE_NAME => None,
+            Ok(entry) => {
+                let name = entry.file_name().to_string_lossy().into_owned();
+
+                // .glyphary is vault-local application state, not a user note.
+                if name == SETTINGS_FILE_NAME || (!show_dotfiles && name.starts_with('.')) {
+                    None
+                } else {
+                    Some(Ok(entry))
+                }
+            }
             other => Some(other),
         })
         .map(|entry| {
@@ -997,6 +1107,47 @@ fn write_vault_file(root: String, relative: String, content: String) -> Result<(
 }
 
 #[tauri::command]
+fn create_vault_markdown_file(root: String, relative: String) -> Result<OpenedFile, String> {
+    let root_path = vault_root(&root)?;
+    let clean_relative = clean_relative(&relative)?;
+
+    if clean_relative.as_os_str().is_empty() {
+        return Err("Tidbit path cannot be empty".into());
+    }
+
+    let file_name = clean_relative
+        .file_name()
+        .ok_or_else(|| "Tidbit path must include a file name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+
+    if !file_name.to_lowercase().ends_with(".md") {
+        return Err("Tidbit path must end with .md".into());
+    }
+
+    let parent = clean_relative
+        .parent()
+        .ok_or_else(|| "Tidbit path has no parent".to_string())?;
+    let parent = ensure_vault_parent_dirs(&root_path, parent)?;
+    let path = parent.join(&file_name);
+
+    if path.exists() {
+        return Err("A file already exists at the tidbit path".into());
+    }
+
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|err| format!("Could not create tidbit: {err}"))?;
+
+    read_vault_file(
+        root_path.to_string_lossy().into_owned(),
+        relative_string(&root_path, &path)?,
+    )
+}
+
+#[tauri::command]
 fn rename_vault_file(
     root: String,
     relative: String,
@@ -1035,6 +1186,56 @@ fn rename_vault_file(
         root_path.to_string_lossy().into_owned(),
         relative_string(&root_path, &next_path)?,
     )
+}
+
+#[tauri::command]
+fn move_vault_file(
+    root: String,
+    relative: String,
+    destination_directory: String,
+) -> Result<OpenedFile, String> {
+    let (root_path, path) = resolve_existing(&root, &relative)?;
+
+    if !path.is_file() {
+        return Err("Vault path is not a file".into());
+    }
+
+    let (_, destination_dir) = resolve_existing(&root, &destination_directory)?;
+
+    if !destination_dir.is_dir() {
+        return Err("Destination path is not a directory".into());
+    }
+
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| "File path has no name".to_string())?;
+    let next_path = destination_dir.join(file_name);
+
+    if path == next_path {
+        return read_vault_file(root, relative);
+    }
+
+    if next_path.exists() {
+        return Err("A file with that name already exists in the destination".into());
+    }
+
+    fs::rename(&path, &next_path).map_err(|err| format!("Could not move file: {err}"))?;
+
+    read_vault_file(
+        root_path.to_string_lossy().into_owned(),
+        relative_string(&root_path, &next_path)?,
+    )
+}
+
+#[tauri::command]
+fn delete_vault_file(root: String, relative: String) -> Result<(), String> {
+    let (_, path) = resolve_existing(&root, &relative)?;
+
+    if !path.is_file() {
+        return Err("Vault path is not a file".into());
+    }
+
+    fs::remove_file(path).map_err(|err| format!("Could not delete file: {err}"))
 }
 
 #[tauri::command]
@@ -1159,6 +1360,56 @@ fn rename_vault_directory(
 
     Ok(RenamedDirectory {
         name: next_name,
+        relative_path: relative_string(&root_path, &next_dir)?,
+    })
+}
+
+#[tauri::command]
+fn move_vault_directory(
+    root: String,
+    relative: String,
+    destination_directory: String,
+) -> Result<RenamedDirectory, String> {
+    if relative.trim().is_empty() {
+        return Err("Cannot move the vault root".into());
+    }
+
+    let (root_path, dir) = resolve_existing(&root, &relative)?;
+
+    if !dir.is_dir() {
+        return Err("Vault path is not a directory".into());
+    }
+
+    let (_, destination_dir) = resolve_existing(&root, &destination_directory)?;
+
+    if !destination_dir.is_dir() {
+        return Err("Destination path is not a directory".into());
+    }
+
+    if destination_dir == dir || destination_dir.starts_with(&dir) {
+        return Err("Cannot move a folder into itself".into());
+    }
+
+    let directory_name = dir
+        .file_name()
+        .ok_or_else(|| "Directory path has no name".to_string())?;
+    let next_dir = destination_dir.join(directory_name);
+
+    if dir == next_dir {
+        return Ok(RenamedDirectory {
+            name: directory_name.to_string_lossy().into_owned(),
+            relative_path: relative_string(&root_path, &dir)?,
+        });
+    }
+
+    if next_dir.exists() {
+        return Err("A folder with that name already exists in the destination".into());
+    }
+
+    fs::rename(&dir, &next_dir).map_err(|err| format!("Could not move folder: {err}"))?;
+
+    Ok(RenamedDirectory {
+        name: directory_name.to_string_lossy().into_owned(),
         relative_path: relative_string(&root_path, &next_dir)?,
     })
 }
@@ -1340,12 +1591,23 @@ fn apply_window_glass_effect(app: &tauri::AppHandle, enabled: bool) -> Result<bo
             )
             .map_err(|err| format!("Could not enable window glass effect: {err}"))?;
     } else {
+        // Clearing effects entirely, or switching to the narrower Titlebar
+        // material, makes macOS draw black title text on this transparent
+        // window. Keep the native material that gives correct title contrast;
+        // the frontend's data-window-glass flag controls whether the user sees
+        // the glass styling.
         window
-            .set_effects(None::<tauri::utils::config::WindowEffectsConfig>)
-            .map_err(|err| format!("Could not disable window glass effect: {err}"))?;
+            .set_background_color(Some(Color(0, 0, 0, 0)))
+            .map_err(|err| format!("Could not keep window background transparent: {err}"))?;
         window
-            .set_background_color(None)
-            .map_err(|err| format!("Could not restore window background: {err}"))?;
+            .set_effects(
+                EffectsBuilder::new()
+                    .effect(Effect::UnderWindowBackground)
+                    .state(EffectState::FollowsWindowActiveState)
+                    .radius(12.0)
+                    .build(),
+            )
+            .map_err(|err| format!("Could not keep titlebar contrast material: {err}"))?;
     }
 
     Ok(enabled)
@@ -1639,10 +1901,14 @@ pub fn run() {
             list_vault_dir,
             read_vault_file,
             write_vault_file,
+            create_vault_markdown_file,
             rename_vault_file,
+            move_vault_file,
+            delete_vault_file,
             create_note_in_directory,
             create_directory_in_directory,
             rename_vault_directory,
+            move_vault_directory,
             open_directory_shadow_file,
             open_calendar_day_file,
             list_calendar_day_files,
@@ -1700,6 +1966,47 @@ mod tests {
     }
 
     #[test]
+    fn hides_dotfiles_unless_vault_settings_enable_them() {
+        let root = test_root();
+        fs::write(root.join("alpha.md"), "# Alpha\n").expect("file should be created");
+        fs::write(root.join(".hidden.md"), "# Hidden\n").expect("hidden file should be created");
+
+        let hidden_entries = list_vault_dir(root.to_string_lossy().into_owned(), "".into())
+            .expect("directory should list");
+
+        assert_eq!(hidden_entries.len(), 1);
+        assert_eq!(hidden_entries[0].relative_path, "alpha.md");
+
+        write_vault_settings(
+            root.to_string_lossy().into_owned(),
+            VaultSettings {
+                asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+                frontmatter_pills: FrontmatterPillSettings::default(),
+                files: FileDisplaySettings {
+                    show_dotfiles: true,
+                },
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
+                editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
+                theme: None,
+            },
+        )
+        .expect("settings should write");
+
+        let visible_entries = list_vault_dir(root.to_string_lossy().into_owned(), "".into())
+            .expect("directory should list");
+        let paths = visible_entries
+            .into_iter()
+            .map(|entry| entry.relative_path)
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec![".hidden.md", "alpha.md"]);
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
     fn reads_default_vault_settings_when_missing() {
         let root = test_root();
 
@@ -1712,6 +2019,9 @@ mod tests {
             settings.frontmatter_pills.header_name,
             DEFAULT_FRONTMATTER_PILL_HEADER
         );
+        assert!(!settings.files.show_dotfiles);
+        assert!(settings.autosave.enabled);
+        assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
         assert!(!settings.editor.vim_mode);
         assert!(!settings.appearance.glass_effect);
         assert!(settings.theme.is_none());
@@ -1731,6 +2041,13 @@ mod tests {
                     enabled: false,
                     header_name: "topics".into(),
                 },
+                files: FileDisplaySettings {
+                    show_dotfiles: true,
+                },
+                autosave: AutosaveSettings { enabled: false },
+                tidbits: TidbitSettings {
+                    path_pattern: "Inbox/tidbit-{{date:YYYY-MM-DD-HH-mm-ss}}.md".into(),
+                },
                 editor: EditorSettings { vim_mode: true },
                 appearance: AppearanceSettings { glass_effect: true },
                 theme: None,
@@ -1741,6 +2058,12 @@ mod tests {
         assert_eq!(settings.asset_directory, "media/images");
         assert!(!settings.frontmatter_pills.enabled);
         assert_eq!(settings.frontmatter_pills.header_name, "topics");
+        assert!(settings.files.show_dotfiles);
+        assert!(!settings.autosave.enabled);
+        assert_eq!(
+            settings.tidbits.path_pattern,
+            "Inbox/tidbit-{{date:YYYY-MM-DD-HH-mm-ss}}.md"
+        );
         assert!(settings.editor.vim_mode);
         assert!(settings.appearance.glass_effect);
         assert!(
@@ -1761,6 +2084,9 @@ mod tests {
             VaultSettings {
                 asset_directory: " ".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: None,
@@ -1772,6 +2098,9 @@ mod tests {
             VaultSettings {
                 asset_directory: "../assets".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: None,
@@ -1797,6 +2126,9 @@ mod tests {
                     enabled: true,
                     header_name: " ".into(),
                 },
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: None,
@@ -1811,6 +2143,9 @@ mod tests {
                     enabled: true,
                     header_name: "tags: bad".into(),
                 },
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: None,
@@ -1836,6 +2171,9 @@ mod tests {
             VaultSettings {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: Some(VaultTheme {
@@ -1868,6 +2206,9 @@ mod tests {
             VaultSettings {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                files: FileDisplaySettings::default(),
+                autosave: AutosaveSettings::default(),
+                tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 theme: Some(VaultTheme {
@@ -1942,6 +2283,31 @@ mod tests {
     }
 
     #[test]
+    fn creates_nested_vault_markdown_file() {
+        let root = test_root();
+
+        let opened = create_vault_markdown_file(
+            root.to_string_lossy().into_owned(),
+            "__transit__/Objects/tidbit-2026-06-15-09-04-07.md".into(),
+        )
+        .expect("tidbit should be created");
+
+        assert_eq!(opened.name, "tidbit-2026-06-15-09-04-07.md");
+        assert_eq!(
+            opened.relative_path,
+            "__transit__/Objects/tidbit-2026-06-15-09-04-07.md"
+        );
+        assert_eq!(opened.content, "");
+        assert!(root
+            .join("__transit__")
+            .join("Objects")
+            .join("tidbit-2026-06-15-09-04-07.md")
+            .is_file());
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
     fn creates_folder_inside_directory() {
         let root = test_root();
         fs::create_dir(root.join("chapter")).expect("directory should be created");
@@ -1984,6 +2350,50 @@ mod tests {
                 .expect("renamed shadow note should be readable"),
             "# Shadow\n",
         );
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn moves_vault_directory_to_existing_directory() {
+        let root = test_root();
+        fs::create_dir(root.join("archive")).expect("directory should be created");
+        fs::create_dir(root.join("notes")).expect("directory should be created");
+        fs::write(root.join("notes").join("note.md"), "# Note\n").expect("file should be created");
+
+        let moved = move_vault_directory(
+            root.to_string_lossy().into_owned(),
+            "notes".into(),
+            "archive".into(),
+        )
+        .expect("directory should move");
+
+        assert_eq!(moved.name, "notes");
+        assert_eq!(moved.relative_path, "archive/notes");
+        assert!(!root.join("notes").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("archive").join("notes").join("note.md"))
+                .expect("moved child file should be readable"),
+            "# Note\n",
+        );
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn refuses_to_move_vault_directory_into_itself() {
+        let root = test_root();
+        fs::create_dir_all(root.join("notes").join("child")).expect("directories should be created");
+
+        let error = move_vault_directory(
+            root.to_string_lossy().into_owned(),
+            "notes".into(),
+            "notes/child".into(),
+        )
+        .expect_err("directory should not move into itself");
+
+        assert!(error.contains("itself"));
+        assert!(root.join("notes").join("child").is_dir());
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
@@ -2307,6 +2717,44 @@ mod tests {
 
         assert!(error.contains("already exists"));
         assert!(root.join("Old.md").exists());
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn moves_vault_file_to_existing_directory() {
+        let root = test_root();
+        fs::create_dir(root.join("archive")).expect("directory should be created");
+        fs::write(root.join("note.md"), "# Note\n").expect("file should be created");
+
+        let moved = move_vault_file(
+            root.to_string_lossy().into_owned(),
+            "note.md".into(),
+            "archive".into(),
+        )
+        .expect("file should move");
+
+        assert_eq!(moved.name, "note.md");
+        assert_eq!(moved.relative_path, "archive/note.md");
+        assert!(!root.join("note.md").exists());
+        assert_eq!(
+            fs::read_to_string(root.join("archive").join("note.md"))
+                .expect("moved file should be readable"),
+            "# Note\n",
+        );
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn deletes_vault_file() {
+        let root = test_root();
+        fs::write(root.join("note.md"), "# Note\n").expect("file should be created");
+
+        delete_vault_file(root.to_string_lossy().into_owned(), "note.md".into())
+            .expect("file should delete");
+
+        assert!(!root.join("note.md").exists());
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }

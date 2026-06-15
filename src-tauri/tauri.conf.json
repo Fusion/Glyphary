@@ -18,6 +18,7 @@
         "height": 956,
         "minWidth": 760,
         "minHeight": 560,
+        "theme": "Dark",
         "transparent": true
       }
     ],
