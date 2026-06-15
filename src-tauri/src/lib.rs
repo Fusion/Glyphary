@@ -58,6 +58,8 @@ struct VaultSettings {
     editor: EditorSettings,
     #[serde(default)]
     appearance: AppearanceSettings,
+    #[serde(default)]
+    css_snippets: CssSnippetSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<VaultTheme>,
 }
@@ -91,6 +93,15 @@ struct TidbitSettings {
 #[serde(rename_all = "camelCase")]
 struct AppearanceSettings {
     glass_effect: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CssSnippetSettings {
+    #[serde(default = "default_css_snippet_directory")]
+    directory: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    enabled: Vec<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -176,6 +187,20 @@ struct SearchResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct CssSnippetFile {
+    name: String,
+    relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CssSnippetContent {
+    name: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct RichLinkMetadata {
     url: String,
     title: String,
@@ -218,6 +243,7 @@ const DEFAULT_ASSET_DIRECTORY: &str = "_assets_";
 const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
 const DEFAULT_TIDBIT_PATH_PATTERN: &str =
     "__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md";
+const DEFAULT_CSS_SNIPPET_DIRECTORY: &str = "_snippets_";
 const SETTINGS_FILE_NAME: &str = ".glyphary";
 const THEME_TOKEN_ALLOWLIST: &[&str] = &[
     "--glyphary-accent",
@@ -291,6 +317,10 @@ fn default_asset_directory() -> String {
     DEFAULT_ASSET_DIRECTORY.into()
 }
 
+fn default_css_snippet_directory() -> String {
+    DEFAULT_CSS_SNIPPET_DIRECTORY.into()
+}
+
 fn default_tidbit_path_pattern() -> String {
     DEFAULT_TIDBIT_PATH_PATTERN.into()
 }
@@ -305,6 +335,7 @@ impl Default for VaultSettings {
             tidbits: TidbitSettings::default(),
             editor: EditorSettings::default(),
             appearance: AppearanceSettings::default(),
+            css_snippets: CssSnippetSettings::default(),
             theme: None,
         }
     }
@@ -329,6 +360,15 @@ impl Default for TidbitSettings {
     fn default() -> Self {
         Self {
             path_pattern: DEFAULT_TIDBIT_PATH_PATTERN.into(),
+        }
+    }
+}
+
+impl Default for CssSnippetSettings {
+    fn default() -> Self {
+        Self {
+            directory: DEFAULT_CSS_SNIPPET_DIRECTORY.into(),
+            enabled: Vec::new(),
         }
     }
 }
@@ -387,6 +427,7 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
     let theme = clean_theme(settings.theme)?;
     let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
     let tidbits = clean_tidbit_settings(settings.tidbits);
+    let css_snippets = clean_css_snippet_settings(settings.css_snippets)?;
 
     if asset_directory.is_empty() {
         Err("Asset directory cannot be empty".into())
@@ -399,9 +440,57 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
             tidbits,
             editor: settings.editor,
             appearance: settings.appearance,
+            css_snippets,
             theme,
         })
     }
+}
+
+fn clean_css_snippet_settings(settings: CssSnippetSettings) -> Result<CssSnippetSettings, String> {
+    let directory = clean_relative(settings.directory.trim())?;
+    let directory = directory
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+
+    if directory.is_empty() {
+        return Err("CSS snippet directory cannot be empty".into());
+    }
+
+    let mut enabled = Vec::new();
+
+    for name in settings.enabled {
+        let name = clean_css_snippet_name(&name)?;
+
+        if !enabled.contains(&name) {
+            enabled.push(name);
+        }
+    }
+
+    enabled.sort();
+
+    Ok(CssSnippetSettings { directory, enabled })
+}
+
+fn clean_css_snippet_name(name: &str) -> Result<String, String> {
+    let name = name.trim();
+
+    if name.is_empty()
+        || name.len() > 120
+        || Path::new(name).components().count() != 1
+        || !name.ends_with(".css")
+        || !name.chars().all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | '.' | ' ')
+        })
+    {
+        return Err("CSS snippet name must be a simple .css file name".into());
+    }
+
+    Ok(name.into())
 }
 
 fn clean_tidbit_settings(settings: TidbitSettings) -> TidbitSettings {
@@ -1706,6 +1795,91 @@ fn write_vault_settings(root: String, settings: VaultSettings) -> Result<VaultSe
 }
 
 #[tauri::command]
+fn list_css_snippets(root: String, directory: String) -> Result<Vec<CssSnippetFile>, String> {
+    let root = vault_root(&root)?;
+    let directory = clean_relative(&directory)?;
+    let snippets_dir = root.join(&directory);
+
+    if !snippets_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    if !snippets_dir.is_dir() {
+        return Err("CSS snippet path is not a directory".into());
+    }
+
+    let mut snippets = Vec::new();
+
+    for entry in fs::read_dir(&snippets_dir)
+        .map_err(|err| format!("Could not read CSS snippet directory: {err}"))?
+    {
+        let entry = entry.map_err(|err| format!("Could not read CSS snippet entry: {err}"))?;
+        let path = entry.path();
+
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(name) = path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+            continue;
+        };
+
+        if clean_css_snippet_name(&name).is_err() {
+            continue;
+        }
+
+        snippets.push(CssSnippetFile {
+            relative_path: relative_string(&root, &path)?,
+            name,
+        });
+    }
+
+    snippets.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+
+    Ok(snippets)
+}
+
+#[tauri::command]
+fn read_css_snippets(
+    root: String,
+    directory: String,
+    enabled: Vec<String>,
+) -> Result<Vec<CssSnippetContent>, String> {
+    let root = vault_root(&root)?;
+    let directory = clean_relative(&directory)?;
+    let snippets_dir = root.join(&directory);
+    let mut snippets = Vec::new();
+
+    for name in enabled {
+        let name = clean_css_snippet_name(&name)?;
+        let path = snippets_dir.join(&name);
+
+        if !path.starts_with(&root) {
+            return Err("CSS snippet path escapes the vault".into());
+        }
+
+        if !path.exists() {
+            continue;
+        }
+
+        if !path.is_file() {
+            return Err(format!("CSS snippet is not a file: {name}"));
+        }
+
+        let content = fs::read_to_string(&path)
+            .map_err(|err| format!("Could not read CSS snippet {name}: {err}"))?;
+
+        if content.len() > 200_000 {
+            return Err(format!("CSS snippet is too large: {name}"));
+        }
+
+        snippets.push(CssSnippetContent { name, content });
+    }
+
+    Ok(snippets)
+}
+
+#[tauri::command]
 fn allow_vault_assets(
     app: tauri::AppHandle,
     root: String,
@@ -2070,6 +2244,8 @@ pub fn run() {
             list_calendar_day_files,
             read_vault_settings,
             write_vault_settings,
+            list_css_snippets,
+            read_css_snippets,
             allow_vault_assets,
             set_window_glass_effect,
             save_vault_asset,
@@ -2145,6 +2321,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: None,
             },
         )
@@ -2180,6 +2357,8 @@ mod tests {
         assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
         assert!(!settings.editor.vim_mode);
         assert!(!settings.appearance.glass_effect);
+        assert_eq!(settings.css_snippets.directory, DEFAULT_CSS_SNIPPET_DIRECTORY);
+        assert!(settings.css_snippets.enabled.is_empty());
         assert!(settings.theme.is_none());
 
         fs::remove_dir_all(root).expect("test root should be removed");
@@ -2206,6 +2385,10 @@ mod tests {
                 },
                 editor: EditorSettings { vim_mode: true },
                 appearance: AppearanceSettings { glass_effect: true },
+                css_snippets: CssSnippetSettings {
+                    directory: "themes/css".into(),
+                    enabled: vec!["quiet.css".into(), "quiet.css".into(), "wide.css".into()],
+                },
                 theme: None,
             },
         )
@@ -2222,6 +2405,8 @@ mod tests {
         );
         assert!(settings.editor.vim_mode);
         assert!(settings.appearance.glass_effect);
+        assert_eq!(settings.css_snippets.directory, "themes/css");
+        assert_eq!(settings.css_snippets.enabled, vec!["quiet.css", "wide.css"]);
         assert!(fs::read_to_string(root.join(SETTINGS_FILE_NAME))
             .expect("settings should be readable")
             .contains("media/images"));
@@ -2243,6 +2428,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: None,
             },
         )
@@ -2257,6 +2443,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: None,
             },
         )
@@ -2264,6 +2451,53 @@ mod tests {
 
         assert!(empty.contains("cannot be empty"));
         assert!(escaped.contains("escapes the vault"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn lists_and_reads_only_approved_css_snippets() {
+        let root = test_root();
+        let snippets_dir = root.join(DEFAULT_CSS_SNIPPET_DIRECTORY);
+        fs::create_dir_all(&snippets_dir).expect("snippet directory should be created");
+        fs::write(snippets_dir.join("wide.css"), ".editor-surface { max-width: 90ch; }\n")
+            .expect("snippet should be created");
+        fs::write(snippets_dir.join("quiet.css"), "body { opacity: 0.99; }\n")
+            .expect("snippet should be created");
+        fs::write(snippets_dir.join("note.md"), "not css\n")
+            .expect("non-css file should be created");
+
+        let snippets = list_css_snippets(
+            root.to_string_lossy().into_owned(),
+            DEFAULT_CSS_SNIPPET_DIRECTORY.into(),
+        )
+        .expect("snippets should list");
+        let names = snippets
+            .iter()
+            .map(|snippet| snippet.name.as_str())
+            .collect::<Vec<_>>();
+
+        assert_eq!(names, vec!["quiet.css", "wide.css"]);
+
+        let approved = read_css_snippets(
+            root.to_string_lossy().into_owned(),
+            DEFAULT_CSS_SNIPPET_DIRECTORY.into(),
+            vec!["wide.css".into()],
+        )
+        .expect("approved snippet should read");
+
+        assert_eq!(approved.len(), 1);
+        assert_eq!(approved[0].name, "wide.css");
+        assert!(approved[0].content.contains("90ch"));
+
+        let escaped = read_css_snippets(
+            root.to_string_lossy().into_owned(),
+            DEFAULT_CSS_SNIPPET_DIRECTORY.into(),
+            vec!["../wide.css".into()],
+        )
+        .expect_err("escaped snippet name should fail");
+
+        assert!(escaped.contains("simple .css file name"));
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
@@ -2285,6 +2519,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: None,
             },
         )
@@ -2302,6 +2537,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: None,
             },
         )
@@ -2335,6 +2571,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: Some("field-notes".into()),
                     callouts: VaultThemeCallouts::default(),
@@ -2393,6 +2630,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts::default(),
@@ -2422,6 +2660,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {
@@ -2478,6 +2717,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {
@@ -2503,6 +2743,7 @@ mod tests {
                 tidbits: TidbitSettings::default(),
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
+                css_snippets: CssSnippetSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {

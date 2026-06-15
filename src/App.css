@@ -2294,6 +2294,18 @@ body.workspace-resizing * {
   gap: 8px;
 }
 
+.css-snippet-list {
+  display: grid;
+  gap: 7px;
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .theme-preset-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));

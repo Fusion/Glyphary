@@ -220,7 +220,11 @@ test("toc fenced code blocks have an inline renderer while staying markdown code
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /value: "toc"/);
+  assert.doesNotMatch(app, /\{ label: "Table of contents", value: "toc" \}/);
+  assert.match(app, /const isRenderedTableOfContents = language === "toc"/);
+  assert.match(app, /!isRenderedTableOfContents \? \(/);
+  assert.match(app, /function codeBlockDecorationClassNames/);
+  assert.match(app, /\.\.\.codeBlockDecorationClassNames\(decorations\)/);
   assert.match(app, /lowlight\.register\("toc", plaintext\)/);
   assert.match(app, /TocCodeBlockRenderer/);
   assert.match(app, /data-toc-block-position/);
@@ -453,6 +457,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /Theme Options/);
   assert.match(app, /type VaultThemeOptions/);
   assert.match(app, /type VaultThemeCalloutSettings/);
+  assert.match(app, /type CssSnippetSettings/);
   assert.match(app, /type CalloutStyle = "plain" \| "striped" \| "card" \| "compact" \| "obsidian"/);
   assert.match(app, /defaultThemeOptions/);
   assert.match(app, /defaultThemeCalloutSettings/);
@@ -462,6 +467,13 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /sameThemeOptions/);
   assert.match(app, /themeOptionsDraft/);
   assert.match(app, /themeCalloutDraft/);
+  assert.match(app, /cssSnippetDraft/);
+  assert.match(app, /CSS Snippets/);
+  assert.match(app, /Load only approved \.css files from a vault-relative directory/);
+  assert.match(app, /data-glyphary-css-snippet/);
+  assert.match(app, /list_css_snippets/);
+  assert.match(app, /read_css_snippets/);
+  assert.match(app, /normalizeCssSnippetSettings/);
   assert.match(app, /Apply optional editor treatments on top of the selected theme/);
   assert.match(app, /Callout Rendering/);
   assert.match(app, /Choose a structured callout layout and icons for this vault theme/);
@@ -558,6 +570,10 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(backend, /"--syntax-purple"/);
   assert.match(backend, /struct VaultThemeOptions/);
   assert.match(backend, /struct VaultThemeCallouts/);
+  assert.match(backend, /struct CssSnippetSettings/);
+  assert.match(backend, /fn list_css_snippets/);
+  assert.match(backend, /fn read_css_snippets/);
+  assert.match(backend, /fn clean_css_snippet_name/);
   assert.match(backend, /THEME_CALLOUT_STYLE_ALLOWLIST/);
   assert.match(backend, /THEME_CALLOUT_ICON_ALLOWLIST/);
   assert.match(backend, /writes_vault_theme_options_without_tokens/);
@@ -653,6 +669,10 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /title: "Insert columns"/);
   assert.match(app, /id: "insert-callout"/);
   assert.match(app, /title: "Insert callout"/);
+  assert.match(app, /id: "insert-table-of-contents"/);
+  assert.match(app, /title: "Insert table of contents"/);
+  assert.match(app, /function appendTableOfContentsBlock\(\)/);
+  assert.match(app, /insertContent\("```toc\\n```", \{ contentType: "markdown" \}\)/);
   assert.match(app, /role="combobox"/);
   assert.match(app, /role="listbox"/);
   assert.match(app, /runCommandPaletteCommand/);

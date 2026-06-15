@@ -101,7 +101,6 @@ const codeLanguages = [
   { label: "HTML", value: "html" },
   { label: "CSS", value: "css" },
   { label: "Markdown", value: "markdown" },
-  { label: "Table of contents", value: "toc" },
 ];
 
 const lowlight = createLowlight();
@@ -150,28 +149,42 @@ function codeBlockDecorationsContainLanguageControl(
   });
 }
 
+function codeBlockDecorationClassNames(decorations: NodeViewProps["decorations"]) {
+  return decorations
+    .map((decoration) => decoration.type.attrs.class)
+    .filter((className): className is string => typeof className === "string");
+}
+
 function CodeBlockNodeView({ decorations, node, updateAttributes }: NodeViewProps) {
   const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
   const isLanguageControlActive = codeBlockDecorationsContainLanguageControl(decorations);
+  const isRenderedTableOfContents = language === "toc";
+  const className = [
+    "code-block-node",
+    isLanguageControlActive ? "active" : "",
+    ...codeBlockDecorationClassNames(decorations),
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
-    <NodeViewWrapper
-      className={isLanguageControlActive ? "code-block-node active" : "code-block-node"}
-    >
-      <label className="code-block-language-control" contentEditable={false}>
-        <span>Lang</span>
-        <input
-          aria-label="Code block language"
-          list="code-language-options"
-          onChange={(event) => updateAttributes({ language: event.currentTarget.value })}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-          onMouseDown={(event) => event.stopPropagation()}
-          placeholder="plain"
-          spellCheck={false}
-          value={language}
-        />
-      </label>
+    <NodeViewWrapper className={className}>
+      {!isRenderedTableOfContents ? (
+        <label className="code-block-language-control" contentEditable={false}>
+          <span>Lang</span>
+          <input
+            aria-label="Code block language"
+            list="code-language-options"
+            onChange={(event) => updateAttributes({ language: event.currentTarget.value })}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            placeholder="plain"
+            spellCheck={false}
+            value={language}
+          />
+        </label>
+      ) : null}
       <pre>
         <NodeViewContent<"code"> as="code" />
       </pre>
@@ -1122,6 +1135,21 @@ type SavedAsset = {
   relativePath: string;
 };
 
+type CssSnippetFile = {
+  name: string;
+  relativePath: string;
+};
+
+type CssSnippetContent = {
+  name: string;
+  content: string;
+};
+
+type CssSnippetSettings = {
+  directory: string;
+  enabled: string[];
+};
+
 type VaultThemeSettings = {
   presetId?: string | null;
   callouts?: VaultThemeCalloutSettings | null;
@@ -1186,6 +1214,7 @@ type VaultSettings = {
   tidbits?: TidbitSettings | null;
   editor?: EditorBehaviorSettings | null;
   appearance?: VaultAppearanceSettings | null;
+  cssSnippets?: CssSnippetSettings | null;
   theme?: VaultThemeSettings | null;
 };
 
@@ -1460,6 +1489,7 @@ const workspaceStorageKey = "glyphary.workspace";
 const appearanceStorageKey = "glyphary.appearance";
 const closedDrawerWidth = 48;
 const workspaceResizeHandleWidth = 10;
+const defaultCssSnippetDirectory = "_snippets_";
 const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
   enabled: true,
   headerName: defaultFrontmatterPillHeader,
@@ -1478,6 +1508,10 @@ const defaultTidbitSettings: TidbitSettings = {
 };
 const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
   glassEffect: false,
+};
+const defaultCssSnippetSettings: CssSnippetSettings = {
+  directory: defaultCssSnippetDirectory,
+  enabled: [],
 };
 const defaultThemeOptions: VaultThemeOptions = {
   colorfulHeadings: false,
@@ -2484,6 +2518,43 @@ function sameVaultAppearanceSettings(
   );
 }
 
+function cleanCssSnippetFileName(name: string) {
+  const cleanName = name.trim();
+
+  return /^[A-Za-z0-9_. -]+\.css$/.test(cleanName) && !cleanName.includes("..")
+    ? cleanName
+    : null;
+}
+
+function normalizeCssSnippetSettings(settings: CssSnippetSettings | undefined | null) {
+  const enabled = Array.from(
+    new Set(
+      (settings?.enabled ?? [])
+        .map((name) => cleanCssSnippetFileName(name))
+        .filter((name): name is string => Boolean(name)),
+    ),
+  ).sort();
+
+  return {
+    directory: settings?.directory?.trim() || defaultCssSnippetSettings.directory,
+    enabled,
+  };
+}
+
+function sameCssSnippetSettings(
+  left: CssSnippetSettings | undefined | null,
+  right: CssSnippetSettings | undefined | null,
+) {
+  const normalizedLeft = normalizeCssSnippetSettings(left);
+  const normalizedRight = normalizeCssSnippetSettings(right);
+
+  return (
+    normalizedLeft.directory === normalizedRight.directory &&
+    normalizedLeft.enabled.length === normalizedRight.enabled.length &&
+    normalizedLeft.enabled.every((name, index) => name === normalizedRight.enabled[index])
+  );
+}
+
 function resolveAppearance(appearance: AppearanceMode): Exclude<AppearanceMode, "auto"> {
   if (appearance === "light" || appearance === "dark") {
     return appearance;
@@ -3138,6 +3209,7 @@ function App() {
     tidbits: defaultTidbitSettings,
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
+    cssSnippets: defaultCssSnippetSettings,
     theme: null,
   });
   const [settingsDraft, setSettingsDraft] = useState(defaultVaultAssetDirectory);
@@ -3159,6 +3231,10 @@ function App() {
   const [tidbitSettings, setTidbitSettings] = useState<TidbitSettings>(defaultTidbitSettings);
   const [vaultAppearanceDraft, setVaultAppearanceDraft] =
     useState<VaultAppearanceSettings>(defaultVaultAppearanceSettings);
+  const [cssSnippetDraft, setCssSnippetDraft] =
+    useState<CssSnippetSettings>(defaultCssSnippetSettings);
+  const [cssSnippetFiles, setCssSnippetFiles] = useState<CssSnippetFile[]>([]);
+  const [cssSnippetContents, setCssSnippetContents] = useState<CssSnippetContent[]>([]);
   const [selectedThemePresetIdDraft, setSelectedThemePresetIdDraft] = useState<string | null>(null);
   const [themeDraft, setThemeDraft] = useState<Record<string, string>>({});
   const [themeOptionsDraft, setThemeOptionsDraft] =
@@ -3250,6 +3326,7 @@ function App() {
     tidbits: defaultTidbitSettings,
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
+    cssSnippets: defaultCssSnippetSettings,
     theme: null,
   });
   // Track only properties we applied from the theme builder so switching vaults
@@ -3518,6 +3595,10 @@ function App() {
     return normalizeVaultAppearanceSettings(vaultSettings.appearance);
   }
 
+  function savedCssSnippetSettings() {
+    return normalizeCssSnippetSettings(vaultSettings.cssSnippets);
+  }
+
   function settingsHaveChanges() {
     return (
       settingsDraft !== vaultSettings.assetDirectory ||
@@ -3527,6 +3608,7 @@ function App() {
       !sameAutosaveSettings(autosaveDraft, savedAutosaveSettings()) ||
       !sameTidbitSettings(tidbitDraft, savedTidbitSettings()) ||
       !sameVaultAppearanceSettings(vaultAppearanceDraft, savedVaultAppearanceSettings()) ||
+      !sameCssSnippetSettings(cssSnippetDraft, savedCssSnippetSettings()) ||
       selectedThemePresetIdDraft !== savedThemePresetId() ||
       !sameThemeTokens(themeDraft, savedThemeTokens()) ||
       !sameThemeOptions(themeOptionsDraft, savedThemeOptions()) ||
@@ -3550,6 +3632,7 @@ function App() {
     setAutosaveDraft(savedAutosaveSettings());
     setTidbitDraft(savedTidbitSettings());
     setVaultAppearanceDraft(savedVaultAppearanceSettings());
+    setCssSnippetDraft(savedCssSnippetSettings());
     setSelectedThemePresetIdDraft(savedThemePresetId());
     setThemeDraft(savedThemeTokens());
     setThemeOptionsDraft(savedThemeOptions());
@@ -4493,6 +4576,33 @@ function App() {
     setEntries(nextEntries);
   }
 
+  async function refreshCssSnippets(
+    root = vaultRoot,
+    settings = cssSnippetDraft,
+  ) {
+    if (!root || !isTauri()) {
+      setCssSnippetFiles([]);
+      setCssSnippetContents([]);
+      return;
+    }
+
+    const normalizedSettings = normalizeCssSnippetSettings(settings);
+    const [files, contents] = await Promise.all([
+      invoke<CssSnippetFile[]>("list_css_snippets", {
+        root,
+        directory: normalizedSettings.directory,
+      }),
+      invoke<CssSnippetContent[]>("read_css_snippets", {
+        root,
+        directory: normalizedSettings.directory,
+        enabled: normalizedSettings.enabled,
+      }),
+    ]);
+
+    setCssSnippetFiles(files);
+    setCssSnippetContents(contents);
+  }
+
   async function loadVaultSettings(root: string) {
     const settings = isTauri()
       ? await invoke<VaultSettings>("read_vault_settings", { root })
@@ -4504,6 +4614,7 @@ function App() {
           tidbits: defaultTidbitSettings,
           editor: defaultEditorBehaviorSettings,
           appearance: defaultVaultAppearanceSettings,
+          cssSnippets: defaultCssSnippetSettings,
           theme: null,
     };
     const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
@@ -4516,6 +4627,7 @@ function App() {
     const autosave = normalizeAutosaveSettings(settings.autosave);
     const tidbits = normalizeTidbitSettings(settings.tidbits);
     const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
+    const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
 
     const normalizedSettings = {
       ...settings,
@@ -4525,6 +4637,7 @@ function App() {
       tidbits,
       editor: editorSettings,
       appearance: vaultAppearanceSettings,
+      cssSnippets,
       theme:
         Object.keys(themeTokens).length > 0 ||
         !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -4550,6 +4663,7 @@ function App() {
     setTidbitDraft(tidbits);
     setTidbitSettings(tidbits);
     setVaultAppearanceDraft(vaultAppearanceSettings);
+    setCssSnippetDraft(cssSnippets);
     setSelectedThemePresetIdDraft(themePresetId);
     setThemeDraft(themeTokens);
     setThemeOptionsDraft(themeOptions);
@@ -4563,6 +4677,8 @@ function App() {
         assetDirectory: settings.assetDirectory,
       });
     }
+
+    await refreshCssSnippets(root, cssSnippets);
 
     return settings;
   }
@@ -4583,6 +4699,7 @@ function App() {
           tidbits: normalizeTidbitSettings(tidbitDraft),
           editor: normalizeEditorBehaviorSettings(editorBehaviorDraft),
           appearance: normalizeVaultAppearanceSettings(vaultAppearanceDraft),
+          cssSnippets: normalizeCssSnippetSettings(cssSnippetDraft),
           theme:
             Object.keys(normalizeThemeTokens(themeDraft)).length > 0 ||
             !sameThemeOptions(themeOptionsDraft, defaultThemeOptions) ||
@@ -4606,6 +4723,7 @@ function App() {
       const autosave = normalizeAutosaveSettings(settings.autosave);
       const tidbits = normalizeTidbitSettings(settings.tidbits);
       const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
+      const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
       const normalizedSettings = {
         ...settings,
         frontmatterPills,
@@ -4614,6 +4732,7 @@ function App() {
         tidbits,
         editor: editorSettings,
         appearance: vaultAppearanceSettings,
+        cssSnippets,
         theme:
           Object.keys(themeTokens).length > 0 ||
           !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -4643,6 +4762,7 @@ function App() {
       setTidbitDraft(tidbits);
       setTidbitSettings(tidbits);
       setVaultAppearanceDraft(vaultAppearanceSettings);
+      setCssSnippetDraft(cssSnippets);
       setSelectedThemePresetIdDraft(themePresetId);
       setThemeDraft(themeTokens);
       setThemeOptionsDraft(themeOptions);
@@ -4651,6 +4771,7 @@ function App() {
         root: vaultRoot,
         assetDirectory: settings.assetDirectory,
       });
+      await refreshCssSnippets(vaultRoot, cssSnippets);
       await loadEntries(vaultRoot, currentDir);
       setStatus("Saved vault settings");
     } catch (error) {
@@ -5677,6 +5798,18 @@ function App() {
     setEditorBody(`${markdown.trimEnd()}\n\n${emptyCalloutMarkdown}`, false);
   }
 
+  function appendTableOfContentsBlock() {
+    if (!editor) {
+      return;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .insertContent("```toc\n```", { contentType: "markdown" })
+      .run();
+  }
+
   async function createTidbit() {
     if (!vaultRoot) {
       setStatus("Open a vault before creating a tidbit");
@@ -5818,6 +5951,12 @@ function App() {
       title: "Insert callout",
       description: "Add a note callout block",
       run: appendCallout,
+    },
+    {
+      id: "insert-table-of-contents",
+      title: "Insert table of contents",
+      description: "Add a rendered table of contents block",
+      run: appendTableOfContentsBlock,
     },
   ];
   const normalizedCommandPaletteQuery = commandPaletteQuery.trim().toLowerCase();
@@ -6297,6 +6436,11 @@ function App() {
 
   return (
     <main className={appShellClassName} style={appShellStyle}>
+      {cssSnippetContents.map((snippet) => (
+        <style data-glyphary-css-snippet={snippet.name} key={snippet.name}>
+          {snippet.content}
+        </style>
+      ))}
       <datalist id="code-language-options">
         {codeLanguages.map((language) => (
           <option key={language.value || "plain"} value={language.value}>
@@ -7153,6 +7297,81 @@ function App() {
                           <small>{preset.description}</small>
                         </button>
                       ))}
+                    </div>
+                  </section>
+                  <section className="settings-section" aria-label="CSS snippets">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>CSS Snippets</h3>
+                        <p>Load only approved .css files from a vault-relative directory.</p>
+                      </div>
+                      <button
+                        className="inline-action"
+                        disabled={!vaultRoot}
+                        type="button"
+                        onClick={() => {
+                          void refreshCssSnippets(vaultRoot, cssSnippetDraft).catch((error) => {
+                            setStatus(error instanceof Error ? error.message : String(error));
+                          });
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <label>
+                      <span>Snippets directory</span>
+                      <input
+                        disabled={!vaultRoot}
+                        value={cssSnippetDraft.directory}
+                        onBlur={() => {
+                          void refreshCssSnippets(vaultRoot, cssSnippetDraft).catch((error) => {
+                            setStatus(error instanceof Error ? error.message : String(error));
+                          });
+                        }}
+                        onChange={(event) => {
+                          const directory = event.currentTarget.value;
+
+                          setCssSnippetDraft((settings) => ({
+                            ...settings,
+                            directory,
+                          }));
+                        }}
+                        placeholder={defaultCssSnippetDirectory}
+                      />
+                    </label>
+                    <div className="css-snippet-list">
+                      {cssSnippetFiles.length > 0 ? (
+                        cssSnippetFiles.map((snippet) => {
+                          const checked = cssSnippetDraft.enabled.includes(snippet.name);
+
+                          return (
+                            <label className="settings-check-control" key={snippet.name}>
+                              <input
+                                checked={checked}
+                                disabled={!vaultRoot}
+                                type="checkbox"
+                                onChange={(event) => {
+                                  const enabled = event.currentTarget.checked;
+                                  const nextSettings = normalizeCssSnippetSettings({
+                                    ...cssSnippetDraft,
+                                    enabled: enabled
+                                      ? [...cssSnippetDraft.enabled, snippet.name]
+                                      : cssSnippetDraft.enabled.filter((name) => name !== snippet.name),
+                                  });
+
+                                  setCssSnippetDraft(nextSettings);
+                                  void refreshCssSnippets(vaultRoot, nextSettings).catch((error) => {
+                                    setStatus(error instanceof Error ? error.message : String(error));
+                                  });
+                                }}
+                              />
+                              <span>{snippet.name}</span>
+                            </label>
+                          );
+                        })
+                      ) : (
+                        <p className="settings-note">No CSS snippets found.</p>
+                      )}
                     </div>
                   </section>
                   <section className="settings-section" aria-label="Theme options">

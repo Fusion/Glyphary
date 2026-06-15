@@ -25,6 +25,7 @@ Glyphary is a Tauri desktop Markdown editor built with React, TypeScript, and Ti
 - A ```` ```toc ```` fenced block renders as an inline table of contents when not being edited.
 - Light, dark, and auto appearance modes.
 - Vault-specific theme builder with live preview and a first-pass Obsidian CSS variable compatibility layer.
+- Vault CSS snippets loaded only after individual `.css` files are approved in Settings.
 - Optional vault-scoped glass window effect on supported native windows.
 - Quick command palette opened with `Cmd+P` or `Ctrl+P`.
 - Native macOS/Tauri menu actions plus the in-window File menu.
@@ -225,6 +226,8 @@ Currently supported setting:
 - `tidbits.pathPattern`: where `Create Tidbit` creates fast notes. Defaults to `__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md`.
 - `editor.vimMode`: whether editor panes use Vim-style keybindings. Defaults to `false`.
 - `appearance.glassEffect`: whether the app window previews a translucent native glass material. Defaults to `false`.
+- `cssSnippets.directory`: vault-relative directory searched for CSS snippets. Defaults to `_snippets_`.
+- `cssSnippets.enabled`: approved `.css` file names from the snippets directory.
 - `theme.presetId`: the selected theme template, when one is active.
 - `theme.tokens`: vault-specific theme token overrides created by theme templates or the Settings theme builder.
 
@@ -381,7 +384,9 @@ Glyphary has built-in light, dark, and auto appearance modes. The current theme 
 
 The app maps its own internal theme tokens through those variables, and it applies `theme-light` / `theme-dark` classes based on the resolved appearance. This is a compatibility foundation for future Obsidian-theme imports, not full Obsidian theme support yet. Obsidian themes can still depend on Obsidian-specific DOM structure and selectors that Glyphary does not currently emulate.
 
-The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.glyphary`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors, and the selected template id is saved with the vault settings. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected template and token values to `<vault root>/.glyphary`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
+The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, approved CSS snippets, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.glyphary`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors, and the selected template id is saved with the vault settings. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected template and token values to `<vault root>/.glyphary`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
+
+CSS snippets are read from the configured vault-relative snippets directory, defaulting to `_snippets_`. Only simple `.css` files in that directory are listed, and only files explicitly checked in Settings are injected into the app. This gives a controlled escape hatch for vault-specific styling without automatically loading every CSS file found on disk.
 
 The app also exposes an icon-only Auto/Light/Dark appearance control for quick switching.
 
