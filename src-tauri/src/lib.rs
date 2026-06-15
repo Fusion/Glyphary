@@ -97,6 +97,8 @@ fn vault_root(root: &str) -> Result<PathBuf, String> {
 }
 
 fn clean_relative(relative: &str) -> Result<PathBuf, String> {
+    // All frontend paths are vault-relative strings. Reject roots, prefixes,
+    // and parent traversal before joining with the canonical vault root.
     let mut clean = PathBuf::new();
 
     for component in Path::new(relative).components() {
@@ -124,6 +126,8 @@ fn clean_settings_asset_directory(asset_directory: &str) -> Result<PathBuf, Stri
 
 fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
     let asset_directory = clean_settings_asset_directory(&settings.asset_directory)?;
+    // Store settings with forward slashes even on Windows so .medit remains
+    // portable and matches the frontend's markdown asset references.
     let asset_directory = asset_directory
         .components()
         .filter_map(|component| match component {
@@ -163,6 +167,8 @@ fn resolve_for_write(root: &str, relative: &str) -> Result<(PathBuf, PathBuf), S
     let parent = fs::canonicalize(parent)
         .map_err(|err| format!("Could not resolve target parent: {err}"))?;
 
+    // The target may not exist yet, so the parent is the canonical boundary
+    // check for writes and creates.
     if !parent.starts_with(&root) {
         return Err("Path escapes the vault".into());
     }
@@ -306,6 +312,8 @@ fn normalize_preview(line: &str) -> String {
 }
 
 fn push_search_result(results: &mut Vec<SearchResult>, result: SearchResult) {
+    // Search is intended for navigation, not exhaustive indexing. A hard cap
+    // keeps IPC payloads and drawer rendering predictable in large vaults.
     if results.len() < SEARCH_RESULT_LIMIT {
         results.push(result);
     }
@@ -396,6 +404,8 @@ fn search_content_with_ripgrep(root: &Path, query: &str) -> Result<Vec<SearchRes
 
     let mut results = Vec::new();
 
+    // rg --json preserves path, line text, and line number without parsing
+    // terminal-oriented output. Unknown event types are deliberately ignored.
     for line in String::from_utf8_lossy(&output.stdout).lines() {
         let Ok(event) = serde_json::from_str::<RipgrepEvent>(line) else {
             continue;
@@ -462,6 +472,7 @@ fn list_vault_dir(root: String, relative: String) -> Result<Vec<VaultEntry>, Str
     let mut entries = fs::read_dir(&dir)
         .map_err(|err| format!("Could not list directory: {err}"))?
         .filter_map(|entry| match entry {
+            // .medit is vault-local application state, not a user note.
             Ok(entry) if entry.file_name().to_string_lossy() == SETTINGS_FILE_NAME => None,
             other => Some(other),
         })
@@ -579,6 +590,8 @@ fn open_directory_shadow_file(root: String, relative: String) -> Result<OpenedFi
         .into_owned();
     let shadow = dir.join(format!("{dir_name}.md"));
 
+    // A directory can be opened as an editable note by materializing a shadow
+    // markdown file inside it. Subsequent opens edit the same file.
     if !shadow.exists() {
         fs::write(&shadow, format!("# {dir_name}\n"))
             .map_err(|err| format!("Could not create directory note: {err}"))?;
@@ -595,6 +608,8 @@ fn open_calendar_day_file(root: String, relative: String, title: String) -> Resu
     let root_path = vault_root(&root)?;
     let relative_path = clean_relative(&relative)?;
 
+    // Calendar creation is intentionally scoped to ROOT/Calendar so double-click
+    // actions in the calendar drawer cannot create arbitrary vault files.
     if !relative_path.starts_with("Calendar") {
         return Err("Calendar day files must live under Calendar".into());
     }
@@ -703,6 +718,8 @@ fn allow_vault_assets(
     let root = vault_root(&root)?;
     let assets = root.join(clean_settings_asset_directory(&asset_directory)?);
 
+    // convertFileSrc only works for directories allowed in Tauri's asset scope.
+    // This permission is per-vault and must be refreshed when settings change.
     app.asset_protocol_scope()
         .allow_directory(&assets, true)
         .map_err(|err| format!("Could not allow vault assets: {err}"))
@@ -730,6 +747,8 @@ fn save_vault_asset(
 
     let file_name = sanitize_asset_file_name(&file_name);
     let path = unique_asset_path(&assets, &file_name);
+    // Never overwrite a pasted/dropped asset. The frontend inserts the stored
+    // filename returned here, so collision suffixes stay visible in markdown.
     fs::write(&path, bytes).map_err(|err| format!("Could not write image asset: {err}"))?;
 
     let stored_name = path
@@ -757,6 +776,8 @@ fn search_vault(
     }
 
     if has_ripgrep() {
+        // Prefer rg when available, but keep the fallback below so the app
+        // remains functional on machines without command-line tooling.
         let mut results = search_filenames_with_ripgrep(&root, query)?;
 
         if include_content && results.len() < SEARCH_RESULT_LIMIT {
@@ -899,6 +920,8 @@ pub fn run() {
             )
         })
         .on_menu_event(|app, event| {
+            // Menu items emit into the webview instead of duplicating app
+            // behavior in Rust; React owns document state and dirty tracking.
             if event.id() == "open_vault" {
                 let _ = app.emit("open-vault-requested", ());
             } else if event.id() == "save" {

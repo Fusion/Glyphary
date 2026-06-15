@@ -157,6 +157,9 @@ export function findTabAcrossSplitGroups<Tab extends { id: string }>(
   groups: Record<SplitGroupId, SplitTabGroup<Tab>>,
   tabId: string,
 ) {
+  // A file should have one editable owner at a time. When a path is already
+  // open in either split, the UI switches to that tab instead of creating a
+  // second copy that could later race on save.
   const groupIds: SplitGroupId[] = ["primary", "secondary"];
 
   for (const groupId of groupIds) {
@@ -178,6 +181,9 @@ export function remainingGroupAfterSplitPaneClose<Tab extends { id: string }>(
   groups: Record<SplitGroupId, SplitTabGroup<Tab>>,
   closedGroupId: SplitGroupId,
 ) {
+  // The rest of the app assumes there is always a primary editor group. When
+  // closing the last tab in one split pane, the surviving pane is normalized
+  // back into primary rather than keeping a visible "secondary-only" state.
   const remainingGroupId: SplitGroupId = closedGroupId === "primary" ? "secondary" : "primary";
   const remainingGroup = groups[remainingGroupId];
   const activeTab =
@@ -207,6 +213,8 @@ export function clampResizableDrawerWidth(
   minimumWidth = minResizableDrawerWidth,
   minimumEditorWidth = minEditorWorkspaceWidth,
 ) {
+  // Drawer dragging is constrained by the editor, not just the drawer itself:
+  // shrinking the center area too far makes the WYSIWYG surface unusable.
   const availableWidth = workspaceWidth - oppositeWidth - handleWidth - minimumEditorWidth;
   const maximumWidth = Math.max(minimumWidth, availableWidth);
 
@@ -239,6 +247,9 @@ export function calendarDayTitle(date: Date) {
 }
 
 export function calendarDayRelativePath(date: Date) {
+  // Calendar notes intentionally use the human-readable title as the file
+  // name. Keep this format aligned with calendarPathDateKey so existing-note
+  // dots can be derived from disk without a sidecar index.
   return `${calendarDirectory}/${calendarDayTitle(date)}.md`;
 }
 
@@ -346,6 +357,9 @@ export function markdownHeadings(markdown: string): TocEntry[] {
 }
 
 export function splitMetaHeader(content: string): MarkdownParts {
+  // Frontmatter is hidden from the WYSIWYG editor but must round-trip exactly
+  // enough for save. Only complete YAML/TOML-style opening and closing fences
+  // are treated as metadata; unterminated fences remain part of the document.
   const delimiter = content.startsWith("---\n") || content.startsWith("---\r\n")
     ? "---"
     : content.startsWith("+++\n") || content.startsWith("+++\r\n")
@@ -401,6 +415,9 @@ export function isUrlLike(value: string) {
 }
 
 export function cleanVaultAssetReference(value: string) {
+  // Local image syntax accepts Obsidian-style aliases and percent-encoded
+  // markdown URLs, but never absolute URLs or path traversal. The backend
+  // performs its own filesystem checks; this keeps the editor model clean.
   const trimmed = value.trim();
 
   if (!trimmed || isUrlLike(trimmed)) {

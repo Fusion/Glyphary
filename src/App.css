@@ -115,6 +115,7 @@ body,
 #root {
   width: 100%;
   height: 100%;
+  /* Pane contents scroll independently; the full app shell should not. */
   overflow: hidden;
 }
 
@@ -138,6 +139,7 @@ button {
 .drawer-header,
 .calendar-toolbar,
 .statusbar {
+  /* Chrome labels should not highlight during normal pointer gestures. */
   user-select: none;
 }
 
@@ -147,6 +149,7 @@ button {
 .vault-search input,
 .markdown-import textarea,
 .drawer-pane pre {
+  /* Keep real document/source text selectable even inside non-selectable chrome. */
   user-select: text;
 }
 
@@ -371,6 +374,7 @@ h2 {
     minmax(0, 1fr)
     var(--drawer-resizer-width, 0)
     var(--drawer-width, 48px);
+  /* Gaps are represented by resizer columns so pointer targets have stable width. */
   gap: 0;
 }
 
@@ -410,6 +414,7 @@ h2 {
 }
 
 .workspace-resizer::before {
+  /* The hit target is the full grid column; this draws only the visual grip. */
   position: absolute;
   top: 14px;
   bottom: 14px;

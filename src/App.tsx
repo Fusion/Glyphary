@@ -82,6 +82,8 @@ const codeLanguages = [
 
 const lowlight = createLowlight();
 
+// Keep lowlight registration explicit so Markdown language names can be
+// serialized directly from fenced code blocks and still highlight on reload.
 lowlight.register("plaintext", plaintext);
 lowlight.register("python", python);
 lowlight.register("sh", bash);
@@ -307,6 +309,9 @@ function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => str
     renderHTML({ HTMLAttributes }) {
       const { vaultTarget, ...renderedAttributes } = HTMLAttributes;
 
+      // vaultTarget is an editor-only marker used to round-trip ![[asset]]
+      // syntax. It must not leak into the rendered DOM; src already points to
+      // the Tauri asset URL that the webview can display.
       return ["img", mergeAttributes(renderedAttributes)];
     },
 
@@ -341,6 +346,9 @@ function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => str
     },
 
     parseMarkdown: (token: MarkdownToken, helpers) => {
+      // Tiptap's image token also receives normal markdown images. If the href
+      // is a safe local asset reference, resolve it against the vault asset
+      // directory while preserving enough metadata to write markdown back.
       const vaultTarget = token.vaultTarget
         ? cleanVaultAssetReference(String(token.vaultTarget))
         : null;
@@ -391,6 +399,9 @@ function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => str
 }
 
 function App() {
+  // The active editor group is mirrored into these top-level document fields
+  // because drawers, toolbar state, save commands, and native menu events all
+  // operate on "the current document" regardless of which split pane owns it.
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [markdownDraft, setMarkdownDraft] = useState(initialMarkdown);
   const [editorFocused, setEditorFocused] = useState(false);
@@ -452,6 +463,9 @@ function App() {
     primary: false,
     secondary: false,
   });
+  // Native menu handlers are registered once. Refs keep those listeners pointed
+  // at the latest React closures without re-registering Tauri events on every
+  // render.
   const openVaultRef = useRef<() => void | Promise<void>>(() => undefined);
   const saveCurrentFileRef = useRef<() => void | Promise<void>>(() => undefined);
   const resetDocumentRef = useRef<() => void>(() => undefined);
@@ -518,6 +532,8 @@ function App() {
   }
 
   function setEditorGroupsAndRef(nextGroups: Record<EditorGroupId, EditorGroupState>) {
+    // Tiptap callbacks can fire before React state has committed. The ref is
+    // the synchronous source of truth for cross-pane tab operations.
     editorGroupsRef.current = nextGroups;
     setEditorGroups(nextGroups);
   }
@@ -589,6 +605,8 @@ function App() {
     const nextMarkdown = groupEditor?.getMarkdown() ?? tab?.markdown ?? initialMarkdown;
     const isActiveGroup = groupId === activeGroupIdRef.current;
 
+    // Inactive panes do not update the top-level mirrors, so their snapshot has
+    // to be read from the owning tab plus the editor instance if it exists.
     return {
       activeFile: isActiveGroup ? activeFileRef.current : tab?.activeFile ?? null,
       pageName: isActiveGroup ? pageNameRef.current : tab?.pageName ?? "Untitled note",
@@ -654,6 +672,8 @@ function App() {
     }
 
     if (groupId !== activeGroupIdRef.current) {
+      // Loading an inactive split pane should update its editor content, but
+      // must not move drawers, toolbar state, or persisted workspace focus.
       groupEditor.commands.setContent(tab.markdown, { contentType: "markdown" });
       window.setTimeout(() => {
         hydratingEditor.current[groupId] = false;
@@ -745,6 +765,9 @@ function App() {
       const nextGroups = createEditorGroups(promotedGroup.activeTab);
       nextGroups.primary = promotedGroup.primaryGroup;
 
+      // Closing the final tab in a split pane removes the pane. If the primary
+      // pane is the one being closed, the secondary group is promoted so the
+      // rest of the app never has to handle a secondary-only editor layout.
       activeGroupIdRef.current = "primary";
       setActiveGroupId("primary");
       setSplitOpen(false);
@@ -920,6 +943,8 @@ function App() {
         }
 
         if (!hydratingEditor.current[groupId]) {
+          // Programmatic hydration calls setContent too; only user edits should
+          // dirty the tab and surface an unsaved-change status.
           if (isActiveGroup) {
             setDirty(true);
           }
@@ -1075,6 +1100,8 @@ function App() {
         const files = await invoke<string[]>("list_calendar_day_files", {
           root: vaultRoot,
         });
+        // The backend returns every calendar file; the UI only needs markers
+        // for the currently visible month grid.
         const visibleDateKeys = new Set(calendarDays.map(calendarDateKey));
         const existing = files
           .map(calendarPathDateKey)
@@ -1296,6 +1323,8 @@ function App() {
     setSettingsDraft(settings.assetDirectory);
 
     if (isTauri()) {
+      // Tauri's asset protocol is deny-by-default. Re-allow the configured
+      // asset directory whenever a vault is opened or settings change.
       await invoke("allow_vault_assets", {
         root,
         assetDirectory: settings.assetDirectory,
@@ -1341,6 +1370,9 @@ function App() {
     const requestedName = pageNameRef.current.trim();
 
     if (requestedName && requestedName !== fileNameWithoutMarkdownExtension(file.name)) {
+      // The displayed page name is the rename source of truth. Renaming first
+      // lets the subsequent write target the new path and keeps tab IDs stable
+      // with the file-relative-path convention.
       const previousTabId = editorGroupsRef.current[groupId].activeTabId;
       const renamed = await invoke<OpenedFile>("rename_vault_file", {
         root: vaultRoot,
@@ -1470,6 +1502,9 @@ function App() {
 
     const unlisteners: Array<() => void> = [];
 
+    // Native macOS menus live in Rust, but all document state lives here. The
+    // bridge is event-based so menu commands and in-window buttons share the
+    // same save/open/new code paths.
     listen("open-vault-requested", () => {
       void openVaultRef.current();
     })
@@ -1537,6 +1572,8 @@ function App() {
       const existing = findOpenFileTab(relativePath);
 
       if (existing) {
+        // Avoid two editable copies of the same file. Switching to the existing
+        // tab prevents divergent dirty states for one vault path.
         activeGroupIdRef.current = existing.groupId;
         setActiveGroupId(existing.groupId);
         hydrateDocumentTab(existing.tab, existing.groupId);
@@ -1705,6 +1742,8 @@ function App() {
   function applyMarkdown() {
     const parts = splitMetaHeader(markdownDraft);
 
+    // Source edits may include frontmatter pasted by hand. Split it back out so
+    // the WYSIWYG body and metadata editor keep their separate responsibilities.
     if (parts.metaHeader) {
       setActiveMetaHeader(parts.metaHeader, parts.metaDelimiter);
     }
@@ -1860,6 +1899,8 @@ function App() {
     const startHandleWidth = totalResizeHandleWidth();
     document.body.classList.add("workspace-resizing");
 
+    // Pointer capture on the tiny separator is brittle once the cursor leaves
+    // the handle, so document-level listeners own the drag until pointerup.
     const handlePointerMove = (moveEvent: PointerEvent) => {
       const delta = moveEvent.clientX - startX;
 
@@ -1974,6 +2015,8 @@ function App() {
     setSplitOpen(true);
 
     if (secondaryEditor) {
+      // The secondary Tiptap instance already exists even while hidden; hydrate
+      // it immediately so opening the split does not show stale content.
       hydrateDocumentTab(secondaryTab, "secondary");
     }
 
@@ -1989,6 +2032,9 @@ function App() {
     const paneMetaHeader = isActiveGroup ? metaHeader : groupActiveTab?.metaHeader ?? "";
     const paneActiveFile = isActiveGroup ? activeFile : groupActiveTab?.activeFile ?? null;
 
+    // Only the active pane renders the toolbar. Toolbar actions are tied to the
+    // active editor mirror; hiding inactive toolbars avoids commands landing in
+    // the wrong split.
     return (
       <div
         className={isActiveGroup ? "editor-pane active-group" : "editor-pane"}
