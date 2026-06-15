@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::HashMap,
     fs,
     path::{Component, Path, PathBuf},
     process::Command,
@@ -36,6 +37,23 @@ struct SavedAsset {
 #[serde(rename_all = "camelCase")]
 struct VaultSettings {
     asset_directory: String,
+    #[serde(default)]
+    frontmatter_pills: FrontmatterPillSettings,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    theme: Option<VaultTheme>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FrontmatterPillSettings {
+    enabled: bool,
+    header_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VaultTheme {
+    tokens: HashMap<String, String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -76,12 +94,55 @@ enum RipgrepEvent {
 const SEARCH_RESULT_LIMIT: usize = 200;
 const MAX_ASSET_BYTES: usize = 50 * 1024 * 1024;
 const DEFAULT_ASSET_DIRECTORY: &str = "_assets_";
+const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
 const SETTINGS_FILE_NAME: &str = ".medit";
+const THEME_TOKEN_ALLOWLIST: &[&str] = &[
+    "--medit-accent",
+    "--medit-accent-text",
+    "--medit-app-bg",
+    "--medit-border",
+    "--medit-border-soft",
+    "--medit-border-strong",
+    "--medit-code-bg",
+    "--medit-code-text",
+    "--medit-editor-text",
+    "--medit-focus",
+    "--medit-heading",
+    "--medit-hover",
+    "--medit-mono-text",
+    "--medit-muted",
+    "--medit-muted-strong",
+    "--medit-quote-border",
+    "--medit-quote-text",
+    "--medit-selection",
+    "--medit-shadow",
+    "--medit-shadow-strong",
+    "--medit-surface",
+    "--medit-surface-muted",
+    "--medit-table-border",
+    "--medit-text",
+    "--medit-text-soft",
+    "--syntax-blue",
+    "--syntax-green",
+    "--syntax-muted",
+    "--syntax-yellow",
+];
 
 impl Default for VaultSettings {
     fn default() -> Self {
         Self {
             asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+            frontmatter_pills: FrontmatterPillSettings::default(),
+            theme: None,
+        }
+    }
+}
+
+impl Default for FrontmatterPillSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            header_name: DEFAULT_FRONTMATTER_PILL_HEADER.into(),
         }
     }
 }
@@ -137,11 +198,80 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
         .collect::<Vec<_>>()
         .join("/");
 
+    let theme = clean_theme(settings.theme)?;
+    let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
+
     if asset_directory.is_empty() {
         Err("Asset directory cannot be empty".into())
     } else {
-        Ok(VaultSettings { asset_directory })
+        Ok(VaultSettings {
+            asset_directory,
+            frontmatter_pills,
+            theme,
+        })
     }
+}
+
+fn clean_frontmatter_pill_settings(
+    settings: FrontmatterPillSettings,
+) -> Result<FrontmatterPillSettings, String> {
+    let header_name = settings.header_name.trim();
+
+    if header_name.is_empty() {
+        return Err("Frontmatter pill header cannot be empty".into());
+    }
+
+    if header_name.len() > 64
+        || !header_name
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.'))
+    {
+        return Err("Frontmatter pill header contains unsupported characters".into());
+    }
+
+    Ok(FrontmatterPillSettings {
+        enabled: settings.enabled,
+        header_name: header_name.to_string(),
+    })
+}
+
+fn clean_theme(theme: Option<VaultTheme>) -> Result<Option<VaultTheme>, String> {
+    let Some(theme) = theme else {
+        return Ok(None);
+    };
+    let mut tokens = HashMap::new();
+
+    for (key, value) in theme.tokens {
+        if !THEME_TOKEN_ALLOWLIST.contains(&key.as_str()) {
+            return Err(format!("Unsupported theme token: {key}"));
+        }
+
+        let value = value.trim();
+
+        if value.is_empty() {
+            continue;
+        }
+
+        if value.len() > 80 || !value.chars().all(is_safe_theme_value_char) {
+            return Err(format!("Invalid theme value for {key}"));
+        }
+
+        tokens.insert(key, value.to_string());
+    }
+
+    if tokens.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(VaultTheme { tokens }))
+    }
+}
+
+fn is_safe_theme_value_char(character: char) -> bool {
+    character.is_ascii_alphanumeric()
+        || matches!(
+            character,
+            '#' | '(' | ')' | ',' | '.' | '%' | '-' | ' ' | '\t'
+        )
 }
 
 fn resolve_existing(root: &str, relative: &str) -> Result<(PathBuf, PathBuf), String> {
@@ -604,7 +734,7 @@ fn open_directory_shadow_file(root: String, relative: String) -> Result<OpenedFi
 }
 
 #[tauri::command]
-fn open_calendar_day_file(root: String, relative: String, title: String) -> Result<OpenedFile, String> {
+fn open_calendar_day_file(root: String, relative: String, _title: String) -> Result<OpenedFile, String> {
     let root_path = vault_root(&root)?;
     let relative_path = clean_relative(&relative)?;
 
@@ -632,7 +762,7 @@ fn open_calendar_day_file(root: String, relative: String, title: String) -> Resu
 
         fs::create_dir_all(parent)
             .map_err(|err| format!("Could not create calendar directory: {err}"))?;
-        fs::write(&path, format!("# {title}\n"))
+        fs::write(&path, "")
             .map_err(|err| format!("Could not create calendar note: {err}"))?;
     }
 
@@ -1007,6 +1137,12 @@ mod tests {
             .expect("settings should default");
 
         assert_eq!(settings.asset_directory, DEFAULT_ASSET_DIRECTORY);
+        assert!(settings.frontmatter_pills.enabled);
+        assert_eq!(
+            settings.frontmatter_pills.header_name,
+            DEFAULT_FRONTMATTER_PILL_HEADER
+        );
+        assert!(settings.theme.is_none());
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
@@ -1019,11 +1155,18 @@ mod tests {
             root.to_string_lossy().into_owned(),
             VaultSettings {
                 asset_directory: "media/images".into(),
+                frontmatter_pills: FrontmatterPillSettings {
+                    enabled: false,
+                    header_name: "topics".into(),
+                },
+                theme: None,
             },
         )
         .expect("settings should write");
 
         assert_eq!(settings.asset_directory, "media/images");
+        assert!(!settings.frontmatter_pills.enabled);
+        assert_eq!(settings.frontmatter_pills.header_name, "topics");
         assert!(
             fs::read_to_string(root.join(SETTINGS_FILE_NAME))
                 .expect("settings should be readable")
@@ -1041,6 +1184,8 @@ mod tests {
             root.to_string_lossy().into_owned(),
             VaultSettings {
                 asset_directory: " ".into(),
+                frontmatter_pills: FrontmatterPillSettings::default(),
+                theme: None,
             },
         )
         .expect_err("empty asset directory should fail");
@@ -1048,12 +1193,97 @@ mod tests {
             root.to_string_lossy().into_owned(),
             VaultSettings {
                 asset_directory: "../assets".into(),
+                frontmatter_pills: FrontmatterPillSettings::default(),
+                theme: None,
             },
         )
         .expect_err("escaping asset directory should fail");
 
         assert!(empty.contains("cannot be empty"));
         assert!(escaped.contains("escapes the vault"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn rejects_invalid_frontmatter_pill_headers() {
+        let root = test_root();
+
+        let empty = write_vault_settings(
+            root.to_string_lossy().into_owned(),
+            VaultSettings {
+                asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+                frontmatter_pills: FrontmatterPillSettings {
+                    enabled: true,
+                    header_name: " ".into(),
+                },
+                theme: None,
+            },
+        )
+        .expect_err("empty pill header should fail");
+        let unsafe_name = write_vault_settings(
+            root.to_string_lossy().into_owned(),
+            VaultSettings {
+                asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+                frontmatter_pills: FrontmatterPillSettings {
+                    enabled: true,
+                    header_name: "tags: bad".into(),
+                },
+                theme: None,
+            },
+        )
+        .expect_err("unsafe pill header should fail");
+
+        assert!(empty.contains("cannot be empty"));
+        assert!(unsafe_name.contains("unsupported characters"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn writes_vault_theme_tokens() {
+        let root = test_root();
+        let mut tokens = HashMap::new();
+        tokens.insert("--medit-accent".into(), "#336699".into());
+        tokens.insert("--medit-surface".into(), "  #ffffff  ".into());
+
+        let settings = write_vault_settings(
+            root.to_string_lossy().into_owned(),
+            VaultSettings {
+                asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+                frontmatter_pills: FrontmatterPillSettings::default(),
+                theme: Some(VaultTheme { tokens }),
+            },
+        )
+        .expect("settings should write");
+        let saved_tokens = settings
+            .theme
+            .expect("theme should be retained")
+            .tokens;
+
+        assert_eq!(saved_tokens.get("--medit-accent"), Some(&"#336699".to_string()));
+        assert_eq!(saved_tokens.get("--medit-surface"), Some(&"#ffffff".to_string()));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn rejects_unsupported_vault_theme_tokens() {
+        let root = test_root();
+        let mut tokens = HashMap::new();
+        tokens.insert("--not-a-token".into(), "#336699".into());
+
+        let error = write_vault_settings(
+            root.to_string_lossy().into_owned(),
+            VaultSettings {
+                asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+                frontmatter_pills: FrontmatterPillSettings::default(),
+                theme: Some(VaultTheme { tokens }),
+            },
+        )
+        .expect_err("unsupported token should fail");
+
+        assert!(error.contains("Unsupported theme token"));
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
@@ -1110,7 +1340,7 @@ mod tests {
 
         assert_eq!(opened.name, "Sun, Jun 14th 2026.md");
         assert_eq!(opened.relative_path, "Calendar/Sun, Jun 14th 2026.md");
-        assert_eq!(opened.content, "# Sun, Jun 14th 2026\n");
+        assert_eq!(opened.content, "");
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }

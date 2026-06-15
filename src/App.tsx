@@ -4,8 +4,11 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { mergeAttributes, Node } from "@tiptap/core";
+import { Extension, mergeAttributes, Node } from "@tiptap/core";
 import type { Editor, JSONContent, MarkdownToken } from "@tiptap/core";
+import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -35,6 +38,7 @@ import {
   cleanVaultAssetReference,
   composeMarkdown,
   defaultDrawerOpen,
+  defaultFrontmatterPillHeader,
   defaultInspectorDrawerWidth,
   defaultMetaDelimiter,
   defaultVaultDrawerOpen,
@@ -47,6 +51,7 @@ import {
   fileNameForDroppedImage,
   fileNameWithoutMarkdownExtension,
   findTabAcrossSplitGroups,
+  frontmatterListValues,
   initialMarkdown,
   isMacOsPlatform,
   isSupportedImageFile,
@@ -78,6 +83,7 @@ const codeLanguages = [
   { label: "HTML", value: "html" },
   { label: "CSS", value: "css" },
   { label: "Markdown", value: "markdown" },
+  { label: "Table of contents", value: "toc" },
 ];
 
 const lowlight = createLowlight();
@@ -102,6 +108,9 @@ lowlight.register("xml", xml);
 lowlight.register("css", css);
 lowlight.register("markdown", markdownLanguage);
 lowlight.register("md", markdownLanguage);
+// "toc" is a display mode layered over a normal fenced code block. Register it
+// as plain text so the block remains editable and round-trips as ```toc.
+lowlight.register("toc", plaintext);
 
 type ToolbarAction = {
   label: string;
@@ -110,6 +119,182 @@ type ToolbarAction = {
   isEnabled?: () => boolean;
   run: () => void;
 };
+
+function jumpToHeadingInEditor(
+  targetEditor: Editor | null,
+  entry: TocEntry,
+  onStatus: (message: string) => void,
+) {
+  if (!targetEditor) {
+    return;
+  }
+
+  let matchCount = 0;
+  let targetPosition: number | null = null;
+
+  targetEditor.state.doc.descendants((node, position) => {
+    if (targetPosition !== null || node.type.name !== "heading") {
+      return true;
+    }
+
+    if (node.attrs.level === entry.level && node.textContent.trim() === entry.title) {
+      matchCount += 1;
+
+      if (matchCount === entry.occurrence) {
+        targetPosition = position;
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (targetPosition === null) {
+    onStatus(`Could not find heading ${entry.title}`);
+    return;
+  }
+
+  targetEditor.chain().focus().setTextSelection(targetPosition + 1).scrollIntoView().run();
+  onStatus(`Jumped to ${entry.title}`);
+}
+
+function tocEntriesFromEditorDoc(doc: ProseMirrorNode): TocEntry[] {
+  const headings: TocEntry[] = [];
+  const occurrences = new Map<string, number>();
+
+  doc.descendants((node) => {
+    if (node.type.name !== "heading") {
+      return true;
+    }
+
+    const title = node.textContent.trim();
+
+    if (!title) {
+      return false;
+    }
+
+    const level = Number(node.attrs.level);
+    const key = `${level}:${title}`;
+    const occurrence = (occurrences.get(key) ?? 0) + 1;
+
+    occurrences.set(key, occurrence);
+    headings.push({
+      id: `${key}:${occurrence}`,
+      level,
+      title,
+      occurrence,
+    });
+
+    return false;
+  });
+
+  return headings;
+}
+
+function createTocCodeWidget(headings: TocEntry[], blockPosition: number) {
+  const render = document.createElement("div");
+  render.className = "toc-code-render toc-code-widget";
+  render.contentEditable = "false";
+  render.dataset.tocBlockPosition = String(blockPosition);
+
+  const header = document.createElement("div");
+  header.className = "toc-code-header";
+
+  const title = document.createElement("strong");
+  title.textContent = "Table of contents";
+  header.appendChild(title);
+
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.dataset.tocEdit = "true";
+  editButton.textContent = "Edit";
+  header.appendChild(editButton);
+  render.appendChild(header);
+
+  if (headings.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "toc-code-empty";
+    empty.textContent = "No headings in this document.";
+    render.appendChild(empty);
+    return render;
+  }
+
+  const list = document.createElement("div");
+  list.className = "toc-code-list";
+  list.setAttribute("role", "list");
+
+  headings.forEach((entry) => {
+    const button = document.createElement("button");
+    const level = document.createElement("span");
+    const titleElement = document.createElement("strong");
+
+    button.type = "button";
+    button.className = `toc-code-entry level-${entry.level}`;
+    button.dataset.tocEntryId = entry.id;
+    level.textContent = `H${entry.level}`;
+    titleElement.textContent = entry.title;
+    button.append(level, titleElement);
+    list.appendChild(button);
+  });
+
+  render.appendChild(list);
+  return render;
+}
+
+const TocCodeBlockRenderer = Extension.create({
+  name: "tocCodeBlockRenderer",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin({
+        key: new PluginKey("tocCodeBlockRenderer"),
+        props: {
+          decorations: (state) => {
+            const decorations: Decoration[] = [];
+            const headings = tocEntriesFromEditorDoc(state.doc);
+
+            state.doc.descendants((node, position) => {
+              if (node.type.name !== "codeBlock") {
+                return true;
+              }
+
+              if (node.attrs.language !== "toc") {
+                return false;
+              }
+
+              const selected =
+                state.selection.from >= position &&
+                state.selection.to <= position + node.nodeSize;
+
+              decorations.push(
+                Decoration.node(position, position + node.nodeSize, {
+                  class: selected ? "toc-code-block editing" : "toc-code-block rendered",
+                }),
+              );
+
+              if (!selected) {
+                decorations.push(
+                  Decoration.widget(
+                    position + node.nodeSize,
+                    () => createTocCodeWidget(headings, position),
+                    {
+                      key: `toc-code:${position}:${headings.map((entry) => entry.id).join("|")}`,
+                      side: -1,
+                    },
+                  ),
+                );
+              }
+
+              return false;
+            });
+
+            return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+    ];
+  },
+});
 
 type VaultEntry = {
   name: string;
@@ -128,8 +313,19 @@ type SavedAsset = {
   relativePath: string;
 };
 
+type VaultThemeSettings = {
+  tokens: Record<string, string>;
+};
+
+type FrontmatterPillSettings = {
+  enabled: boolean;
+  headerName: string;
+};
+
 type VaultSettings = {
   assetDirectory: string;
+  frontmatterPills?: FrontmatterPillSettings | null;
+  theme?: VaultThemeSettings | null;
 };
 
 type ActiveFile = {
@@ -165,6 +361,7 @@ type SearchResult = {
 
 type SearchMode = "filename" | "content";
 type AppearanceMode = "auto" | "light" | "dark";
+type SettingsTab = "main" | "appearance";
 type DrawerItem = "source" | "toc" | "calendar";
 type VaultDrawerItem = "files" | "search";
 type ResizeSide = "vault" | "drawer";
@@ -175,10 +372,86 @@ type PersistedWorkspace = {
   activeFile: ActiveFile | null;
 };
 
+type ThemeTokenControl = {
+  label: string;
+  token: string;
+};
+
+type ThemeTokenGroup = {
+  title: string;
+  controls: ThemeTokenControl[];
+};
+
 const workspaceStorageKey = "medit.workspace";
 const appearanceStorageKey = "medit.appearance";
 const closedDrawerWidth = 48;
 const workspaceResizeHandleWidth = 10;
+const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
+  enabled: true,
+  headerName: defaultFrontmatterPillHeader,
+};
+
+// The theme builder deliberately exposes only stable MEdit variables. Vault
+// settings persist these tokens directly, while CSS maps them onto Obsidian-like
+// names for future theme compatibility.
+const themeTokenGroups: ThemeTokenGroup[] = [
+  {
+    title: "Canvas",
+    controls: [
+      { label: "App background", token: "--medit-app-bg" },
+      { label: "Surface", token: "--medit-surface" },
+      { label: "Muted surface", token: "--medit-surface-muted" },
+      { label: "Hover", token: "--medit-hover" },
+      { label: "Selection", token: "--medit-selection" },
+    ],
+  },
+  {
+    title: "Text",
+    controls: [
+      { label: "Text", token: "--medit-text" },
+      { label: "Soft text", token: "--medit-text-soft" },
+      { label: "Editor text", token: "--medit-editor-text" },
+      { label: "Heading", token: "--medit-heading" },
+      { label: "Muted text", token: "--medit-muted" },
+      { label: "Strong muted text", token: "--medit-muted-strong" },
+      { label: "Mono text", token: "--medit-mono-text" },
+    ],
+  },
+  {
+    title: "Accent And Borders",
+    controls: [
+      { label: "Accent", token: "--medit-accent" },
+      { label: "Accent text", token: "--medit-accent-text" },
+      { label: "Focus", token: "--medit-focus" },
+      { label: "Border", token: "--medit-border" },
+      { label: "Soft border", token: "--medit-border-soft" },
+      { label: "Strong border", token: "--medit-border-strong" },
+      { label: "Table border", token: "--medit-table-border" },
+    ],
+  },
+  {
+    title: "Blocks",
+    controls: [
+      { label: "Code background", token: "--medit-code-bg" },
+      { label: "Code text", token: "--medit-code-text" },
+      { label: "Quote border", token: "--medit-quote-border" },
+      { label: "Quote text", token: "--medit-quote-text" },
+    ],
+  },
+  {
+    title: "Syntax",
+    controls: [
+      { label: "Blue", token: "--syntax-blue" },
+      { label: "Green", token: "--syntax-green" },
+      { label: "Yellow", token: "--syntax-yellow" },
+      { label: "Muted", token: "--syntax-muted" },
+    ],
+  },
+];
+
+const editableThemeTokens = new Set(
+  themeTokenGroups.flatMap((group) => group.controls.map((control) => control.token)),
+);
 
 function readPersistedWorkspace() {
   try {
@@ -226,6 +499,90 @@ function readPersistedAppearance(): AppearanceMode {
 
 function writePersistedAppearance(appearance: AppearanceMode) {
   window.localStorage.setItem(appearanceStorageKey, appearance);
+}
+
+function normalizeThemeTokens(tokens: Record<string, string> | undefined | null) {
+  const normalized: Record<string, string> = {};
+
+  for (const [token, value] of Object.entries(tokens ?? {})) {
+    const cleanValue = value.trim();
+
+    // Ignore unknown CSS variables from .medit so imported or hand-edited
+    // settings cannot unexpectedly restyle arbitrary parts of the app.
+    if (editableThemeTokens.has(token) && cleanValue) {
+      normalized[token] = cleanValue;
+    }
+  }
+
+  return normalized;
+}
+
+function sameThemeTokens(
+  left: Record<string, string> | undefined | null,
+  right: Record<string, string> | undefined | null,
+) {
+  const normalizedLeft = normalizeThemeTokens(left);
+  const normalizedRight = normalizeThemeTokens(right);
+  const leftKeys = Object.keys(normalizedLeft).sort();
+  const rightKeys = Object.keys(normalizedRight).sort();
+
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key, index) => key === rightKeys[index] && normalizedLeft[key] === normalizedRight[key])
+  );
+}
+
+function normalizeFrontmatterPillSettings(
+  settings: FrontmatterPillSettings | undefined | null,
+) {
+  return {
+    enabled: settings?.enabled ?? defaultFrontmatterPillSettings.enabled,
+    headerName:
+      settings?.headerName?.trim() || defaultFrontmatterPillSettings.headerName,
+  };
+}
+
+function sameFrontmatterPillSettings(
+  left: FrontmatterPillSettings | undefined | null,
+  right: FrontmatterPillSettings | undefined | null,
+) {
+  const normalizedLeft = normalizeFrontmatterPillSettings(left);
+  const normalizedRight = normalizeFrontmatterPillSettings(right);
+
+  return (
+    normalizedLeft.enabled === normalizedRight.enabled &&
+    normalizedLeft.headerName === normalizedRight.headerName
+  );
+}
+
+function resolveAppearance(appearance: AppearanceMode): Exclude<AppearanceMode, "auto"> {
+  if (appearance === "light" || appearance === "dark") {
+    return appearance;
+  }
+
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function cssColorToHex(value: string, fallback = "#000000") {
+  const trimmed = value.trim();
+
+  if (/^#[0-9a-f]{6}$/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  if (/^#[0-9a-f]{3}$/i.test(trimmed)) {
+    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
+  }
+
+  const match = trimmed.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+
+  if (!match) {
+    return fallback;
+  }
+
+  return `#${[match[1], match[2], match[3]]
+    .map((channel) => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 function tabTitle(tab: DocumentTab) {
@@ -410,8 +767,14 @@ function App() {
   const [vaultRoot, setVaultRoot] = useState("");
   const [vaultSettings, setVaultSettings] = useState<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
+    frontmatterPills: defaultFrontmatterPillSettings,
+    theme: null,
   });
   const [settingsDraft, setSettingsDraft] = useState(defaultVaultAssetDirectory);
+  const [frontmatterPillDraft, setFrontmatterPillDraft] = useState<FrontmatterPillSettings>(
+    defaultFrontmatterPillSettings,
+  );
+  const [themeDraft, setThemeDraft] = useState<Record<string, string>>({});
   const [currentDir, setCurrentDir] = useState("");
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null);
@@ -426,6 +789,9 @@ function App() {
   const [metadataOpen, setMetadataOpen] = useState(false);
   const [pageNameEditing, setPageNameEditing] = useState(false);
   const [appearance, setAppearance] = useState<AppearanceMode>(readPersistedAppearance);
+  const [resolvedAppearance, setResolvedAppearance] = useState(() =>
+    resolveAppearance(readPersistedAppearance()),
+  );
   const [vaultDrawerOpen, setVaultDrawerOpen] = useState(defaultVaultDrawerOpen);
   const [vaultDrawerWidth, setVaultDrawerWidth] = useState(defaultVaultDrawerWidth);
   const [vaultDrawerItem, setVaultDrawerItem] = useState<VaultDrawerItem>("files");
@@ -441,6 +807,7 @@ function App() {
   });
   const [calendarNoteDateKeys, setCalendarNoteDateKeys] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("main");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("filename");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -472,7 +839,12 @@ function App() {
   const vaultRootRef = useRef("");
   const vaultSettingsRef = useRef<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
+    frontmatterPills: defaultFrontmatterPillSettings,
+    theme: null,
   });
+  // Track only properties we applied from the theme builder so switching vaults
+  // or resetting a theme can remove stale inline CSS variables.
+  const appliedThemeTokensRef = useRef<Set<string>>(new Set());
   const restoredWorkspace = useRef(false);
 
   useEffect(() => {
@@ -508,11 +880,58 @@ function App() {
   }, [vaultSettings]);
 
   useEffect(() => {
+    const previousTokens = appliedThemeTokensRef.current;
+    const nextTokens = normalizeThemeTokens(themeDraft);
+
+    // Apply the draft directly to :root for live preview; saving still goes
+    // through the vault settings command so the preview can be reverted.
+    for (const token of previousTokens) {
+      if (!(token in nextTokens)) {
+        document.documentElement.style.removeProperty(token);
+      }
+    }
+
+    for (const [token, value] of Object.entries(nextTokens)) {
+      document.documentElement.style.setProperty(token, value);
+    }
+
+    appliedThemeTokensRef.current = new Set(Object.keys(nextTokens));
+  }, [themeDraft]);
+
+  useEffect(() => {
+    const colorSchemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncResolvedAppearance = () => {
+      setResolvedAppearance(resolveAppearance(appearance));
+    };
+
+    syncResolvedAppearance();
+
+    if (appearance !== "auto") {
+      return;
+    }
+
+    colorSchemeQuery.addEventListener("change", syncResolvedAppearance);
+
+    return () => {
+      colorSchemeQuery.removeEventListener("change", syncResolvedAppearance);
+    };
+  }, [appearance]);
+
+  useEffect(() => {
+    const targets = [document.documentElement, document.body];
+
     document.documentElement.dataset.theme = appearance;
+    document.documentElement.dataset.resolvedTheme = resolvedAppearance;
     document.documentElement.style.colorScheme =
       appearance === "auto" ? "light dark" : appearance;
+
+    for (const target of targets) {
+      target.classList.toggle("theme-light", resolvedAppearance === "light");
+      target.classList.toggle("theme-dark", resolvedAppearance === "dark");
+    }
+
     writePersistedAppearance(appearance);
-  }, [appearance]);
+  }, [appearance, resolvedAppearance]);
 
   useEffect(() => {
     return () => {
@@ -525,6 +944,48 @@ function App() {
   function syncEditorState(nextEditor: Editor) {
     setCodeBlockActive(nextEditor.isActive("codeBlock"));
     setCodeLanguage(nextEditor.getAttributes("codeBlock").language ?? "");
+  }
+
+  function themeTokenValue(token: string) {
+    return cssColorToHex(
+      themeDraft[token] ??
+        window.getComputedStyle(document.documentElement).getPropertyValue(token),
+    );
+  }
+
+  function updateThemeDraftToken(token: string, value: string) {
+    setThemeDraft((tokens) => ({
+      ...tokens,
+      [token]: value,
+    }));
+  }
+
+  function savedThemeTokens() {
+    return normalizeThemeTokens(vaultSettings.theme?.tokens);
+  }
+
+  function savedFrontmatterPillSettings() {
+    return normalizeFrontmatterPillSettings(vaultSettings.frontmatterPills);
+  }
+
+  function settingsHaveChanges() {
+    return (
+      settingsDraft !== vaultSettings.assetDirectory ||
+      !sameFrontmatterPillSettings(frontmatterPillDraft, savedFrontmatterPillSettings()) ||
+      !sameThemeTokens(themeDraft, savedThemeTokens())
+    );
+  }
+
+  function resetThemeDraft() {
+    setThemeDraft({});
+    setStatus("Reset theme preview");
+  }
+
+  function revertSettingsDraft() {
+    setSettingsDraft(vaultSettings.assetDirectory);
+    setFrontmatterPillDraft(savedFrontmatterPillSettings());
+    setThemeDraft(savedThemeTokens());
+    setStatus("Reverted settings preview");
   }
 
   function editorForGroup(groupId: EditorGroupId) {
@@ -882,6 +1343,7 @@ function App() {
         CodeBlockLowlight.configure({
           lowlight,
         }),
+        TocCodeBlockRenderer,
         createVaultImageExtension((target) =>
           joinVaultAssetPath(
             vaultRootRef.current,
@@ -977,6 +1439,62 @@ function App() {
   const primaryEditor = useEditor(createEditorOptions("primary"));
   const secondaryEditor = useEditor(createEditorOptions("secondary"));
   const editor = activeGroupId === "secondary" ? secondaryEditor : primaryEditor;
+
+  useEffect(() => {
+    const editors = [primaryEditor, secondaryEditor].filter((value): value is Editor =>
+      Boolean(value),
+    );
+    const cleanups = editors.map((targetEditor) => {
+      const root = targetEditor.view.dom;
+      const handleClick = (event: MouseEvent) => {
+        const target = event.target;
+
+        if (!(target instanceof HTMLElement)) {
+          return;
+        }
+
+        const button = target.closest<HTMLButtonElement>(
+          "[data-toc-entry-id], [data-toc-edit]",
+        );
+
+        if (!button || !root.contains(button)) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (button.dataset.tocEdit) {
+          const widget = button.closest<HTMLElement>("[data-toc-block-position]");
+          const blockPosition = Number(widget?.dataset.tocBlockPosition);
+
+          if (Number.isFinite(blockPosition)) {
+            targetEditor.chain().focus().setTextSelection(blockPosition + 1).run();
+          } else {
+            targetEditor.commands.focus();
+          }
+          return;
+        }
+
+        const entryId = button.dataset.tocEntryId;
+        const entry = markdownHeadings(targetEditor.getMarkdown()).find(
+          (candidate) => candidate.id === entryId,
+        );
+
+        if (entry) {
+          jumpToHeadingInEditor(targetEditor, entry, setStatus);
+        }
+      };
+
+      root.addEventListener("click", handleClick);
+
+      return () => root.removeEventListener("click", handleClick);
+    });
+
+    return () => {
+      cleanups.forEach((cleanup) => cleanup());
+    };
+  }, [primaryEditor, secondaryEditor]);
 
   useEffect(() => {
     if (!primaryEditor) {
@@ -1316,11 +1834,24 @@ function App() {
   async function loadVaultSettings(root: string) {
     const settings = isTauri()
       ? await invoke<VaultSettings>("read_vault_settings", { root })
-      : { assetDirectory: defaultVaultAssetDirectory };
+      : {
+          assetDirectory: defaultVaultAssetDirectory,
+          frontmatterPills: defaultFrontmatterPillSettings,
+          theme: null,
+        };
+    const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
+    const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
 
-    vaultSettingsRef.current = settings;
-    setVaultSettings(settings);
+    const normalizedSettings = {
+      ...settings,
+      frontmatterPills,
+    };
+
+    vaultSettingsRef.current = normalizedSettings;
+    setVaultSettings(normalizedSettings);
     setSettingsDraft(settings.assetDirectory);
+    setFrontmatterPillDraft(frontmatterPills);
+    setThemeDraft(themeTokens);
 
     if (isTauri()) {
       // Tauri's asset protocol is deny-by-default. Re-allow the configured
@@ -1344,12 +1875,24 @@ function App() {
         root: vaultRoot,
         settings: {
           assetDirectory: settingsDraft,
+          frontmatterPills: normalizeFrontmatterPillSettings(frontmatterPillDraft),
+          theme: Object.keys(normalizeThemeTokens(themeDraft)).length > 0
+            ? { tokens: normalizeThemeTokens(themeDraft) }
+            : null,
         },
       });
+      const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
+      const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
+      const normalizedSettings = {
+        ...settings,
+        frontmatterPills,
+      };
 
-      vaultSettingsRef.current = settings;
-      setVaultSettings(settings);
+      vaultSettingsRef.current = normalizedSettings;
+      setVaultSettings(normalizedSettings);
       setSettingsDraft(settings.assetDirectory);
+      setFrontmatterPillDraft(frontmatterPills);
+      setThemeDraft(themeTokens);
       await invoke("allow_vault_assets", {
         root: vaultRoot,
         assetDirectory: settings.assetDirectory,
@@ -1770,37 +2313,7 @@ function App() {
   }
 
   function jumpToHeading(entry: TocEntry) {
-    if (!editor) {
-      return;
-    }
-
-    let matchCount = 0;
-    let targetPosition: number | null = null;
-
-    editor.state.doc.descendants((node, position) => {
-      if (targetPosition !== null || node.type.name !== "heading") {
-        return true;
-      }
-
-      if (node.attrs.level === entry.level && node.textContent.trim() === entry.title) {
-        matchCount += 1;
-
-        if (matchCount === entry.occurrence) {
-          targetPosition = position;
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    if (targetPosition === null) {
-      setStatus(`Could not find heading ${entry.title}`);
-      return;
-    }
-
-    editor.chain().focus().setTextSelection(targetPosition + 1).scrollIntoView().run();
-    setStatus(`Jumped to ${entry.title}`);
+    jumpToHeadingInEditor(editor, entry, setStatus);
   }
 
   function toggleDrawerItem(item: DrawerItem) {
@@ -2031,6 +2544,12 @@ function App() {
     const panePageName = isActiveGroup ? pageName : groupActiveTab?.pageName ?? "Untitled note";
     const paneMetaHeader = isActiveGroup ? metaHeader : groupActiveTab?.metaHeader ?? "";
     const paneActiveFile = isActiveGroup ? activeFile : groupActiveTab?.activeFile ?? null;
+    const frontmatterPillSettings = normalizeFrontmatterPillSettings(
+      vaultSettings.frontmatterPills,
+    );
+    const frontmatterPills = frontmatterPillSettings.enabled
+      ? frontmatterListValues(paneMetaHeader, frontmatterPillSettings.headerName)
+      : [];
 
     // Only the active pane renders the toolbar. Toolbar actions are tied to the
     // active editor mirror; hiding inactive toolbars avoids commands landing in
@@ -2131,6 +2650,15 @@ function App() {
               onClick={() => setMetadataOpen((open) => !open)}
             />
             <span>Frontmatter</span>
+            {frontmatterPills.length > 0 ? (
+              <div className="frontmatter-pills" aria-label="Frontmatter list values">
+                {frontmatterPills.map((value) => (
+                  <span className="frontmatter-pill" key={value}>
+                    {value}
+                  </span>
+                ))}
+              </div>
+            ) : null}
           </div>
           {metadataOpen ? (
             <label className="metadata-control" id={`${groupId}-frontmatter-editor`}>
@@ -2189,7 +2717,10 @@ function App() {
           </div>
         ) : null}
 
-        <EditorContent className="editor-surface" editor={groupEditor} />
+        <EditorContent
+          className="editor-surface markdown-rendered markdown-preview-view"
+          editor={groupEditor}
+        />
       </div>
     );
   }
@@ -2813,19 +3344,132 @@ function App() {
               </button>
             </div>
             <div className="settings-panel">
-              <label>
-                <span>Asset directory</span>
-                <input
-                  disabled={!vaultRoot}
-                  value={settingsDraft}
-                  onChange={(event) => setSettingsDraft(event.currentTarget.value)}
-                  placeholder={defaultVaultAssetDirectory}
-                />
-              </label>
+              <div className="settings-tabs" role="tablist" aria-label="Settings groups">
+                <button
+                  className={settingsTab === "main" ? "active" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsTab === "main"}
+                  onClick={() => setSettingsTab("main")}
+                >
+                  Main
+                </button>
+                <button
+                  className={settingsTab === "appearance" ? "active" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsTab === "appearance"}
+                  onClick={() => setSettingsTab("appearance")}
+                >
+                  Appearance
+                </button>
+              </div>
+              {settingsTab === "main" ? (
+                <div className="settings-tab-panel" role="tabpanel" aria-label="Main settings">
+                  <section className="settings-section" aria-label="Vault settings">
+                    <h3>Vault</h3>
+                    <label>
+                      <span>Asset directory</span>
+                      <input
+                        disabled={!vaultRoot}
+                        value={settingsDraft}
+                        onChange={(event) => setSettingsDraft(event.currentTarget.value)}
+                        placeholder={defaultVaultAssetDirectory}
+                      />
+                    </label>
+                  </section>
+                  <section className="settings-section" aria-label="Metadata settings">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Metadata</h3>
+                        <p>Choose whether a frontmatter list is shown as pills above the editor.</p>
+                      </div>
+                    </div>
+                    <label className="settings-check-control">
+                      <input
+                        checked={frontmatterPillDraft.enabled}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setFrontmatterPillDraft((settings) => ({
+                            ...settings,
+                            enabled: event.currentTarget.checked,
+                          }))
+                        }
+                      />
+                      <span>Show frontmatter pills</span>
+                    </label>
+                    <label>
+                      <span>Pill header name</span>
+                      <input
+                        disabled={!vaultRoot || !frontmatterPillDraft.enabled}
+                        value={frontmatterPillDraft.headerName}
+                        onChange={(event) =>
+                          setFrontmatterPillDraft((settings) => ({
+                            ...settings,
+                            headerName: event.currentTarget.value,
+                          }))
+                        }
+                        placeholder={defaultFrontmatterPillHeader}
+                      />
+                    </label>
+                  </section>
+                </div>
+              ) : (
+                <div className="settings-tab-panel" role="tabpanel" aria-label="Appearance settings">
+                  <section className="settings-section" aria-label="Theme builder">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Theme Builder</h3>
+                        <p>Changes preview immediately and are saved to this vault.</p>
+                      </div>
+                      <button
+                        className="inline-action"
+                        disabled={!vaultRoot || Object.keys(themeDraft).length === 0}
+                        type="button"
+                        onClick={resetThemeDraft}
+                      >
+                        Reset Theme
+                      </button>
+                    </div>
+                    <div className="theme-builder">
+                      {themeTokenGroups.map((group) => (
+                        <fieldset className="theme-token-group" disabled={!vaultRoot} key={group.title}>
+                          <legend>{group.title}</legend>
+                          {group.controls.map((control) => (
+                            <label className="theme-token-control" key={control.token}>
+                              <span>{control.label}</span>
+                              <div>
+                                <input
+                                  aria-label={control.label}
+                                  type="color"
+                                  value={themeTokenValue(control.token)}
+                                  onChange={(event) =>
+                                    updateThemeDraftToken(control.token, event.currentTarget.value)
+                                  }
+                                />
+                                <code>{control.token}</code>
+                              </div>
+                            </label>
+                          ))}
+                        </fieldset>
+                      ))}
+                    </div>
+                  </section>
+                </div>
+              )}
               <div className="settings-actions">
                 <button
                   className="inline-action"
-                  disabled={!vaultRoot || settingsDraft === vaultSettings.assetDirectory}
+                  disabled={!vaultRoot || !settingsHaveChanges()}
+                  type="button"
+                  onClick={revertSettingsDraft}
+                >
+                  Revert
+                </button>
+                <button
+                  className="inline-action"
+                  disabled={!vaultRoot || !settingsHaveChanges()}
                   type="button"
                   onClick={saveVaultSettings}
                 >

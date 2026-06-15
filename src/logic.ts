@@ -13,6 +13,7 @@ export const emptyTableMarkdown = `| Column 1 | Column 2 | Column 3 |
 |  |  |  |`;
 
 export const defaultVaultAssetDirectory = "_assets_";
+export const defaultFrontmatterPillHeader = "tags";
 export const defaultDrawerOpen = false;
 export const defaultVaultDrawerOpen = true;
 export const defaultVaultDrawerWidth = 320;
@@ -394,6 +395,86 @@ export function splitMetaHeader(content: string): MarkdownParts {
   }
 
   return { metaHeader: "", metaDelimiter: defaultMetaDelimiter, body: content };
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function cleanFrontmatterListItem(value: string) {
+  return value
+    .trim()
+    .replace(/^['"]|['"]$/g, "")
+    .trim();
+}
+
+export function frontmatterListValues(
+  metaHeader: string,
+  headerName = defaultFrontmatterPillHeader,
+) {
+  const cleanHeaderName = headerName.trim();
+
+  if (!cleanHeaderName) {
+    return [];
+  }
+
+  const values: string[] = [];
+  const seen = new Set<string>();
+  const lines = metaHeader.replace(/\r\n/g, "\n").split("\n");
+  const escapedHeaderName = escapeRegExp(cleanHeaderName);
+  const inlinePattern = new RegExp(`^\\s*${escapedHeaderName}\\s*:\\s*\\[([^\\]]*)\\]\\s*$`, "i");
+  const blockPattern = new RegExp(`^(\\s*)${escapedHeaderName}\\s*:\\s*$`, "i");
+
+  // This is a display heuristic, not a full YAML parser. It intentionally only
+  // recognizes simple list shapes for the vault-configured frontmatter key.
+  function pushValue(value: string) {
+    const cleanValue = cleanFrontmatterListItem(value);
+    const key = cleanValue.toLowerCase();
+
+    if (!cleanValue || seen.has(key)) {
+      return;
+    }
+
+    seen.add(key);
+    values.push(cleanValue);
+  }
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const inlineMatch = line.match(inlinePattern);
+
+    if (inlineMatch) {
+      inlineMatch[1].split(",").forEach(pushValue);
+      continue;
+    }
+
+    const blockMatch = line.match(blockPattern);
+
+    if (!blockMatch) {
+      continue;
+    }
+
+    const baseIndent = blockMatch[1].length;
+
+    for (let itemIndex = index + 1; itemIndex < lines.length; itemIndex += 1) {
+      const itemLine = lines[itemIndex];
+
+      if (!itemLine.trim()) {
+        continue;
+      }
+
+      const itemMatch = itemLine.match(/^(\s*)-\s+(.+?)\s*$/);
+
+      if (!itemMatch || itemMatch[1].length < baseIndent) {
+        break;
+      }
+
+      pushValue(itemMatch[2]);
+      index = itemIndex;
+    }
+  }
+
+  return values;
 }
 
 export function composeMarkdown(

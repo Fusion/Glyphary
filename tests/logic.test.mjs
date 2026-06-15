@@ -10,6 +10,7 @@ import {
   cleanVaultAssetReference,
   composeMarkdown,
   defaultDrawerOpen,
+  defaultFrontmatterPillHeader,
   defaultInspectorDrawerWidth,
   defaultVaultDrawerWidth,
   defaultVaultDrawerOpen,
@@ -18,6 +19,7 @@ import {
   escapeMarkdownUrl,
   fileNameForDroppedImage,
   findTabAcrossSplitGroups,
+  frontmatterListValues,
   isMacOsPlatform,
   isSupportedImageFile,
   markdownHeadings,
@@ -50,6 +52,50 @@ test("frontmatter supports toml delimiters and ignores unterminated headers", ()
     metaDelimiter: "---",
     body: "---\ntitle: Alpha\n# Body\n",
   });
+});
+
+test("frontmatter tags are extracted as display pills", () => {
+  assert.deepEqual(
+    frontmatterListValues(`title: Alpha
+tags: [draft, "project x", draft]
+owners:
+  - Chris
+  - Sam
+status: active
+`),
+    ["draft", "project x"],
+  );
+  assert.deepEqual(
+    frontmatterListValues(`title: Alpha
+TAGS:
+  - draft
+  - project x
+owners:
+  - Chris
+`),
+    ["draft", "project x"],
+  );
+  assert.deepEqual(
+    frontmatterListValues(`tags:
+- databases
+- devops
+- networking
+feature: _assets_/Pasted image 20230102173741.png
+thumbnail: thumbnails/resized/2b2618e8548253e7deaf445fe995f4cc_86cf658e.webp
+permalink: convoso/convoso-projects/convoso-las-vegas
+`),
+    ["databases", "devops", "networking"],
+  );
+  assert.equal(defaultFrontmatterPillHeader, "tags");
+  assert.deepEqual(
+    frontmatterListValues(`title: Alpha
+topics: [draft, project]
+tags: [ignored]
+`, "topics"),
+    ["draft", "project"],
+  );
+  assert.deepEqual(frontmatterListValues("title: Alpha\nstatus: active\n"), []);
+  assert.deepEqual(frontmatterListValues("owners:\n  - Chris\n  - Sam\n"), []);
 });
 
 test("local vault image references are accepted while URLs and path escapes are rejected", () => {
@@ -141,6 +187,19 @@ test("markdown headings produce a table of contents and ignore fenced code", () 
   );
 });
 
+test("toc fenced code blocks have an inline renderer while staying markdown code blocks", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /value: "toc"/);
+  assert.match(app, /lowlight\.register\("toc", plaintext\)/);
+  assert.match(app, /TocCodeBlockRenderer/);
+  assert.match(app, /data-toc-block-position/);
+  assert.match(app, /data-toc-entry-id/);
+  assert.match(css, /pre\.toc-code-block\.rendered/);
+  assert.match(css, /\.toc-code-render/);
+});
+
 test("table insertion seed keeps markdown table support available", () => {
   assert.match(emptyTableMarkdown, /^\| Column 1 \| Column 2 \| Column 3 \|/);
   assert.match(emptyTableMarkdown, /\| --- \| --- \| --- \|/);
@@ -152,6 +211,23 @@ test("default drawer and vault asset settings match the current product defaults
   assert.equal(defaultVaultAssetDirectory, "_assets_");
   assert.equal(defaultVaultDrawerWidth, 320);
   assert.equal(defaultInspectorDrawerWidth, 360);
+});
+
+test("app css exposes the Obsidian theme compatibility surface", () => {
+  const css = readFileSync("src/App.css", "utf8");
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(css, /--background-primary:/);
+  assert.match(css, /--interactive-accent:/);
+  assert.match(css, /--text-normal:/);
+  assert.match(css, /--code-background:/);
+  assert.match(css, /--blockquote-border-color:/);
+  assert.match(app, /theme-dark/);
+  assert.match(app, /theme-light/);
+  assert.match(app, /markdown-preview-view/);
+  assert.match(app, /Theme Builder/);
+  assert.match(app, /--medit-accent/);
+  assert.match(app, /Reset Theme/);
 });
 
 test("tauri starts with the requested default window size", () => {
