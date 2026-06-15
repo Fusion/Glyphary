@@ -281,6 +281,18 @@ type CommandPaletteCommand = {
   run: () => void | Promise<void>;
 };
 
+type WasmPluginResponse =
+  | {
+      id: string;
+      ok: true;
+      output: string;
+    }
+  | {
+      id: string;
+      ok: false;
+      error: string;
+    };
+
 function renderToolbarIcon(icon: ToolbarIconName) {
   switch (icon) {
     case "bullet-list":
@@ -1151,6 +1163,47 @@ type CssSnippetSettings = {
   enabled: string[];
 };
 
+type PluginSettings = {
+  enabled: string[];
+};
+
+type PluginWasmCommand = {
+  module: string;
+  input: "selection" | "document";
+  output: "replaceSelection" | "insertAtCursor" | "replaceDocument";
+  timeoutMs: number;
+};
+
+type PluginCommandManifest = {
+  id: string;
+  title: string;
+  description?: string;
+  insertMarkdown?: string | null;
+  template?: string | null;
+  wasm?: PluginWasmCommand | null;
+};
+
+type PluginManifest = {
+  id: string;
+  name: string;
+  version?: string;
+  description?: string;
+  permissions: string[];
+  commands: PluginCommandManifest[];
+  styles: string[];
+};
+
+type PluginCatalog = {
+  plugins: PluginManifest[];
+  errors: string[];
+};
+
+type PluginStyleContent = {
+  pluginId: string;
+  name: string;
+  content: string;
+};
+
 type VaultThemeSettings = {
   presetId?: string | null;
   callouts?: VaultThemeCalloutSettings | null;
@@ -1216,6 +1269,7 @@ type VaultSettings = {
   editor?: EditorBehaviorSettings | null;
   appearance?: VaultAppearanceSettings | null;
   cssSnippets?: CssSnippetSettings | null;
+  plugins?: PluginSettings | null;
   theme?: VaultThemeSettings | null;
 };
 
@@ -1252,7 +1306,7 @@ type SearchResult = {
 
 type SearchMode = "filename" | "content";
 type AppearanceMode = "auto" | "light" | "dark";
-type SettingsTab = "main" | "appearance";
+type SettingsTab = "main" | "plugins" | "appearance";
 type DrawerItem = "source" | "toc" | "calendar";
 type VaultDrawerItem = "files" | "search" | "recent";
 type ResizeSide = "vault" | "drawer";
@@ -1512,6 +1566,9 @@ const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
 };
 const defaultCssSnippetSettings: CssSnippetSettings = {
   directory: defaultCssSnippetDirectory,
+  enabled: [],
+};
+const defaultPluginSettings: PluginSettings = {
   enabled: [],
 };
 const defaultThemeOptions: VaultThemeOptions = {
@@ -2556,6 +2613,37 @@ function sameCssSnippetSettings(
   );
 }
 
+function cleanPluginId(id: string) {
+  const cleanId = id.trim();
+
+  return /^[A-Za-z0-9_-]{1,80}$/.test(cleanId) ? cleanId : null;
+}
+
+function normalizePluginSettings(settings: PluginSettings | undefined | null) {
+  const enabled = Array.from(
+    new Set(
+      (settings?.enabled ?? [])
+        .map((id) => cleanPluginId(id))
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ).sort();
+
+  return { enabled };
+}
+
+function samePluginSettings(
+  left: PluginSettings | undefined | null,
+  right: PluginSettings | undefined | null,
+) {
+  const normalizedLeft = normalizePluginSettings(left);
+  const normalizedRight = normalizePluginSettings(right);
+
+  return (
+    normalizedLeft.enabled.length === normalizedRight.enabled.length &&
+    normalizedLeft.enabled.every((id, index) => id === normalizedRight.enabled[index])
+  );
+}
+
 function resolveAppearance(appearance: AppearanceMode): Exclude<AppearanceMode, "auto"> {
   if (appearance === "light" || appearance === "dark") {
     return appearance;
@@ -3368,6 +3456,7 @@ function App() {
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
     cssSnippets: defaultCssSnippetSettings,
+    plugins: defaultPluginSettings,
     theme: null,
   });
   const [settingsDraft, setSettingsDraft] = useState(defaultVaultAssetDirectory);
@@ -3393,6 +3482,9 @@ function App() {
     useState<CssSnippetSettings>(defaultCssSnippetSettings);
   const [cssSnippetFiles, setCssSnippetFiles] = useState<CssSnippetFile[]>([]);
   const [cssSnippetContents, setCssSnippetContents] = useState<CssSnippetContent[]>([]);
+  const [pluginDraft, setPluginDraft] = useState<PluginSettings>(defaultPluginSettings);
+  const [pluginCatalog, setPluginCatalog] = useState<PluginCatalog>({ plugins: [], errors: [] });
+  const [pluginStyles, setPluginStyles] = useState<PluginStyleContent[]>([]);
   const [selectedThemePresetIdDraft, setSelectedThemePresetIdDraft] = useState<string | null>(null);
   const [themeDraft, setThemeDraft] = useState<Record<string, string>>({});
   const [themeOptionsDraft, setThemeOptionsDraft] =
@@ -3485,6 +3577,7 @@ function App() {
     editor: defaultEditorBehaviorSettings,
     appearance: defaultVaultAppearanceSettings,
     cssSnippets: defaultCssSnippetSettings,
+    plugins: defaultPluginSettings,
     theme: null,
   });
   // Track only properties we applied from the theme builder so switching vaults
@@ -3757,6 +3850,10 @@ function App() {
     return normalizeCssSnippetSettings(vaultSettings.cssSnippets);
   }
 
+  function savedPluginSettings() {
+    return normalizePluginSettings(vaultSettings.plugins);
+  }
+
   function settingsHaveChanges() {
     return (
       settingsDraft !== vaultSettings.assetDirectory ||
@@ -3767,6 +3864,7 @@ function App() {
       !sameTidbitSettings(tidbitDraft, savedTidbitSettings()) ||
       !sameVaultAppearanceSettings(vaultAppearanceDraft, savedVaultAppearanceSettings()) ||
       !sameCssSnippetSettings(cssSnippetDraft, savedCssSnippetSettings()) ||
+      !samePluginSettings(pluginDraft, savedPluginSettings()) ||
       selectedThemePresetIdDraft !== savedThemePresetId() ||
       !sameThemeTokens(themeDraft, savedThemeTokens()) ||
       !sameThemeOptions(themeOptionsDraft, savedThemeOptions()) ||
@@ -3783,6 +3881,9 @@ function App() {
   }
 
   function revertSettingsDraft() {
+    const savedCssSnippets = savedCssSnippetSettings();
+    const savedPlugins = savedPluginSettings();
+
     setSettingsDraft(vaultSettings.assetDirectory);
     setFrontmatterPillDraft(savedFrontmatterPillSettings());
     setEditorBehaviorDraft(savedEditorBehaviorSettings());
@@ -3790,11 +3891,18 @@ function App() {
     setAutosaveDraft(savedAutosaveSettings());
     setTidbitDraft(savedTidbitSettings());
     setVaultAppearanceDraft(savedVaultAppearanceSettings());
-    setCssSnippetDraft(savedCssSnippetSettings());
+    setCssSnippetDraft(savedCssSnippets);
+    setPluginDraft(savedPlugins);
     setSelectedThemePresetIdDraft(savedThemePresetId());
     setThemeDraft(savedThemeTokens());
     setThemeOptionsDraft(savedThemeOptions());
     setThemeCalloutDraft(savedThemeCalloutSettings());
+    void refreshCssSnippets(vaultRoot, savedCssSnippets).catch((error) => {
+      setStatus(error instanceof Error ? error.message : String(error));
+    });
+    void refreshPlugins(vaultRoot, savedPlugins).catch((error) => {
+      setStatus(error instanceof Error ? error.message : String(error));
+    });
     setStatus("Reverted settings preview");
   }
 
@@ -3820,8 +3928,12 @@ function App() {
     };
   }
 
+  function settingsDragStartedOnControl(target: EventTarget | null) {
+    return target instanceof HTMLElement && Boolean(target.closest("button, input, select, textarea"));
+  }
+
   function startSettingsDrag(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) {
+    if (event.button !== 0 || settingsDragStartedOnControl(event.target)) {
       return;
     }
 
@@ -4762,6 +4874,26 @@ function App() {
     setCssSnippetContents(contents);
   }
 
+  async function refreshPlugins(root = vaultRoot, settings = pluginDraft) {
+    if (!root || !isTauri()) {
+      setPluginCatalog({ plugins: [], errors: [] });
+      setPluginStyles([]);
+      return;
+    }
+
+    const normalizedSettings = normalizePluginSettings(settings);
+    const [catalog, styles] = await Promise.all([
+      invoke<PluginCatalog>("list_vault_plugins", { root }),
+      invoke<PluginStyleContent[]>("read_plugin_styles", {
+        root,
+        enabled: normalizedSettings.enabled,
+      }),
+    ]);
+
+    setPluginCatalog(catalog);
+    setPluginStyles(styles);
+  }
+
   async function loadVaultSettings(root: string) {
     const settings = isTauri()
       ? await invoke<VaultSettings>("read_vault_settings", { root })
@@ -4774,6 +4906,7 @@ function App() {
           editor: defaultEditorBehaviorSettings,
           appearance: defaultVaultAppearanceSettings,
           cssSnippets: defaultCssSnippetSettings,
+          plugins: defaultPluginSettings,
           theme: null,
     };
     const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
@@ -4787,6 +4920,7 @@ function App() {
     const tidbits = normalizeTidbitSettings(settings.tidbits);
     const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
     const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
+    const plugins = normalizePluginSettings(settings.plugins);
 
     const normalizedSettings = {
       ...settings,
@@ -4797,6 +4931,7 @@ function App() {
       editor: editorSettings,
       appearance: vaultAppearanceSettings,
       cssSnippets,
+      plugins,
       theme:
         Object.keys(themeTokens).length > 0 ||
         !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -4823,6 +4958,7 @@ function App() {
     setTidbitSettings(tidbits);
     setVaultAppearanceDraft(vaultAppearanceSettings);
     setCssSnippetDraft(cssSnippets);
+    setPluginDraft(plugins);
     setSelectedThemePresetIdDraft(themePresetId);
     setThemeDraft(themeTokens);
     setThemeOptionsDraft(themeOptions);
@@ -4838,6 +4974,7 @@ function App() {
     }
 
     await refreshCssSnippets(root, cssSnippets);
+    await refreshPlugins(root, plugins);
 
     return settings;
   }
@@ -4859,6 +4996,7 @@ function App() {
           editor: normalizeEditorBehaviorSettings(editorBehaviorDraft),
           appearance: normalizeVaultAppearanceSettings(vaultAppearanceDraft),
           cssSnippets: normalizeCssSnippetSettings(cssSnippetDraft),
+          plugins: normalizePluginSettings(pluginDraft),
           theme:
             Object.keys(normalizeThemeTokens(themeDraft)).length > 0 ||
             !sameThemeOptions(themeOptionsDraft, defaultThemeOptions) ||
@@ -4883,6 +5021,7 @@ function App() {
       const tidbits = normalizeTidbitSettings(settings.tidbits);
       const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
       const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
+      const plugins = normalizePluginSettings(settings.plugins);
       const normalizedSettings = {
         ...settings,
         frontmatterPills,
@@ -4892,6 +5031,7 @@ function App() {
         editor: editorSettings,
         appearance: vaultAppearanceSettings,
         cssSnippets,
+        plugins,
         theme:
           Object.keys(themeTokens).length > 0 ||
           !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -4922,6 +5062,7 @@ function App() {
       setTidbitSettings(tidbits);
       setVaultAppearanceDraft(vaultAppearanceSettings);
       setCssSnippetDraft(cssSnippets);
+      setPluginDraft(plugins);
       setSelectedThemePresetIdDraft(themePresetId);
       setThemeDraft(themeTokens);
       setThemeOptionsDraft(themeOptions);
@@ -4931,6 +5072,7 @@ function App() {
         assetDirectory: settings.assetDirectory,
       });
       await refreshCssSnippets(vaultRoot, cssSnippets);
+      await refreshPlugins(vaultRoot, plugins);
       await loadEntries(vaultRoot, currentDir);
       setStatus("Saved vault settings");
     } catch (error) {
@@ -5969,6 +6111,129 @@ function App() {
       .run();
   }
 
+  function insertMarkdownAtCursor(content: string) {
+    if (!editor || !content.trim()) {
+      return;
+    }
+
+    editor.chain().focus().insertContent(content, { contentType: "markdown" }).run();
+  }
+
+  function currentSelectionText() {
+    if (!editor) {
+      return "";
+    }
+
+    const { state } = editor;
+
+    return state.doc.textBetween(state.selection.from, state.selection.to, "\n", "\n");
+  }
+
+  function runWasmPluginTransform(
+    pluginId: string,
+    commandId: string,
+    wasm: PluginWasmCommand,
+    bytes: Uint8Array,
+    input: string,
+  ) {
+    return new Promise<string>((resolve, reject) => {
+      const worker = new Worker(new URL("./pluginWorker.ts", import.meta.url), {
+        type: "module",
+      });
+      const requestId = `${pluginId}:${commandId}:${Date.now()}`;
+      const timeout = window.setTimeout(() => {
+        worker.terminate();
+        reject(new Error(`Plugin ${pluginId}/${commandId} exceeded ${wasm.timeoutMs}ms`));
+      }, wasm.timeoutMs);
+
+      worker.onmessage = (event: MessageEvent<WasmPluginResponse>) => {
+        if (event.data.id !== requestId) {
+          return;
+        }
+
+        window.clearTimeout(timeout);
+        worker.terminate();
+
+        if (event.data.ok) {
+          resolve(event.data.output);
+        } else {
+          reject(new Error(event.data.error));
+        }
+      };
+      worker.onerror = (event) => {
+        window.clearTimeout(timeout);
+        worker.terminate();
+        reject(new Error(event.message));
+      };
+      worker.postMessage({
+        id: requestId,
+        bytes,
+        input,
+      });
+    });
+  }
+
+  async function runPluginCommand(plugin: PluginManifest, command: PluginCommandManifest) {
+    if (!editor) {
+      return;
+    }
+
+    if (!vaultRoot) {
+      setStatus("Open a vault before running plugin commands");
+      return;
+    }
+
+    try {
+      if (command.insertMarkdown) {
+        insertMarkdownAtCursor(command.insertMarkdown);
+        setStatus(`Ran plugin command: ${command.title}`);
+        return;
+      }
+
+      if (command.template) {
+        const template = await invoke<string>("read_plugin_template", {
+          root: vaultRoot,
+          pluginId: plugin.id,
+          template: command.template,
+        });
+
+        insertMarkdownAtCursor(template);
+        setStatus(`Inserted template from ${plugin.name}`);
+        return;
+      }
+
+      if (command.wasm) {
+        const wasmBytes = await invoke<number[]>("read_plugin_wasm", {
+          root: vaultRoot,
+          pluginId: plugin.id,
+          module: command.wasm.module,
+        });
+        const input =
+          command.wasm.input === "document" ? editor.getMarkdown() : currentSelectionText();
+        const output = await runWasmPluginTransform(
+          plugin.id,
+          command.id,
+          command.wasm,
+          new Uint8Array(wasmBytes),
+          input,
+        );
+
+        if (command.wasm.output === "replaceDocument") {
+          setEditorBody(output, false);
+        } else if (command.wasm.output === "insertAtCursor") {
+          editor.chain().focus().setTextSelection(editor.state.selection.to).run();
+          insertMarkdownAtCursor(output);
+        } else {
+          insertMarkdownAtCursor(output);
+        }
+
+        setStatus(`Ran WASM plugin command: ${command.title}`);
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   function appendTableOfContentsBlock() {
     if (!editor) {
       return;
@@ -6095,6 +6360,17 @@ function App() {
         },
       ]
     : [];
+  const enabledPluginIds = new Set(pluginDraft.enabled);
+  const pluginCommandPaletteCommands: CommandPaletteCommand[] = pluginCatalog.plugins
+    .filter((plugin) => enabledPluginIds.has(plugin.id))
+    .flatMap((plugin) =>
+      plugin.commands.map((command) => ({
+        id: `plugin:${plugin.id}:${command.id}`,
+        title: command.title,
+        description: command.description || `${plugin.name} plugin command`,
+        run: () => runPluginCommand(plugin, command),
+      })),
+    );
   const commandPaletteCommands: CommandPaletteCommand[] = [
     // Table editing is contextual enough that the palette keeps it close to
     // the cursor state instead of permanently crowding the formatting toolbar.
@@ -6135,6 +6411,7 @@ function App() {
       description: "Add a rendered table of contents block",
       run: appendTableOfContentsBlock,
     },
+    ...pluginCommandPaletteCommands,
   ];
   const normalizedCommandPaletteQuery = commandPaletteQuery.trim().toLowerCase();
   const filteredCommandPaletteCommands = normalizedCommandPaletteQuery
@@ -6616,6 +6893,15 @@ function App() {
       {cssSnippetContents.map((snippet) => (
         <style data-glyphary-css-snippet={snippet.name} key={snippet.name}>
           {snippet.content}
+        </style>
+      ))}
+      {pluginStyles.map((style) => (
+        <style
+          data-glyphary-plugin={style.pluginId}
+          data-glyphary-plugin-style={style.name}
+          key={`${style.pluginId}:${style.name}`}
+        >
+          {style.content}
         </style>
       ))}
       <datalist id="code-language-options">
@@ -7309,6 +7595,15 @@ function App() {
                 >
                   Appearance
                 </button>
+                <button
+                  className={settingsTab === "plugins" ? "active" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsTab === "plugins"}
+                  onClick={() => setSettingsTab("plugins")}
+                >
+                  Plugins
+                </button>
               </div>
               {settingsTab === "main" ? (
                 <div className="settings-tab-panel" role="tabpanel" aria-label="Main settings">
@@ -7425,7 +7720,83 @@ function App() {
                     </label>
                   </section>
                 </div>
-              ) : (
+              ) : null}
+              {settingsTab === "plugins" ? (
+                <div className="settings-tab-panel" role="tabpanel" aria-label="Plugin settings">
+                  <section className="settings-section" aria-label="Plugin settings">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Plugins</h3>
+                        <p>Enable vault plugins discovered under .glyphary/plugins.</p>
+                      </div>
+                      <button
+                        className="inline-action"
+                        disabled={!vaultRoot}
+                        type="button"
+                        onClick={() => {
+                          void refreshPlugins(vaultRoot, pluginDraft).catch((error) => {
+                            setStatus(error instanceof Error ? error.message : String(error));
+                          });
+                        }}
+                      >
+                        Refresh
+                      </button>
+                    </div>
+                    <div className="plugin-list">
+                      {pluginCatalog.plugins.length > 0 ? (
+                        pluginCatalog.plugins.map((plugin) => {
+                          const checked = pluginDraft.enabled.includes(plugin.id);
+
+                          return (
+                            <label className="settings-check-control plugin-control" key={plugin.id}>
+                              <input
+                                checked={checked}
+                                disabled={!vaultRoot}
+                                type="checkbox"
+                                onChange={(event) => {
+                                  const enabled = event.currentTarget.checked;
+                                  const nextSettings = normalizePluginSettings({
+                                    enabled: enabled
+                                      ? [...pluginDraft.enabled, plugin.id]
+                                      : pluginDraft.enabled.filter((id) => id !== plugin.id),
+                                  });
+
+                                  setPluginDraft(nextSettings);
+                                  void refreshPlugins(vaultRoot, nextSettings).catch((error) => {
+                                    setStatus(error instanceof Error ? error.message : String(error));
+                                  });
+                                }}
+                              />
+                              <span>
+                                <strong>{plugin.name}</strong>
+                                <small>
+                                  {plugin.commands.length} command
+                                  {plugin.commands.length === 1 ? "" : "s"}
+                                  {plugin.styles.length > 0
+                                    ? ` / ${plugin.styles.length} stylesheet${
+                                        plugin.styles.length === 1 ? "" : "s"
+                                      }`
+                                    : ""}
+                                </small>
+                              </span>
+                            </label>
+                          );
+                        })
+                      ) : (
+                        <p className="settings-note">No plugins found.</p>
+                      )}
+                    </div>
+                    {pluginCatalog.errors.length > 0 ? (
+                      <div className="plugin-errors">
+                        {pluginCatalog.errors.map((error) => (
+                          <p key={error}>{error}</p>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                </div>
+              ) : null}
+              {settingsTab === "appearance" ? (
                 <div className="settings-tab-panel" role="tabpanel" aria-label="Appearance settings">
                   <section className="settings-section" aria-label="Window appearance">
                     <div className="settings-section-header">
@@ -7740,7 +8111,7 @@ function App() {
                     </div>
                   </section>
                 </div>
-              )}
+              ) : null}
               <div className="settings-actions">
                 <button
                   className="inline-action"

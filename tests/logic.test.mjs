@@ -362,6 +362,76 @@ test("motion layer keeps interface animations short and reduced-motion aware", (
   assert.match(app, /<footer className="statusbar" key=\{status\}>/);
 });
 
+test("vault plugins are settings-gated and run commands through safe host paths", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const worker = readFileSync("src/pluginWorker.ts", "utf8");
+
+  assert.match(app, /type PluginManifest/);
+  assert.match(app, /type PluginWasmCommand/);
+  assert.match(app, /type SettingsTab = "main" \| "plugins" \| "appearance"/);
+  assert.match(app, /defaultPluginSettings/);
+  assert.match(app, /plugins\?: PluginSettings \| null/);
+  assert.match(app, /normalizePluginSettings/);
+  assert.match(app, /refreshPlugins/);
+  assert.match(app, /list_vault_plugins/);
+  assert.match(app, /read_plugin_styles/);
+  assert.match(app, /read_plugin_template/);
+  assert.match(app, /read_plugin_wasm/);
+  assert.match(app, /new Worker\(new URL\("\.\/pluginWorker\.ts", import\.meta\.url\)/);
+  assert.match(app, /setTimeout\(\(\) => \{/);
+  assert.match(app, /runWasmPluginTransform/);
+  assert.match(app, /pluginCommandPaletteCommands/);
+  assert.match(app, /id: `plugin:\$\{plugin\.id\}:\$\{command\.id\}`/);
+  assert.match(app, /Open a vault before running plugin commands/);
+  assert.match(app, /settingsTab === "plugins"/);
+  assert.match(app, /aria-label="Plugin settings"/);
+  assert.match(app, /Enable vault plugins discovered under \.glyphary\/plugins/);
+  assert.match(app, /data-glyphary-plugin-style/);
+  assert.match(css, /\.plugin-list/);
+  assert.match(css, /\.plugin-errors/);
+  assert.match(backend, /struct PluginManifest/);
+  assert.match(backend, /struct PluginWasmCommand/);
+  assert.match(backend, /fn list_vault_plugins/);
+  assert.match(backend, /fn read_plugin_styles/);
+  assert.match(backend, /fn read_plugin_template/);
+  assert.match(backend, /fn read_plugin_wasm/);
+  assert.match(backend, /PLUGIN_DIRECTORY: &str = "\.glyphary\/plugins"/);
+  assert.match(backend, /SETTINGS_DIRECTORY_NAME: &str = "\.glyphary"/);
+  assert.match(backend, /SETTINGS_CONFIG_FILE_NAME: &str = "config\.json"/);
+  assert.match(backend, /fn vault_settings_path/);
+  assert.match(backend, /Unsupported plugin permission/);
+  assert.match(backend, /lists_plugins_and_reads_only_declared_plugin_assets/);
+  assert.match(worker, /WASM plugin must export memory/);
+  assert.match(worker, /WASM plugin must export alloc\(length\)/);
+  assert.match(worker, /WASM plugin must export transform\(pointer, length\)/);
+});
+
+test("sample uppercase WASM plugin follows the transform ABI", async () => {
+  const manifest = JSON.parse(
+    readFileSync("examples/plugins/uppercase_selection/plugin.json", "utf8"),
+  );
+  const wasm = readFileSync("examples/plugins/uppercase_selection/plugin.wasm");
+  const { instance } = await WebAssembly.instantiate(wasm, {});
+  const exports = instance.exports;
+  const input = new TextEncoder().encode("Hello, Glyphary plugin!");
+  const inputPointer = exports.alloc(input.length);
+
+  new Uint8Array(exports.memory.buffer, inputPointer, input.length).set(input);
+
+  const outputPointer = exports.transform(inputPointer, input.length);
+  const outputLength = new DataView(exports.memory.buffer).getUint32(outputPointer, true);
+  const outputBytes = new Uint8Array(exports.memory.buffer, outputPointer + 4, outputLength);
+  const output = new TextDecoder().decode(outputBytes);
+
+  assert.equal(manifest.id, "uppercase_selection");
+  assert.equal(manifest.commands[0].wasm.module, "plugin.wasm");
+  assert.equal(manifest.commands[0].wasm.input, "selection");
+  assert.equal(manifest.commands[0].wasm.output, "replaceSelection");
+  assert.equal(output, "HELLO, GLYPHARY PLUGIN!");
+});
+
 test("recent files are newest-first unique and capped", () => {
   const existing = Array.from({ length: maxRecentFiles }, (_, index) => ({
     name: `Note ${index}.md`,
@@ -581,6 +651,9 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /setSettingsOffset\(\{ x: 0, y: 0 \}\)/);
   assert.match(app, /function closeSettings/);
   assert.match(app, /function clampSettingsOffset/);
+  assert.match(app, /function settingsDragStartedOnControl/);
+  assert.match(app, /target\.closest\("button, input, select, textarea"\)/);
+  assert.match(app, /settingsDragStartedOnControl\(event\.target\)/);
   assert.match(app, /onPointerDown=\{startSettingsDrag\}/);
   assert.match(app, /onPointerMove=\{moveSettingsDrag\}/);
   assert.match(app, /closeSettingsOnEscape/);

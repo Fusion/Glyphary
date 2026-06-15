@@ -60,6 +60,8 @@ struct VaultSettings {
     appearance: AppearanceSettings,
     #[serde(default)]
     css_snippets: CssSnippetSettings,
+    #[serde(default)]
+    plugins: PluginSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<VaultTheme>,
 }
@@ -199,6 +201,72 @@ struct CssSnippetContent {
     content: String,
 }
 
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct PluginSettings {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    enabled: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginManifest {
+    id: String,
+    name: String,
+    #[serde(default)]
+    version: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    permissions: Vec<String>,
+    #[serde(default)]
+    commands: Vec<PluginCommandManifest>,
+    #[serde(default)]
+    styles: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginCommandManifest {
+    id: String,
+    title: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    insert_markdown: Option<String>,
+    #[serde(default)]
+    template: Option<String>,
+    #[serde(default)]
+    wasm: Option<PluginWasmCommand>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginWasmCommand {
+    module: String,
+    #[serde(default = "default_plugin_wasm_input")]
+    input: String,
+    #[serde(default = "default_plugin_wasm_output")]
+    output: String,
+    #[serde(default = "default_plugin_wasm_timeout_ms")]
+    timeout_ms: u64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginCatalog {
+    plugins: Vec<PluginManifest>,
+    errors: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PluginStyleContent {
+    plugin_id: String,
+    name: String,
+    content: String,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RichLinkMetadata {
@@ -244,7 +312,10 @@ const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
 const DEFAULT_TIDBIT_PATH_PATTERN: &str =
     "__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md";
 const DEFAULT_CSS_SNIPPET_DIRECTORY: &str = "_snippets_";
-const SETTINGS_FILE_NAME: &str = ".glyphary";
+const PLUGIN_DIRECTORY: &str = ".glyphary/plugins";
+const PLUGIN_MANIFEST_FILE: &str = "plugin.json";
+const SETTINGS_DIRECTORY_NAME: &str = ".glyphary";
+const SETTINGS_CONFIG_FILE_NAME: &str = "config.json";
 const THEME_TOKEN_ALLOWLIST: &[&str] = &[
     "--glyphary-accent",
     "--glyphary-accent-text",
@@ -321,6 +392,18 @@ fn default_css_snippet_directory() -> String {
     DEFAULT_CSS_SNIPPET_DIRECTORY.into()
 }
 
+fn default_plugin_wasm_input() -> String {
+    "selection".into()
+}
+
+fn default_plugin_wasm_output() -> String {
+    "replaceSelection".into()
+}
+
+fn default_plugin_wasm_timeout_ms() -> u64 {
+    750
+}
+
 fn default_tidbit_path_pattern() -> String {
     DEFAULT_TIDBIT_PATH_PATTERN.into()
 }
@@ -336,6 +419,7 @@ impl Default for VaultSettings {
             editor: EditorSettings::default(),
             appearance: AppearanceSettings::default(),
             css_snippets: CssSnippetSettings::default(),
+            plugins: PluginSettings::default(),
             theme: None,
         }
     }
@@ -383,6 +467,11 @@ fn vault_root(root: &str) -> Result<PathBuf, String> {
     Ok(root)
 }
 
+fn vault_settings_path(root: &Path) -> PathBuf {
+    root.join(SETTINGS_DIRECTORY_NAME)
+        .join(SETTINGS_CONFIG_FILE_NAME)
+}
+
 fn clean_relative(relative: &str) -> Result<PathBuf, String> {
     // All frontend paths are vault-relative strings. Reject roots, prefixes,
     // and parent traversal before joining with the canonical vault root.
@@ -428,6 +517,7 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
     let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
     let tidbits = clean_tidbit_settings(settings.tidbits);
     let css_snippets = clean_css_snippet_settings(settings.css_snippets)?;
+    let plugins = clean_plugin_settings(settings.plugins)?;
 
     if asset_directory.is_empty() {
         Err("Asset directory cannot be empty".into())
@@ -441,9 +531,201 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
             editor: settings.editor,
             appearance: settings.appearance,
             css_snippets,
+            plugins,
             theme,
         })
     }
+}
+
+fn clean_plugin_settings(settings: PluginSettings) -> Result<PluginSettings, String> {
+    let mut enabled = Vec::new();
+
+    for id in settings.enabled {
+        let id = clean_plugin_id(&id)?;
+
+        if !enabled.contains(&id) {
+            enabled.push(id);
+        }
+    }
+
+    enabled.sort();
+
+    Ok(PluginSettings { enabled })
+}
+
+fn clean_plugin_id(id: &str) -> Result<String, String> {
+    let id = id.trim();
+
+    if id.is_empty()
+        || id.len() > 80
+        || !id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
+    {
+        return Err("Plugin id must use only letters, numbers, dash, or underscore".into());
+    }
+
+    Ok(id.into())
+}
+
+fn clean_plugin_file_path(path: &str, allowed_extensions: &[&str]) -> Result<String, String> {
+    let path = path.trim();
+    let clean = clean_relative(path)?;
+    let normalized = clean
+        .components()
+        .filter_map(|component| match component {
+            Component::Normal(part) => Some(part.to_string_lossy().into_owned()),
+            _ => None,
+        })
+        .collect::<Vec<_>>()
+        .join("/");
+
+    if normalized.is_empty() || normalized.len() > 180 {
+        return Err("Plugin file path is invalid".into());
+    }
+
+    let extension = Path::new(&normalized)
+        .extension()
+        .map(|extension| extension.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    if !allowed_extensions.contains(&extension.as_str()) {
+        return Err(format!("Plugin file has unsupported extension: {normalized}"));
+    }
+
+    Ok(normalized)
+}
+
+fn clean_plugin_permission(permission: &str) -> Result<String, String> {
+    let permission = permission.trim();
+
+    if !matches!(
+        permission,
+        "document:read" | "document:write" | "selection:read" | "selection:write" | "styles:load"
+    ) {
+        return Err(format!("Unsupported plugin permission: {permission}"));
+    }
+
+    Ok(permission.into())
+}
+
+fn clean_plugin_command(command: PluginCommandManifest) -> Result<PluginCommandManifest, String> {
+    let id = clean_plugin_id(&command.id)?;
+    let title = command.title.trim().to_string();
+
+    if title.is_empty() || title.len() > 96 {
+        return Err("Plugin command title must be 1-96 characters".into());
+    }
+
+    let description = command.description.trim().chars().take(180).collect::<String>();
+    let insert_markdown = command
+        .insert_markdown
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let template = command
+        .template
+        .map(|path| clean_plugin_file_path(&path, &["md", "markdown", "txt"]))
+        .transpose()?;
+    let wasm = command.wasm.map(clean_plugin_wasm_command).transpose()?;
+
+    if insert_markdown.is_none() && template.is_none() && wasm.is_none() {
+        return Err(format!("Plugin command has no action: {id}"));
+    }
+
+    Ok(PluginCommandManifest {
+        id,
+        title,
+        description,
+        insert_markdown,
+        template,
+        wasm,
+    })
+}
+
+fn clean_plugin_wasm_command(command: PluginWasmCommand) -> Result<PluginWasmCommand, String> {
+    let module = clean_plugin_file_path(&command.module, &["wasm"])?;
+    let input = command.input.trim();
+    let output = command.output.trim();
+
+    if !matches!(input, "selection" | "document") {
+        return Err(format!("Unsupported WASM input mode: {input}"));
+    }
+
+    if !matches!(output, "replaceSelection" | "insertAtCursor" | "replaceDocument") {
+        return Err(format!("Unsupported WASM output mode: {output}"));
+    }
+
+    Ok(PluginWasmCommand {
+        module,
+        input: input.into(),
+        output: output.into(),
+        timeout_ms: command.timeout_ms.clamp(50, 2_000),
+    })
+}
+
+fn clean_plugin_manifest(
+    manifest: PluginManifest,
+    expected_id: &str,
+) -> Result<PluginManifest, String> {
+    let id = clean_plugin_id(&manifest.id)?;
+
+    if id != expected_id {
+        return Err(format!("Plugin manifest id {id} does not match directory {expected_id}"));
+    }
+
+    let name = manifest.name.trim().to_string();
+
+    if name.is_empty() || name.len() > 96 {
+        return Err("Plugin name must be 1-96 characters".into());
+    }
+
+    let version = manifest.version.trim().chars().take(40).collect::<String>();
+    let description = manifest
+        .description
+        .trim()
+        .chars()
+        .take(240)
+        .collect::<String>();
+    let mut permissions = Vec::new();
+
+    for permission in manifest.permissions {
+        let permission = clean_plugin_permission(&permission)?;
+
+        if !permissions.contains(&permission) {
+            permissions.push(permission);
+        }
+    }
+
+    let mut styles = Vec::new();
+
+    for style in manifest.styles {
+        let style = clean_plugin_file_path(&style, &["css"])?;
+
+        if !styles.contains(&style) {
+            styles.push(style);
+        }
+    }
+
+    if styles.len() > 8 {
+        return Err("Plugins may declare at most 8 stylesheets".into());
+    }
+
+    let commands = manifest
+        .commands
+        .into_iter()
+        .take(32)
+        .map(clean_plugin_command)
+        .collect::<Result<Vec<_>, String>>()?;
+
+    Ok(PluginManifest {
+        id,
+        name,
+        version,
+        description,
+        permissions,
+        commands,
+        styles,
+    })
 }
 
 fn clean_css_snippet_settings(settings: CssSnippetSettings) -> Result<CssSnippetSettings, String> {
@@ -491,6 +773,55 @@ fn clean_css_snippet_name(name: &str) -> Result<String, String> {
     }
 
     Ok(name.into())
+}
+
+fn plugin_directory(root: &Path, plugin_id: &str) -> Result<PathBuf, String> {
+    let plugin_id = clean_plugin_id(plugin_id)?;
+    let path = root.join(PLUGIN_DIRECTORY).join(plugin_id);
+
+    if !path.starts_with(root) {
+        return Err("Plugin path escapes the vault".into());
+    }
+
+    Ok(path)
+}
+
+fn plugin_file_path(root: &Path, plugin_id: &str, relative: &str) -> Result<PathBuf, String> {
+    let base = plugin_directory(root, plugin_id)?;
+    let relative = clean_relative(relative)?;
+    let path = base.join(relative);
+
+    if !path.starts_with(&base) || !path.starts_with(root) {
+        return Err("Plugin file path escapes the plugin directory".into());
+    }
+
+    Ok(path)
+}
+
+fn read_plugin_manifest_from_dir(
+    plugin_dir: &Path,
+    expected_id: &str,
+) -> Result<PluginManifest, String> {
+    let manifest_path = plugin_dir.join(PLUGIN_MANIFEST_FILE);
+
+    if !manifest_path.is_file() {
+        return Err(format!("Plugin {expected_id} is missing {PLUGIN_MANIFEST_FILE}"));
+    }
+
+    let metadata = manifest_path
+        .metadata()
+        .map_err(|err| format!("Could not read plugin manifest metadata: {err}"))?;
+
+    if metadata.len() > 100_000 {
+        return Err(format!("Plugin manifest is too large: {expected_id}"));
+    }
+
+    let content = fs::read_to_string(&manifest_path)
+        .map_err(|err| format!("Could not read plugin manifest {expected_id}: {err}"))?;
+    let manifest = serde_json::from_str::<PluginManifest>(&content)
+        .map_err(|err| format!("Could not parse plugin manifest {expected_id}: {err}"))?;
+
+    clean_plugin_manifest(manifest, expected_id)
 }
 
 fn clean_tidbit_settings(settings: TidbitSettings) -> TidbitSettings {
@@ -1282,7 +1613,7 @@ fn list_vault_dir(root: String, relative: String) -> Result<Vec<VaultEntry>, Str
                 let name = entry.file_name().to_string_lossy().into_owned();
 
                 // .glyphary is vault-local application state, not a user note.
-                if name == SETTINGS_FILE_NAME || (!show_dotfiles && name.starts_with('.')) {
+                if name == SETTINGS_DIRECTORY_NAME || (!show_dotfiles && name.starts_with('.')) {
                     None
                 } else {
                     Some(Ok(entry))
@@ -1767,7 +2098,7 @@ fn list_calendar_day_files(root: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 fn read_vault_settings(root: String) -> Result<VaultSettings, String> {
     let root = vault_root(&root)?;
-    let path = root.join(SETTINGS_FILE_NAME);
+    let path = vault_settings_path(&root);
 
     if !path.exists() {
         return Ok(VaultSettings::default());
@@ -1787,8 +2118,14 @@ fn write_vault_settings(root: String, settings: VaultSettings) -> Result<VaultSe
     let settings = clean_settings(settings)?;
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|err| format!("Could not serialize vault settings: {err}"))?;
+    let settings_path = vault_settings_path(&root);
 
-    fs::write(root.join(SETTINGS_FILE_NAME), format!("{content}\n"))
+    if let Some(settings_dir) = settings_path.parent() {
+        fs::create_dir_all(settings_dir)
+            .map_err(|err| format!("Could not create vault settings directory: {err}"))?;
+    }
+
+    fs::write(settings_path, format!("{content}\n"))
         .map_err(|err| format!("Could not write vault settings: {err}"))?;
 
     Ok(settings)
@@ -1877,6 +2214,162 @@ fn read_css_snippets(
     }
 
     Ok(snippets)
+}
+
+#[tauri::command]
+fn list_vault_plugins(root: String) -> Result<PluginCatalog, String> {
+    let root = vault_root(&root)?;
+    let plugins_dir = root.join(PLUGIN_DIRECTORY);
+
+    if !plugins_dir.exists() {
+        return Ok(PluginCatalog {
+            plugins: Vec::new(),
+            errors: Vec::new(),
+        });
+    }
+
+    if !plugins_dir.is_dir() {
+        return Err("Plugin path is not a directory".into());
+    }
+
+    let mut plugins = Vec::new();
+    let mut errors = Vec::new();
+
+    for entry in fs::read_dir(&plugins_dir)
+        .map_err(|err| format!("Could not read plugin directory: {err}"))?
+    {
+        let entry = entry.map_err(|err| format!("Could not read plugin entry: {err}"))?;
+        let path = entry.path();
+
+        if !path.is_dir() {
+            continue;
+        }
+
+        let Some(id) = path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+            continue;
+        };
+
+        match clean_plugin_id(&id).and_then(|id| read_plugin_manifest_from_dir(&path, &id)) {
+            Ok(manifest) => plugins.push(manifest),
+            Err(error) => errors.push(format!("{id}: {error}")),
+        }
+    }
+
+    plugins.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    errors.sort();
+
+    Ok(PluginCatalog { plugins, errors })
+}
+
+#[tauri::command]
+fn read_plugin_styles(
+    root: String,
+    enabled: Vec<String>,
+) -> Result<Vec<PluginStyleContent>, String> {
+    let root = vault_root(&root)?;
+    let mut styles = Vec::new();
+
+    for plugin_id in enabled {
+        let plugin_id = clean_plugin_id(&plugin_id)?;
+        let plugin_dir = plugin_directory(&root, &plugin_id)?;
+
+        if !plugin_dir.exists() {
+            continue;
+        }
+
+        let manifest = read_plugin_manifest_from_dir(&plugin_dir, &plugin_id)?;
+
+        for style in manifest.styles {
+            let path = plugin_file_path(&root, &plugin_id, &style)?;
+
+            if !path.exists() {
+                continue;
+            }
+
+            if !path.is_file() {
+                return Err(format!("Plugin style is not a file: {plugin_id}/{style}"));
+            }
+
+            let content = fs::read_to_string(&path)
+                .map_err(|err| format!("Could not read plugin style {plugin_id}/{style}: {err}"))?;
+
+            if content.len() > 200_000 {
+                return Err(format!("Plugin style is too large: {plugin_id}/{style}"));
+            }
+
+            styles.push(PluginStyleContent {
+                plugin_id: plugin_id.clone(),
+                name: style,
+                content,
+            });
+        }
+    }
+
+    Ok(styles)
+}
+
+#[tauri::command]
+fn read_plugin_template(root: String, plugin_id: String, template: String) -> Result<String, String> {
+    let root = vault_root(&root)?;
+    let plugin_id = clean_plugin_id(&plugin_id)?;
+    let template = clean_plugin_file_path(&template, &["md", "markdown", "txt"])?;
+    let plugin_dir = plugin_directory(&root, &plugin_id)?;
+    let manifest = read_plugin_manifest_from_dir(&plugin_dir, &plugin_id)?;
+    let declared = manifest
+        .commands
+        .iter()
+        .any(|command| command.template.as_deref() == Some(template.as_str()));
+
+    if !declared {
+        return Err(format!("Plugin template is not declared: {plugin_id}/{template}"));
+    }
+
+    let path = plugin_file_path(&root, &plugin_id, &template)?;
+
+    if !path.is_file() {
+        return Err(format!("Plugin template is not a file: {plugin_id}/{template}"));
+    }
+
+    let content = fs::read_to_string(&path)
+        .map_err(|err| format!("Could not read plugin template {plugin_id}/{template}: {err}"))?;
+
+    if content.len() > 500_000 {
+        return Err(format!("Plugin template is too large: {plugin_id}/{template}"));
+    }
+
+    Ok(content)
+}
+
+#[tauri::command]
+fn read_plugin_wasm(root: String, plugin_id: String, module: String) -> Result<Vec<u8>, String> {
+    let root = vault_root(&root)?;
+    let plugin_id = clean_plugin_id(&plugin_id)?;
+    let module = clean_plugin_file_path(&module, &["wasm"])?;
+    let plugin_dir = plugin_directory(&root, &plugin_id)?;
+    let manifest = read_plugin_manifest_from_dir(&plugin_dir, &plugin_id)?;
+    let declared = manifest
+        .commands
+        .iter()
+        .any(|command| command.wasm.as_ref().map(|wasm| wasm.module.as_str()) == Some(module.as_str()));
+
+    if !declared {
+        return Err(format!("Plugin WASM module is not declared: {plugin_id}/{module}"));
+    }
+
+    let path = plugin_file_path(&root, &plugin_id, &module)?;
+
+    if !path.is_file() {
+        return Err(format!("Plugin WASM module is not a file: {plugin_id}/{module}"));
+    }
+
+    let bytes = fs::read(&path)
+        .map_err(|err| format!("Could not read plugin WASM module {plugin_id}/{module}: {err}"))?;
+
+    if bytes.len() > 5 * 1024 * 1024 {
+        return Err(format!("Plugin WASM module is too large: {plugin_id}/{module}"));
+    }
+
+    Ok(bytes)
 }
 
 #[tauri::command]
@@ -2246,6 +2739,10 @@ pub fn run() {
             write_vault_settings,
             list_css_snippets,
             read_css_snippets,
+            list_vault_plugins,
+            read_plugin_styles,
+            read_plugin_template,
+            read_plugin_wasm,
             allow_vault_assets,
             set_window_glass_effect,
             save_vault_asset,
@@ -2283,7 +2780,9 @@ mod tests {
         let root = test_root();
         fs::create_dir(root.join("notes")).expect("directory should be created");
         fs::write(root.join("alpha.md"), "# Alpha\n").expect("file should be created");
-        fs::write(root.join(SETTINGS_FILE_NAME), "{}").expect("settings file should be created");
+        fs::create_dir_all(root.join(SETTINGS_DIRECTORY_NAME))
+            .expect("settings directory should be created");
+        fs::write(vault_settings_path(&root), "{}").expect("settings file should be created");
 
         let entries = list_vault_dir(root.to_string_lossy().into_owned(), "".into())
             .expect("directory should list");
@@ -2322,6 +2821,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2359,6 +2859,7 @@ mod tests {
         assert!(!settings.appearance.glass_effect);
         assert_eq!(settings.css_snippets.directory, DEFAULT_CSS_SNIPPET_DIRECTORY);
         assert!(settings.css_snippets.enabled.is_empty());
+        assert!(settings.plugins.enabled.is_empty());
         assert!(settings.theme.is_none());
 
         fs::remove_dir_all(root).expect("test root should be removed");
@@ -2389,6 +2890,7 @@ mod tests {
                     directory: "themes/css".into(),
                     enabled: vec!["quiet.css".into(), "quiet.css".into(), "wide.css".into()],
                 },
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2407,7 +2909,8 @@ mod tests {
         assert!(settings.appearance.glass_effect);
         assert_eq!(settings.css_snippets.directory, "themes/css");
         assert_eq!(settings.css_snippets.enabled, vec!["quiet.css", "wide.css"]);
-        assert!(fs::read_to_string(root.join(SETTINGS_FILE_NAME))
+        assert!(root.join(SETTINGS_DIRECTORY_NAME).is_dir());
+        assert!(fs::read_to_string(vault_settings_path(&root))
             .expect("settings should be readable")
             .contains("media/images"));
 
@@ -2429,6 +2932,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2444,6 +2948,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2503,6 +3008,136 @@ mod tests {
     }
 
     #[test]
+    fn lists_plugins_and_reads_only_declared_plugin_assets() {
+        let root = test_root();
+        let plugin_dir = root.join(PLUGIN_DIRECTORY).join("meeting_tools");
+        fs::create_dir_all(plugin_dir.join("templates")).expect("plugin directory should exist");
+        fs::write(
+            plugin_dir.join(PLUGIN_MANIFEST_FILE),
+            r#"{
+  "id": "meeting_tools",
+  "name": "Meeting Tools",
+  "version": "0.1.0",
+  "permissions": ["document:write", "styles:load"],
+  "styles": ["styles.css"],
+  "commands": [
+    {
+      "id": "insert_agenda",
+      "title": "Insert Agenda",
+      "template": "templates/agenda.md"
+    },
+    {
+      "id": "uppercase_selection",
+      "title": "Uppercase Selection",
+      "wasm": {
+        "module": "plugin.wasm",
+        "input": "selection",
+        "output": "replaceSelection",
+        "timeoutMs": 200
+      }
+    }
+  ]
+}"#,
+        )
+        .expect("manifest should be written");
+        fs::write(plugin_dir.join("styles.css"), ".plugin-meeting { color: red; }\n")
+            .expect("style should be written");
+        fs::write(plugin_dir.join("templates").join("agenda.md"), "## Agenda\n\n- ")
+            .expect("template should be written");
+        fs::write(plugin_dir.join("plugin.wasm"), [0_u8, 97, 115, 109])
+            .expect("wasm should be written");
+
+        let catalog =
+            list_vault_plugins(root.to_string_lossy().into_owned()).expect("plugins should list");
+
+        assert!(catalog.errors.is_empty());
+        assert_eq!(catalog.plugins.len(), 1);
+        assert_eq!(catalog.plugins[0].id, "meeting_tools");
+        assert_eq!(catalog.plugins[0].commands.len(), 2);
+        assert_eq!(catalog.plugins[0].styles, vec!["styles.css"]);
+
+        let styles = read_plugin_styles(
+            root.to_string_lossy().into_owned(),
+            vec!["meeting_tools".into()],
+        )
+        .expect("declared styles should read");
+
+        assert_eq!(styles.len(), 1);
+        assert_eq!(styles[0].plugin_id, "meeting_tools");
+        assert!(styles[0].content.contains("plugin-meeting"));
+
+        let template = read_plugin_template(
+            root.to_string_lossy().into_owned(),
+            "meeting_tools".into(),
+            "templates/agenda.md".into(),
+        )
+        .expect("declared template should read");
+
+        assert!(template.contains("Agenda"));
+
+        let wasm = read_plugin_wasm(
+            root.to_string_lossy().into_owned(),
+            "meeting_tools".into(),
+            "plugin.wasm".into(),
+        )
+        .expect("declared wasm should read");
+
+        assert_eq!(wasm, vec![0_u8, 97, 115, 109]);
+
+        let undeclared_template = read_plugin_template(
+            root.to_string_lossy().into_owned(),
+            "meeting_tools".into(),
+            "templates/other.md".into(),
+        )
+        .expect_err("undeclared template should fail");
+
+        assert!(undeclared_template.contains("not declared"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn rejects_plugin_path_escapes_and_unsupported_permissions() {
+        let root = test_root();
+        let plugin_dir = root.join(PLUGIN_DIRECTORY).join("bad_plugin");
+        fs::create_dir_all(&plugin_dir).expect("plugin directory should exist");
+        fs::write(
+            plugin_dir.join(PLUGIN_MANIFEST_FILE),
+            r#"{
+  "id": "bad_plugin",
+  "name": "Bad Plugin",
+  "permissions": ["network:fetch"],
+  "commands": [
+    {
+      "id": "bad",
+      "title": "Bad",
+      "template": "../secret.md"
+    }
+  ]
+}"#,
+        )
+        .expect("manifest should be written");
+
+        let catalog =
+            list_vault_plugins(root.to_string_lossy().into_owned()).expect("plugins should list");
+
+        assert!(catalog.plugins.is_empty());
+        assert_eq!(catalog.errors.len(), 1);
+        assert!(catalog.errors[0].contains("Unsupported plugin permission"));
+
+        let escaped = read_plugin_template(
+            root.to_string_lossy().into_owned(),
+            "../bad_plugin".into(),
+            "secret.md".into(),
+        )
+        .expect_err("escaped plugin id should fail");
+
+        assert!(escaped.contains("Plugin id"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
     fn rejects_invalid_frontmatter_pill_headers() {
         let root = test_root();
 
@@ -2520,6 +3155,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2538,6 +3174,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: None,
             },
         )
@@ -2572,6 +3209,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: Some("field-notes".into()),
                     callouts: VaultThemeCallouts::default(),
@@ -2631,6 +3269,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts::default(),
@@ -2661,6 +3300,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {
@@ -2718,6 +3358,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {
@@ -2744,6 +3385,7 @@ mod tests {
                 editor: EditorSettings::default(),
                 appearance: AppearanceSettings::default(),
                 css_snippets: CssSnippetSettings::default(),
+                plugins: PluginSettings::default(),
                 theme: Some(VaultTheme {
                     preset_id: None,
                     callouts: VaultThemeCallouts {

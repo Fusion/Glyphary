@@ -1,0 +1,20 @@
+{
+  "id": "uppercase_selection",
+  "name": "Uppercase Selection",
+  "version": "0.1.0",
+  "description": "Sample WASM transform plugin that uppercases the selected text.",
+  "permissions": ["selection:read", "selection:write"],
+  "commands": [
+    {
+      "id": "uppercase_selection",
+      "title": "Uppercase Selection",
+      "description": "Transform the current selection to uppercase in a Web Worker.",
+      "wasm": {
+        "module": "plugin.wasm",
+        "input": "selection",
+        "output": "replaceSelection",
+        "timeoutMs": 200
+      }
+    }
+  ]
+}

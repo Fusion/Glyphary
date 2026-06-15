@@ -27,6 +27,7 @@ Glyphary is a Tauri desktop Markdown editor built with React, TypeScript, and Ti
 - Light, dark, and auto appearance modes.
 - Vault-specific theme builder with live preview and a first-pass Obsidian CSS variable compatibility layer.
 - Vault CSS snippets loaded only after individual `.css` files are approved in Settings.
+- Vault plugins loaded only after individual plugin manifests are enabled in Settings.
 - Optional vault-scoped glass window effect on supported native windows.
 - Quick command palette opened with `Cmd+P` or `Ctrl+P`.
 - Native macOS/Tauri menu actions plus the in-window File menu.
@@ -237,7 +238,7 @@ Dragging or pasting an image into the editor:
 Settings are tied to the current vault and stored as JSON in:
 
 ```text
-<vault root>/.glyphary
+<vault root>/.glyphary/config.json
 ```
 
 Currently supported setting:
@@ -252,17 +253,19 @@ Currently supported setting:
 - `appearance.glassEffect`: whether the app window previews a translucent native glass material. Defaults to `false`.
 - `cssSnippets.directory`: vault-relative directory searched for CSS snippets. Defaults to `_snippets_`.
 - `cssSnippets.enabled`: approved `.css` file names from the snippets directory.
+- `plugins.enabled`: approved plugin ids discovered under `.glyphary/plugins`.
 - `theme.presetId`: the selected theme template, when one is active.
 - `theme.tokens`: vault-specific theme token overrides created by theme templates or the Settings theme builder.
 
 The settings screen is separate from the right drawer and can be opened through the menu or `Cmd+,`. Settings are grouped into tabs:
 
 - `Main`: vault asset directory, metadata pill settings, and editor behavior.
+- `Plugins`: vault plugin discovery and enablement.
 - `Appearance`: window glass effect, theme builder, and vault-specific color tokens.
 
 Tidbit path patterns support `{{date:...}}` expansions. Supported date tokens include `YYYY`, `YY`, `MM`, `DD`, `HH`, `hh`, `mm`, and `ss`; the default lowercase `YYYY-mm-DD` date segment is kept compatible and expands `mm` as the month in that position.
 
-Theme tokens are allowlisted and validated by the Tauri backend before they are written to `.glyphary`.
+Theme tokens are allowlisted and validated by the Tauri backend before they are written to `.glyphary/config.json`.
 
 ## Frontmatter And Metadata
 
@@ -314,7 +317,7 @@ Editor tabs let multiple documents stay open at once.
 
 ## Vim-Style Editing
 
-Vim-style editing is optional and can be enabled per vault in `Settings -> Main -> Editor` with `Use Vim keybindings`. The setting is persisted in the vault `.glyphary` file as `editor.vimMode`.
+Vim-style editing is optional and can be enabled per vault in `Settings -> Main -> Editor` with `Use Vim keybindings`. The setting is persisted in the vault `.glyphary/config.json` file as `editor.vimMode`.
 
 The implementation is a local Glyphary Tiptap extension. It owns Normal/Insert mode state, motions, yanks, deletes, paste behavior, status updates, and a small Vim copy buffer.
 
@@ -408,9 +411,81 @@ Glyphary has built-in light, dark, and auto appearance modes. The current theme 
 
 The app maps its own internal theme tokens through those variables, and it applies `theme-light` / `theme-dark` classes based on the resolved appearance. This is a compatibility foundation for future Obsidian-theme imports, not full Obsidian theme support yet. Obsidian themes can still depend on Obsidian-specific DOM structure and selectors that Glyphary does not currently emulate.
 
-The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, approved CSS snippets, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.glyphary`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors, and the selected template id is saved with the vault settings. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected template and token values to `<vault root>/.glyphary`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
+The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, approved CSS snippets, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.glyphary/config.json`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors, and the selected template id is saved with the vault settings. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected template and token values to `<vault root>/.glyphary/config.json`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
 
 CSS snippets are read from the configured vault-relative snippets directory, defaulting to `_snippets_`. Only simple `.css` files in that directory are listed, and only files explicitly checked in Settings are injected into the app. This gives a controlled escape hatch for vault-specific styling without automatically loading every CSS file found on disk.
+
+## Plugins
+
+Plugins are vault-scoped and disabled by default. Glyphary discovers plugin manifests under:
+
+```text
+<vault root>/.glyphary/plugins/<plugin id>/plugin.json
+```
+
+The `.glyphary` directory at the vault root is reserved for Glyphary's vault-local state. Settings are stored in `.glyphary/config.json`, while installable plugins live in `.glyphary/plugins`. Enable discovered plugins in `Settings -> Plugins`. Enabled plugins can contribute command palette commands and styles declared in their manifest. Plugin files are constrained to their own plugin directory; Glyphary does not expose shell commands, direct DOM access, arbitrary filesystem access, background daemons, or network access to plugins.
+
+Example plugin layout:
+
+```text
+.glyphary/plugins/meeting_tools/
+  plugin.json
+  styles.css
+  templates/agenda.md
+  plugin.wasm
+```
+
+Example manifest:
+
+```json
+{
+  "id": "meeting_tools",
+  "name": "Meeting Tools",
+  "version": "0.1.0",
+  "permissions": ["document:write", "styles:load"],
+  "styles": ["styles.css"],
+  "commands": [
+    {
+      "id": "insert_agenda",
+      "title": "Insert Agenda",
+      "template": "templates/agenda.md"
+    },
+    {
+      "id": "uppercase_selection",
+      "title": "Uppercase Selection",
+      "wasm": {
+        "module": "plugin.wasm",
+        "input": "selection",
+        "output": "replaceSelection",
+        "timeoutMs": 200
+      }
+    }
+  ]
+}
+```
+
+Supported command actions:
+
+- `insertMarkdown`: inserts literal Markdown at the current cursor/selection.
+- `template`: reads a declared `.md`, `.markdown`, or `.txt` file from the plugin directory and inserts it.
+- `wasm`: runs a pure transform in a Web Worker with a timeout.
+
+WASM plugins are intentionally narrow. They run off the UI thread and receive only a document or selection snapshot. A module must export:
+
+- `memory`
+- `alloc(length) -> pointer`
+- `transform(pointer, length) -> outputPointer`
+- optional `dealloc(pointer, length)`
+
+The input is UTF-8 at `pointer,length`. The output pointer must point to a little-endian `u32` byte length followed by UTF-8 output bytes. Supported WASM inputs are `selection` and `document`; supported outputs are `replaceSelection`, `insertAtCursor`, and `replaceDocument`.
+
+A working sample lives in `examples/plugins/uppercase_selection`. It includes a `plugin.json`, a checked-in `plugin.wasm`, and a dependency-free Node generator:
+
+```sh
+node examples/plugins/uppercase_selection/build-wasm.mjs
+```
+
+Copy that directory to `<vault root>/.glyphary/plugins/uppercase_selection`, enable it in Settings, select text in the editor, and run `Uppercase Selection` from the command palette to exercise the end-to-end WASM transform path.
 
 The app also exposes an icon-only Auto/Light/Dark appearance control for quick switching.
 
@@ -508,6 +583,8 @@ Frontend unit tests cover helper behavior such as:
 - Markdown callout container integration.
 - Markdown collapse container integration.
 - Rich link Markdown formatting and metadata extraction.
+- Vault plugin manifest, command, style, and WASM host wiring.
+- Sample WASM plugin ABI behavior.
 - Frontmatter list extraction for display pills.
 - Vim-mode integration surface.
 - Split-pane tab lookup and pane closing behavior.
@@ -527,6 +604,7 @@ Rust unit tests cover backend behavior such as:
 - Recent file ordering and capping.
 - Asset saving and collision avoidance.
 - Vault settings validation.
+- Plugin manifest validation and declared asset loading.
 - Vault theme token validation.
 - File rename behavior.
 - Path traversal rejection.

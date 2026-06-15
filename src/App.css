@@ -2449,6 +2449,48 @@ body.workspace-resizing * {
   gap: 7px;
 }
 
+.plugin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.plugin-control > span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.plugin-control strong {
+  color: var(--heading);
+  font-size: 0.86rem;
+  line-height: 1.2;
+  text-transform: none;
+}
+
+.plugin-control small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1.25;
+  text-transform: none;
+}
+
+.plugin-errors {
+  display: grid;
+  gap: 5px;
+  border: var(--border-width) solid color-mix(in srgb, var(--glyphary-callout-warning-color) 55%, var(--border));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--glyphary-callout-warning-color) 12%, transparent);
+  padding: 8px;
+}
+
+.plugin-errors p {
+  margin: 0;
+  color: var(--heading);
+  font-size: 0.76rem;
+  font-weight: 750;
+}
+
 .settings-note {
   margin: 0;
   color: var(--muted);
