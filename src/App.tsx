@@ -46,6 +46,8 @@ import {
   defaultVaultAssetDirectory,
   defaultVaultDrawerWidth,
   displayPath,
+  emptyCalloutMarkdown,
+  emptyColumnsMarkdown,
   emptyTableMarkdown,
   escapeMarkdownImageText,
   escapeMarkdownUrl,
@@ -62,6 +64,7 @@ import {
   monthTitle,
   parentDirectory,
   remainingGroupAfterSplitPaneClose,
+  richLinkMarkdown,
   sameCalendarDate,
   splitMetaHeader,
   splitHasDirtyTabs,
@@ -115,10 +118,108 @@ lowlight.register("toc", plaintext);
 
 type ToolbarAction = {
   label: string;
+  icon?: ToolbarIconName;
   title: string;
   isActive: () => boolean;
   isEnabled?: () => boolean;
   run: () => void;
+};
+
+type ToolbarIconName =
+  | "bullet-list"
+  | "ordered-list"
+  | "quote"
+  | "code"
+  | "table"
+  | "columns"
+  | "callout";
+
+type CommandPaletteCommand = {
+  id: string;
+  title: string;
+  description: string;
+  run: () => void | Promise<void>;
+};
+
+function renderToolbarIcon(icon: ToolbarIconName) {
+  switch (icon) {
+    case "bullet-list":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <circle cx="6" cy="7" r="1.2" />
+          <circle cx="6" cy="12" r="1.2" />
+          <circle cx="6" cy="17" r="1.2" />
+          <path d="M10 7h8" />
+          <path d="M10 12h8" />
+          <path d="M10 17h8" />
+        </svg>
+      );
+    case "ordered-list":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M5.2 8V4.8L4.4 5.3" />
+          <path d="M4.2 11.2h2.2l-2.2 2.6h2.4" />
+          <path d="M4.2 16.2h2.1l-1.2 1.2c.8 0 1.4.4 1.4 1.1 0 .8-.7 1.3-1.7 1.3-.4 0-.8-.1-1.1-.2" />
+          <path d="M10 6h8" />
+          <path d="M10 12h8" />
+          <path d="M10 18h8" />
+        </svg>
+      );
+    case "quote":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M8.5 7.5c-1.7 1.4-2.6 3-2.6 5v3.2h4.5v-4.5H8c.1-1 .7-2 1.9-3.1z" />
+          <path d="M16.4 7.5c-1.7 1.4-2.6 3-2.6 5v3.2h4.5v-4.5h-2.4c.1-1 .7-2 1.9-3.1z" />
+        </svg>
+      );
+    case "code":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="m9 8-4 4 4 4" />
+          <path d="m15 8 4 4-4 4" />
+          <path d="m13 6-2 12" />
+        </svg>
+      );
+    case "table":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="4.5" y="5.5" width="15" height="13" rx="1.6" />
+          <path d="M4.5 10h15" />
+          <path d="M9.5 5.5v13" />
+          <path d="M14.5 5.5v13" />
+          <path d="M4.5 14.2h15" />
+        </svg>
+      );
+    case "columns":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="4.5" y="5.5" width="15" height="13" rx="1.8" />
+          <path d="M12 5.5v13" />
+          <path d="M7.4 9h2" />
+          <path d="M7.4 12h2" />
+          <path d="M14.6 9h2" />
+          <path d="M14.6 12h2" />
+        </svg>
+      );
+    case "callout":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="4.5" y="5.5" width="15" height="13" rx="2" />
+          <path d="M8 5.5v13" />
+          <path d="M11 9h5.2" />
+          <path d="M11 12.4h4" />
+          <path d="m8.2 18.5 2.2 2" />
+        </svg>
+      );
+  }
+}
+
+type RichLinkMetadata = {
+  url: string;
+  title: string;
+  description: string;
+  image: string;
+  siteName: string;
 };
 
 function jumpToHeadingInEditor(
@@ -360,6 +461,8 @@ function createMEditVimMode(reportStatus: (message: string) => void) {
       };
 
       const waitForNextKey = (key: VimPendingCommand["key"]) => {
+        // Multi-key Vim commands are short-lived so an abandoned prefix like
+        // `g` does not unexpectedly affect a later unrelated keypress.
         pendingCommand = { key, expires: Date.now() + 700 };
         return true;
       };
@@ -443,6 +546,8 @@ function createMEditVimMode(reportStatus: (message: string) => void) {
         const { state, view } = this.editor;
         const start = view.coordsAtPos(state.selection.from);
         const lineHeight = parseInt(getComputedStyle(view.dom).lineHeight, 10) || 20;
+        // ProseMirror positions are document offsets, not visual rows. Use
+        // coordinate mapping for j/k so wrapped lines behave like editor lines.
         const target = view.posAtCoords({
           left: start.left,
           top: start.top + direction * lineHeight,
@@ -697,6 +802,9 @@ function createMEditVimMode(reportStatus: (message: string) => void) {
           const { state, view } = this.editor;
           const { before, after } = currentTextblockRange();
           const position = beforeCursor ? before : after;
+          // The local register stores plain text; inserting it as a paragraph
+          // preserves a linewise paste without importing arbitrary HTML/schema
+          // content from the system clipboard.
           const paragraph = state.schema.nodes.paragraph.create(
             null,
             copyBuffer.text ? state.schema.text(copyBuffer.text) : undefined,
@@ -762,6 +870,9 @@ function createMEditVimMode(reportStatus: (message: string) => void) {
             if (!pendingIs("g")) {
               return waitForNextKey("g");
             }
+            // `gg` is implemented explicitly here rather than through a generic
+            // movement helper because earlier keymap attempts treated the
+            // second `g` as a normal character or end-of-document movement.
             return moveToFileStart();
           case "d":
             if (pendingIs("d")) {
@@ -881,10 +992,15 @@ type EditorBehaviorSettings = {
   vimMode: boolean;
 };
 
+type VaultAppearanceSettings = {
+  glassEffect: boolean;
+};
+
 type VaultSettings = {
   assetDirectory: string;
   frontmatterPills?: FrontmatterPillSettings | null;
   editor?: EditorBehaviorSettings | null;
+  appearance?: VaultAppearanceSettings | null;
   theme?: VaultThemeSettings | null;
 };
 
@@ -942,6 +1058,13 @@ type ThemeTokenGroup = {
   controls: ThemeTokenControl[];
 };
 
+type ThemePreset = {
+  id: string;
+  name: string;
+  description: string;
+  tokens: Record<string, string>;
+};
+
 const workspaceStorageKey = "medit.workspace";
 const appearanceStorageKey = "medit.appearance";
 const closedDrawerWidth = 48;
@@ -952,6 +1075,9 @@ const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
 };
 const defaultEditorBehaviorSettings: EditorBehaviorSettings = {
   vimMode: false,
+};
+const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
+  glassEffect: false,
 };
 
 // The theme builder deliberately exposes only stable MEdit variables. Vault
@@ -1015,6 +1141,444 @@ const themeTokenGroups: ThemeTokenGroup[] = [
 const editableThemeTokens = new Set(
   themeTokenGroups.flatMap((group) => group.controls.map((control) => control.token)),
 );
+
+// Presets are full token maps instead of partial overrides. Applying one should
+// erase dependency on any previous custom theme, then the Theme Builder can
+// refine individual values from that complete baseline.
+const themePresets: ThemePreset[] = [
+  {
+    id: "field-notes",
+    name: "Field Notes",
+    description: "Warm paper, green accents, quiet editorial contrast.",
+    tokens: {
+      "--medit-app-bg": "#f3f1eb",
+      "--medit-surface": "#fffdfa",
+      "--medit-surface-muted": "#faf8f2",
+      "--medit-hover": "#eef1ea",
+      "--medit-selection": "rgba(47, 104, 70, 0.16)",
+      "--medit-text": "#17201a",
+      "--medit-text-soft": "#405044",
+      "--medit-editor-text": "#1d271f",
+      "--medit-heading": "#213227",
+      "--medit-muted": "#637167",
+      "--medit-muted-strong": "#5f6d63",
+      "--medit-mono-text": "#273329",
+      "--medit-accent": "#2f6846",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#7d8f7f",
+      "--medit-border": "#ded9ce",
+      "--medit-border-soft": "#e7e2d8",
+      "--medit-border-strong": "#d4d0c6",
+      "--medit-table-border": "#d8d4ca",
+      "--medit-code-bg": "#18231c",
+      "--medit-code-text": "#f2f7ef",
+      "--medit-quote-border": "#77977d",
+      "--medit-quote-text": "#435547",
+      "--medit-shadow": "rgba(45, 38, 27, 0.08)",
+      "--medit-shadow-strong": "rgba(45, 38, 27, 0.12)",
+      "--syntax-blue": "#8fd7ff",
+      "--syntax-green": "#8fd18f",
+      "--syntax-yellow": "#f5d08c",
+      "--syntax-muted": "#8da092",
+    },
+  },
+  {
+    id: "ink-linen",
+    name: "Ink & Linen",
+    description: "Clean white surfaces with crisp ink and restrained blue.",
+    tokens: {
+      "--medit-app-bg": "#f6f7f7",
+      "--medit-surface": "#ffffff",
+      "--medit-surface-muted": "#eef2f3",
+      "--medit-hover": "#e8eff2",
+      "--medit-selection": "rgba(30, 95, 132, 0.16)",
+      "--medit-text": "#11191d",
+      "--medit-text-soft": "#38464d",
+      "--medit-editor-text": "#182126",
+      "--medit-heading": "#10242d",
+      "--medit-muted": "#64727a",
+      "--medit-muted-strong": "#52616a",
+      "--medit-mono-text": "#273a42",
+      "--medit-accent": "#1e5f84",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#6da5bd",
+      "--medit-border": "#d8e0e4",
+      "--medit-border-soft": "#e5ebee",
+      "--medit-border-strong": "#c5d0d6",
+      "--medit-table-border": "#ccd7dc",
+      "--medit-code-bg": "#142026",
+      "--medit-code-text": "#eef7fb",
+      "--medit-quote-border": "#7ca7b7",
+      "--medit-quote-text": "#425d68",
+      "--medit-shadow": "rgba(26, 38, 45, 0.08)",
+      "--medit-shadow-strong": "rgba(26, 38, 45, 0.13)",
+      "--syntax-blue": "#8ed6ff",
+      "--syntax-green": "#9bdba8",
+      "--syntax-yellow": "#f1d28e",
+      "--syntax-muted": "#93a5ad",
+    },
+  },
+  {
+    id: "harbor",
+    name: "Harbor",
+    description: "Cool gray-blue workspace with a calm maritime accent.",
+    tokens: {
+      "--medit-app-bg": "#edf2f4",
+      "--medit-surface": "#f9fbfc",
+      "--medit-surface-muted": "#e7eef2",
+      "--medit-hover": "#dfe9ee",
+      "--medit-selection": "rgba(49, 111, 132, 0.18)",
+      "--medit-text": "#142126",
+      "--medit-text-soft": "#3e5159",
+      "--medit-editor-text": "#1c2e35",
+      "--medit-heading": "#16313a",
+      "--medit-muted": "#63777f",
+      "--medit-muted-strong": "#546a73",
+      "--medit-mono-text": "#263d45",
+      "--medit-accent": "#316f84",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#7fa9b7",
+      "--medit-border": "#d0dce2",
+      "--medit-border-soft": "#dde6ea",
+      "--medit-border-strong": "#bdccd3",
+      "--medit-table-border": "#c4d2d8",
+      "--medit-code-bg": "#13242c",
+      "--medit-code-text": "#eff8fb",
+      "--medit-quote-border": "#6f9aac",
+      "--medit-quote-text": "#3f606b",
+      "--medit-shadow": "rgba(17, 40, 51, 0.09)",
+      "--medit-shadow-strong": "rgba(17, 40, 51, 0.14)",
+      "--syntax-blue": "#8fd9ff",
+      "--syntax-green": "#92d7bd",
+      "--syntax-yellow": "#f0cf8a",
+      "--syntax-muted": "#8fa6af",
+    },
+  },
+  {
+    id: "moss-glass",
+    name: "Moss Glass",
+    description: "Soft green-gray surfaces with low-noise reading tones.",
+    tokens: {
+      "--medit-app-bg": "#eef2ec",
+      "--medit-surface": "#fbfdf8",
+      "--medit-surface-muted": "#e8eee4",
+      "--medit-hover": "#dfe8dc",
+      "--medit-selection": "rgba(76, 122, 84, 0.18)",
+      "--medit-text": "#172119",
+      "--medit-text-soft": "#415344",
+      "--medit-editor-text": "#1d2b20",
+      "--medit-heading": "#203625",
+      "--medit-muted": "#627164",
+      "--medit-muted-strong": "#55665a",
+      "--medit-mono-text": "#28392d",
+      "--medit-accent": "#4c7a54",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#86a888",
+      "--medit-border": "#d4ded0",
+      "--medit-border-soft": "#e1e8dd",
+      "--medit-border-strong": "#c1cfbd",
+      "--medit-table-border": "#cad7c6",
+      "--medit-code-bg": "#142318",
+      "--medit-code-text": "#eef8ee",
+      "--medit-quote-border": "#85a776",
+      "--medit-quote-text": "#4d6446",
+      "--medit-shadow": "rgba(32, 45, 29, 0.08)",
+      "--medit-shadow-strong": "rgba(32, 45, 29, 0.13)",
+      "--syntax-blue": "#92d9f3",
+      "--syntax-green": "#9bdb9d",
+      "--syntax-yellow": "#e8d589",
+      "--syntax-muted": "#90a393",
+    },
+  },
+  {
+    id: "nordic-dawn",
+    name: "Nordic Dawn",
+    description: "Pale cool canvas, muted coral accent, clear document text.",
+    tokens: {
+      "--medit-app-bg": "#f2f4f1",
+      "--medit-surface": "#fffefd",
+      "--medit-surface-muted": "#edf0ed",
+      "--medit-hover": "#e6ecea",
+      "--medit-selection": "rgba(157, 91, 82, 0.17)",
+      "--medit-text": "#18201f",
+      "--medit-text-soft": "#45524f",
+      "--medit-editor-text": "#202927",
+      "--medit-heading": "#263330",
+      "--medit-muted": "#6b7774",
+      "--medit-muted-strong": "#5c6966",
+      "--medit-mono-text": "#2f3a38",
+      "--medit-accent": "#9d5b52",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#b7928a",
+      "--medit-border": "#d9dfdc",
+      "--medit-border-soft": "#e6ebe8",
+      "--medit-border-strong": "#cbd4d0",
+      "--medit-table-border": "#d0d8d5",
+      "--medit-code-bg": "#202928",
+      "--medit-code-text": "#f3f8f6",
+      "--medit-quote-border": "#a79f76",
+      "--medit-quote-text": "#5e5b47",
+      "--medit-shadow": "rgba(32, 39, 37, 0.08)",
+      "--medit-shadow-strong": "rgba(32, 39, 37, 0.13)",
+      "--syntax-blue": "#9dd7f5",
+      "--syntax-green": "#a6d99a",
+      "--syntax-yellow": "#ead38e",
+      "--syntax-muted": "#95a4a1",
+    },
+  },
+  {
+    id: "sepia-study",
+    name: "Sepia Study",
+    description: "Library paper, subdued umber accent, comfortable long-form writing.",
+    tokens: {
+      "--medit-app-bg": "#f0ece2",
+      "--medit-surface": "#fffaf0",
+      "--medit-surface-muted": "#f5efe2",
+      "--medit-hover": "#ece4d5",
+      "--medit-selection": "rgba(129, 91, 47, 0.18)",
+      "--medit-text": "#211a12",
+      "--medit-text-soft": "#55483a",
+      "--medit-editor-text": "#2b2116",
+      "--medit-heading": "#3a2a18",
+      "--medit-muted": "#786b5c",
+      "--medit-muted-strong": "#6d5f4e",
+      "--medit-mono-text": "#463827",
+      "--medit-accent": "#815b2f",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#a88d68",
+      "--medit-border": "#ded2bd",
+      "--medit-border-soft": "#e9dfcc",
+      "--medit-border-strong": "#d1c0a6",
+      "--medit-table-border": "#d7c8b0",
+      "--medit-code-bg": "#221a12",
+      "--medit-code-text": "#fbf4e8",
+      "--medit-quote-border": "#a78c5b",
+      "--medit-quote-text": "#604c2e",
+      "--medit-shadow": "rgba(49, 37, 21, 0.08)",
+      "--medit-shadow-strong": "rgba(49, 37, 21, 0.13)",
+      "--syntax-blue": "#9dccdd",
+      "--syntax-green": "#accb8f",
+      "--syntax-yellow": "#f0ce82",
+      "--syntax-muted": "#a0917e",
+    },
+  },
+  {
+    id: "graphite",
+    name: "Graphite",
+    description: "Neutral dark graphite with sharp text and restrained amber.",
+    tokens: {
+      "--medit-app-bg": "#17191a",
+      "--medit-surface": "#202324",
+      "--medit-surface-muted": "#25292a",
+      "--medit-hover": "#2e3435",
+      "--medit-selection": "rgba(205, 151, 82, 0.2)",
+      "--medit-text": "#edf0ed",
+      "--medit-text-soft": "#c4cbc6",
+      "--medit-editor-text": "#edf1ed",
+      "--medit-heading": "#f5f2e9",
+      "--medit-muted": "#9aa29d",
+      "--medit-muted-strong": "#b0b8b3",
+      "--medit-mono-text": "#d8ded9",
+      "--medit-accent": "#cd9752",
+      "--medit-accent-text": "#1a1208",
+      "--medit-focus": "#d6b17d",
+      "--medit-border": "#383e3f",
+      "--medit-border-soft": "#303536",
+      "--medit-border-strong": "#4b5253",
+      "--medit-table-border": "#454c4d",
+      "--medit-code-bg": "#101314",
+      "--medit-code-text": "#f2f4ef",
+      "--medit-quote-border": "#a88755",
+      "--medit-quote-text": "#d0c2aa",
+      "--medit-shadow": "rgba(0, 0, 0, 0.32)",
+      "--medit-shadow-strong": "rgba(0, 0, 0, 0.42)",
+      "--syntax-blue": "#8dcdf4",
+      "--syntax-green": "#a7d79c",
+      "--syntax-yellow": "#e8c87f",
+      "--syntax-muted": "#8f9a95",
+    },
+  },
+  {
+    id: "night-owl",
+    name: "Night Owl",
+    description: "Deep teal-black writing surface with luminous syntax colors.",
+    tokens: {
+      "--medit-app-bg": "#11191a",
+      "--medit-surface": "#172223",
+      "--medit-surface-muted": "#1c292b",
+      "--medit-hover": "#243436",
+      "--medit-selection": "rgba(95, 161, 154, 0.22)",
+      "--medit-text": "#e9f1ef",
+      "--medit-text-soft": "#bed0cc",
+      "--medit-editor-text": "#e7f2ef",
+      "--medit-heading": "#f1f6f3",
+      "--medit-muted": "#95aaa6",
+      "--medit-muted-strong": "#abc0bc",
+      "--medit-mono-text": "#d5e3df",
+      "--medit-accent": "#5fa19a",
+      "--medit-accent-text": "#071615",
+      "--medit-focus": "#86c1b9",
+      "--medit-border": "#2b3a3c",
+      "--medit-border-soft": "#243234",
+      "--medit-border-strong": "#415255",
+      "--medit-table-border": "#394a4c",
+      "--medit-code-bg": "#0b1213",
+      "--medit-code-text": "#eff9f6",
+      "--medit-quote-border": "#78aaa0",
+      "--medit-quote-text": "#c1d7d2",
+      "--medit-shadow": "rgba(0, 0, 0, 0.34)",
+      "--medit-shadow-strong": "rgba(0, 0, 0, 0.46)",
+      "--syntax-blue": "#86d5ff",
+      "--syntax-green": "#9ce0b4",
+      "--syntax-yellow": "#f0d783",
+      "--syntax-muted": "#8fa5a2",
+    },
+  },
+  {
+    id: "alpine-dark",
+    name: "Alpine Dark",
+    description: "Cool dark mountain palette with green-blue emphasis.",
+    tokens: {
+      "--medit-app-bg": "#14191d",
+      "--medit-surface": "#1b2227",
+      "--medit-surface-muted": "#202a30",
+      "--medit-hover": "#29363d",
+      "--medit-selection": "rgba(113, 158, 139, 0.22)",
+      "--medit-text": "#edf2f0",
+      "--medit-text-soft": "#c2ceca",
+      "--medit-editor-text": "#e7efec",
+      "--medit-heading": "#f0f6f3",
+      "--medit-muted": "#98a9a4",
+      "--medit-muted-strong": "#adbbb7",
+      "--medit-mono-text": "#d8e2df",
+      "--medit-accent": "#719e8b",
+      "--medit-accent-text": "#071310",
+      "--medit-focus": "#95bba9",
+      "--medit-border": "#313d43",
+      "--medit-border-soft": "#2a353b",
+      "--medit-border-strong": "#47545a",
+      "--medit-table-border": "#3d4a50",
+      "--medit-code-bg": "#0e1417",
+      "--medit-code-text": "#f0f7f4",
+      "--medit-quote-border": "#89a871",
+      "--medit-quote-text": "#cdd8c5",
+      "--medit-shadow": "rgba(0, 0, 0, 0.33)",
+      "--medit-shadow-strong": "rgba(0, 0, 0, 0.45)",
+      "--syntax-blue": "#8dcfff",
+      "--syntax-green": "#a8d99e",
+      "--syntax-yellow": "#ead17e",
+      "--syntax-muted": "#93a4a0",
+    },
+  },
+  {
+    id: "plum-ledger",
+    name: "Plum Ledger",
+    description: "Charcoal base with plum accent and accountant-clean contrast.",
+    tokens: {
+      "--medit-app-bg": "#19181d",
+      "--medit-surface": "#222128",
+      "--medit-surface-muted": "#282631",
+      "--medit-hover": "#332f3d",
+      "--medit-selection": "rgba(153, 113, 142, 0.22)",
+      "--medit-text": "#f0edf1",
+      "--medit-text-soft": "#cec6d0",
+      "--medit-editor-text": "#f0edf2",
+      "--medit-heading": "#f8f1f5",
+      "--medit-muted": "#a49aa6",
+      "--medit-muted-strong": "#b9afbb",
+      "--medit-mono-text": "#ded6e0",
+      "--medit-accent": "#99718e",
+      "--medit-accent-text": "#160d13",
+      "--medit-focus": "#b797ad",
+      "--medit-border": "#3b3842",
+      "--medit-border-soft": "#332f39",
+      "--medit-border-strong": "#514c59",
+      "--medit-table-border": "#48434f",
+      "--medit-code-bg": "#121116",
+      "--medit-code-text": "#f6f1f5",
+      "--medit-quote-border": "#9d8bba",
+      "--medit-quote-text": "#d4c8db",
+      "--medit-shadow": "rgba(0, 0, 0, 0.34)",
+      "--medit-shadow-strong": "rgba(0, 0, 0, 0.46)",
+      "--syntax-blue": "#9bcfff",
+      "--syntax-green": "#a9d7a3",
+      "--syntax-yellow": "#ead08a",
+      "--syntax-muted": "#9f96a2",
+    },
+  },
+  {
+    id: "slate-rose",
+    name: "Slate Rose",
+    description: "Pale slate UI with a dried-rose accent and soft borders.",
+    tokens: {
+      "--medit-app-bg": "#f1f2f3",
+      "--medit-surface": "#fffdfd",
+      "--medit-surface-muted": "#ebeef0",
+      "--medit-hover": "#e4e9eb",
+      "--medit-selection": "rgba(154, 87, 96, 0.16)",
+      "--medit-text": "#1d2022",
+      "--medit-text-soft": "#4b5357",
+      "--medit-editor-text": "#252a2d",
+      "--medit-heading": "#2c3134",
+      "--medit-muted": "#6c7478",
+      "--medit-muted-strong": "#5e666b",
+      "--medit-mono-text": "#343d41",
+      "--medit-accent": "#9a5760",
+      "--medit-accent-text": "#ffffff",
+      "--medit-focus": "#b98d93",
+      "--medit-border": "#d9dee1",
+      "--medit-border-soft": "#e6eaec",
+      "--medit-border-strong": "#cbd2d6",
+      "--medit-table-border": "#d1d7da",
+      "--medit-code-bg": "#202326",
+      "--medit-code-text": "#f4f6f6",
+      "--medit-quote-border": "#9b9a72",
+      "--medit-quote-text": "#5b5b45",
+      "--medit-shadow": "rgba(32, 38, 42, 0.08)",
+      "--medit-shadow-strong": "rgba(32, 38, 42, 0.13)",
+      "--syntax-blue": "#8ed2f4",
+      "--syntax-green": "#a4d69c",
+      "--syntax-yellow": "#e9d084",
+      "--syntax-muted": "#96a0a4",
+    },
+  },
+  {
+    id: "blueprint",
+    name: "Blueprint",
+    description: "Technical blue-gray dark mode with diagram-clean contrast.",
+    tokens: {
+      "--medit-app-bg": "#121821",
+      "--medit-surface": "#182231",
+      "--medit-surface-muted": "#1d2b3c",
+      "--medit-hover": "#26384d",
+      "--medit-selection": "rgba(86, 142, 186, 0.24)",
+      "--medit-text": "#edf3f8",
+      "--medit-text-soft": "#c2cfda",
+      "--medit-editor-text": "#eaf2f8",
+      "--medit-heading": "#f5f9fc",
+      "--medit-muted": "#96a8b7",
+      "--medit-muted-strong": "#adbdca",
+      "--medit-mono-text": "#d8e4ee",
+      "--medit-accent": "#568eba",
+      "--medit-accent-text": "#07121a",
+      "--medit-focus": "#83b0d1",
+      "--medit-border": "#2d3d50",
+      "--medit-border-soft": "#263548",
+      "--medit-border-strong": "#43566d",
+      "--medit-table-border": "#394d63",
+      "--medit-code-bg": "#0c1118",
+      "--medit-code-text": "#eff7fd",
+      "--medit-quote-border": "#75a2c6",
+      "--medit-quote-text": "#c8d8e4",
+      "--medit-shadow": "rgba(0, 0, 0, 0.34)",
+      "--medit-shadow-strong": "rgba(0, 0, 0, 0.46)",
+      "--syntax-blue": "#8ed5ff",
+      "--syntax-green": "#9edaa7",
+      "--syntax-yellow": "#efd17e",
+      "--syntax-muted": "#8ea2b1",
+    },
+  },
+];
 
 function readPersistedWorkspace() {
   try {
@@ -1136,6 +1700,24 @@ function sameEditorBehaviorSettings(
   );
 }
 
+function normalizeVaultAppearanceSettings(
+  settings: VaultAppearanceSettings | undefined | null,
+) {
+  return {
+    glassEffect: settings?.glassEffect ?? defaultVaultAppearanceSettings.glassEffect,
+  };
+}
+
+function sameVaultAppearanceSettings(
+  left: VaultAppearanceSettings | undefined | null,
+  right: VaultAppearanceSettings | undefined | null,
+) {
+  return (
+    normalizeVaultAppearanceSettings(left).glassEffect ===
+    normalizeVaultAppearanceSettings(right).glassEffect
+  );
+}
+
 function resolveAppearance(appearance: AppearanceMode): Exclude<AppearanceMode, "auto"> {
   if (appearance === "light" || appearance === "dark") {
     return appearance;
@@ -1206,6 +1788,443 @@ function joinVaultAssetPath(root: string, assetDirectory: string, reference: str
   }
 
   return convertFileSrc(`${root}/${assetDirectory || defaultVaultAssetDirectory}/${cleanReference}`);
+}
+
+type ContainerMarkdownLexer = {
+  blockTokens: (src: string) => MarkdownToken[];
+};
+
+type ContainerOpening = {
+  length: number;
+  attrs?: Record<string, unknown>;
+};
+
+function createMarkdownContainerToken(
+  src: string,
+  type: string,
+  opening: ContainerOpening | null,
+  lexer: ContainerMarkdownLexer,
+) {
+  if (!opening) {
+    return undefined;
+  }
+
+  const openingLength = opening.length;
+  const body = src.slice(openingLength);
+  const markerPattern = /^:::[^\S\n]*([\w-]+)?[^\n\r]*$/gm;
+  let depth = 1;
+  let markerMatch: RegExpExecArray | null = null;
+
+  while ((markerMatch = markerPattern.exec(body))) {
+    const [, nestedType] = markerMatch;
+
+    // The container syntax reuses a bare ::: closing marker for every type.
+    // Track nested named openings so a child column/callout close does not
+    // terminate its parent columns container.
+    if (nestedType) {
+      depth += 1;
+    } else {
+      depth -= 1;
+    }
+
+    if (depth === 0) {
+      const innerMarkdown = body.slice(0, markerMatch.index);
+      const closingLength = markerMatch[0].length;
+
+      // Marked tokenizers receive the remaining source from the current
+      // position. Returning only through the matching closing fence lets the
+      // normal block parser continue with the markdown that follows.
+      return {
+        type,
+        raw: src.slice(0, openingLength + markerMatch.index + closingLength),
+        ...opening.attrs,
+        content: innerMarkdown,
+        tokens: lexer.blockTokens(innerMarkdown),
+      };
+    }
+  }
+
+  return undefined;
+}
+
+function namedContainerOpening(src: string, type: string) {
+  const match = src.match(new RegExp(`^:::[^\\S\\n]*${type}[^\\S\\n]*\\r?\\n`));
+
+  return match ? { length: match[0].length } : null;
+}
+
+function unescapeCalloutTitle(title: string) {
+  return title.replace(/\\(["\\])/g, "$1");
+}
+
+function escapeCalloutTitle(title: string) {
+  return title.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}
+
+function calloutContainerOpening(src: string) {
+  const match = src.match(
+    /^:::[^\S\n]*callout(?:[^\S\n]+(?:(\w[\w-]*)|"((?:\\.|[^"\\])*)"))?(?:[^\S\n]+"((?:\\.|[^"\\])*)")?[^\S\n]*\r?\n/,
+  );
+
+  if (!match) {
+    return null;
+  }
+
+  const [, kind, titleWithoutKind, titleWithKind] = match;
+  const title = titleWithKind ?? titleWithoutKind ?? "";
+
+  // Support both `::: callout "Title"` and
+  // `::: callout warning "Title"` so older notes can omit a visual kind.
+  return {
+    length: match[0].length,
+    attrs: {
+      kind: kind ?? "note",
+      title: title ? unescapeCalloutTitle(title) : null,
+    },
+  };
+}
+
+function emptyParagraphNode(helpers: {
+  createNode: (type: string, attrs?: Record<string, unknown>, content?: JSONContent[]) => JSONContent;
+}) {
+  return helpers.createNode("paragraph");
+}
+
+function createColumnExtension() {
+  return Node.create({
+    name: "column",
+    content: "block+",
+    defining: true,
+
+    parseHTML() {
+      return [{ tag: "div[data-medit-column]" }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      return [
+        "div",
+        mergeAttributes(HTMLAttributes, {
+          "data-medit-column": "true",
+          class: "markdown-column",
+        }),
+        0,
+      ];
+    },
+
+    markdownTokenName: "column",
+
+    markdownTokenizer: {
+      name: "column",
+      level: "block",
+      start: (src: string) => src.search(/^:::[^\S\n]*column[^\S\n]*$/m),
+      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
+        createMarkdownContainerToken(src, "column", namedContainerOpening(src, "column"), lexer),
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      const content = helpers.parseBlockChildren
+        ? helpers.parseBlockChildren(token.tokens ?? [])
+        : helpers.parseChildren(token.tokens ?? []);
+
+      return helpers.createNode("column", {}, content.length ? content : [emptyParagraphNode(helpers)]);
+    },
+
+    renderMarkdown: (node: JSONContent, helpers) => {
+      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
+
+      return `::: column\n${body}\n:::`;
+    },
+  });
+}
+
+function createColumnsExtension() {
+  return Node.create({
+    name: "columns",
+    group: "block",
+    content: "column+",
+    defining: true,
+
+    parseHTML() {
+      return [{ tag: "div[data-medit-columns]" }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      return [
+        "div",
+        mergeAttributes(HTMLAttributes, {
+          "data-medit-columns": "true",
+          class: "markdown-columns",
+        }),
+        0,
+      ];
+    },
+
+    markdownTokenName: "columns",
+
+    markdownTokenizer: {
+      name: "columns",
+      level: "block",
+      start: (src: string) => src.search(/^:::[^\S\n]*columns[^\S\n]*$/m),
+      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
+        createMarkdownContainerToken(src, "columns", namedContainerOpening(src, "columns"), lexer),
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      // Only direct column children are preserved. Loose markdown inside a
+      // columns container is ambiguous to render, so malformed input falls back
+      // to a single empty column instead of silently reshaping content.
+      const columns = helpers
+        .parseChildren(token.tokens ?? [])
+        .filter((node) => node.type === "column");
+
+      return helpers.createNode(
+        "columns",
+        {},
+        columns.length
+          ? columns
+          : [helpers.createNode("column", {}, [emptyParagraphNode(helpers)])],
+      );
+    },
+
+    renderMarkdown: (node: JSONContent, helpers) => {
+      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
+
+      return `::: columns\n${body}\n:::`;
+    },
+  });
+}
+
+function createCalloutExtension() {
+  return Node.create({
+    name: "callout",
+    group: "block",
+    content: "block+",
+    defining: true,
+
+    addAttributes() {
+      return {
+        kind: {
+          default: "note",
+          parseHTML: (element) => element.getAttribute("data-callout-kind") || "note",
+          renderHTML: () => ({}),
+        },
+        title: {
+          default: null,
+          parseHTML: (element) => element.getAttribute("data-callout-title"),
+          renderHTML: () => ({}),
+        },
+      };
+    },
+
+    parseHTML() {
+      return [{ tag: "aside[data-medit-callout]" }];
+    },
+
+    renderHTML({ node, HTMLAttributes }) {
+      const kind = typeof node.attrs.kind === "string" ? node.attrs.kind : "note";
+      const title = typeof node.attrs.title === "string" ? node.attrs.title : null;
+
+      return [
+        "aside",
+        mergeAttributes(HTMLAttributes, {
+          "data-medit-callout": "true",
+          "data-callout-kind": kind,
+          ...(title ? { "data-callout-title": title } : {}),
+          class: `markdown-callout markdown-callout-${kind}`,
+        }),
+        ["div", { class: "markdown-callout-title", contenteditable: "false" }, title || kind],
+        ["div", { class: "markdown-callout-body" }, 0],
+      ];
+    },
+
+    markdownTokenName: "callout",
+
+    markdownTokenizer: {
+      name: "callout",
+      level: "block",
+      start: (src: string) => src.search(/^:::[^\S\n]*callout(?:[^\n\r]*)?$/m),
+      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
+        createMarkdownContainerToken(src, "callout", calloutContainerOpening(src), lexer),
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      const calloutToken = token as MarkdownToken & { kind?: unknown; title?: unknown };
+      const content = helpers.parseBlockChildren
+        ? helpers.parseBlockChildren(token.tokens ?? [])
+        : helpers.parseChildren(token.tokens ?? []);
+
+      return helpers.createNode(
+        "callout",
+        {
+          kind: typeof calloutToken.kind === "string" ? calloutToken.kind : "note",
+          title: typeof calloutToken.title === "string" ? calloutToken.title : null,
+        },
+        content.length ? content : [emptyParagraphNode(helpers)],
+      );
+    },
+
+    renderMarkdown: (node: JSONContent, helpers) => {
+      const attrs = node.attrs ?? {};
+      const kind = typeof attrs.kind === "string" && attrs.kind ? attrs.kind : "note";
+      const title = typeof attrs.title === "string" && attrs.title ? attrs.title : "";
+      const titlePart = title ? ` "${escapeCalloutTitle(title)}"` : "";
+      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
+
+      return `::: callout ${kind}${titlePart}\n${body}\n:::`;
+    },
+  });
+}
+
+function parseRichLinkMarkdownFields(markdown: string) {
+  return markdown
+    .split(/\r?\n/)
+    .reduce<Record<string, string>>((fields, line) => {
+      const match = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
+
+      if (!match) {
+        return fields;
+      }
+
+      const [, key, value] = match;
+      fields[key] = value.trim();
+      return fields;
+    }, {});
+}
+
+function createRichLinkExtension() {
+  return Node.create({
+    name: "richLink",
+    group: "block",
+    atom: true,
+    selectable: true,
+    draggable: true,
+
+    addAttributes() {
+      return {
+        url: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-rich-link-url") || "",
+          renderHTML: () => ({}),
+        },
+        title: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-rich-link-title") || "",
+          renderHTML: () => ({}),
+        },
+        description: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-rich-link-description") || "",
+          renderHTML: () => ({}),
+        },
+        image: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-rich-link-image") || "",
+          renderHTML: () => ({}),
+        },
+        siteName: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-rich-link-site-name") || "",
+          renderHTML: () => ({}),
+        },
+      };
+    },
+
+    parseHTML() {
+      return [{ tag: "div[data-medit-rich-link]" }];
+    },
+
+    renderHTML({ node }) {
+      const url = typeof node.attrs.url === "string" ? node.attrs.url : "";
+      const title = typeof node.attrs.title === "string" ? node.attrs.title : url;
+      const description =
+        typeof node.attrs.description === "string" ? node.attrs.description : "";
+      const image = typeof node.attrs.image === "string" ? node.attrs.image : "";
+      const siteName = typeof node.attrs.siteName === "string" ? node.attrs.siteName : "";
+
+      const content = [
+          "div",
+          { class: "rich-link-content" },
+          siteName ? ["span", { class: "rich-link-site" }, siteName] : ["span", { class: "rich-link-site" }, "Link"],
+          ["strong", {}, title || url],
+          description ? ["p", {}, description] : ["p", {}, url],
+          ["span", { class: "rich-link-url" }, url],
+        ];
+
+      return image
+        ? [
+            "div",
+            {
+              "data-medit-rich-link": "true",
+              "data-rich-link-url": url,
+              "data-rich-link-title": title,
+              "data-rich-link-description": description,
+              "data-rich-link-image": image,
+              "data-rich-link-site-name": siteName,
+              class: "rich-link-card",
+              contenteditable: "false",
+            },
+            content,
+            ["img", { class: "rich-link-image", src: image, alt: "" }],
+          ]
+        : [
+            "div",
+            {
+              "data-medit-rich-link": "true",
+              "data-rich-link-url": url,
+              "data-rich-link-title": title,
+              "data-rich-link-description": description,
+              "data-rich-link-image": image,
+              "data-rich-link-site-name": siteName,
+              class: "rich-link-card rich-link-card-no-image",
+              contenteditable: "false",
+            },
+            content,
+          ];
+    },
+
+    markdownTokenName: "rich-link",
+
+    markdownTokenizer: {
+      name: "rich-link",
+      level: "block",
+      start: (src: string) => src.search(/^:::[^\S\n]*rich-link[^\S\n]*$/m),
+      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
+        createMarkdownContainerToken(src, "rich-link", namedContainerOpening(src, "rich-link"), lexer),
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      const richLinkToken = token as MarkdownToken & { content?: string };
+      const fields = parseRichLinkMarkdownFields(richLinkToken.content ?? "");
+      const url = fields.url ?? "";
+
+      // A rich-link container without a URL cannot be opened or refreshed, so
+      // dropping it is safer than rendering a permanent inert preview card.
+      if (!url) {
+        return [];
+      }
+
+      return helpers.createNode("richLink", {
+        url,
+        title: fields.title ?? url,
+        description: fields.description ?? "",
+        image: fields.image ?? "",
+        siteName: fields.siteName ?? "",
+      });
+    },
+
+    renderMarkdown: (node: JSONContent) => {
+      const attrs = node.attrs ?? {};
+      const url = typeof attrs.url === "string" ? attrs.url : "";
+
+      return richLinkMarkdown({
+        url,
+        title: typeof attrs.title === "string" ? attrs.title : "",
+        description: typeof attrs.description === "string" ? attrs.description : "",
+        image: typeof attrs.image === "string" ? attrs.image : "",
+        siteName: typeof attrs.siteName === "string" ? attrs.siteName : "",
+      });
+    },
+  });
 }
 
 function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => string) {
@@ -1351,6 +2370,7 @@ function App() {
     assetDirectory: defaultVaultAssetDirectory,
     frontmatterPills: defaultFrontmatterPillSettings,
     editor: defaultEditorBehaviorSettings,
+    appearance: defaultVaultAppearanceSettings,
     theme: null,
   });
   const [settingsDraft, setSettingsDraft] = useState(defaultVaultAssetDirectory);
@@ -1363,6 +2383,8 @@ function App() {
   const [editorBehavior, setEditorBehavior] = useState<EditorBehaviorSettings>(
     defaultEditorBehaviorSettings,
   );
+  const [vaultAppearanceDraft, setVaultAppearanceDraft] =
+    useState<VaultAppearanceSettings>(defaultVaultAppearanceSettings);
   const [themeDraft, setThemeDraft] = useState<Record<string, string>>({});
   const [currentDir, setCurrentDir] = useState("");
   const [entries, setEntries] = useState<VaultEntry[]>([]);
@@ -1397,6 +2419,12 @@ function App() {
   const [calendarNoteDateKeys, setCalendarNoteDateKeys] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("main");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteSelectedIndex, setCommandPaletteSelectedIndex] = useState(0);
+  const [richLinkDialogOpen, setRichLinkDialogOpen] = useState(false);
+  const [richLinkUrlDraft, setRichLinkUrlDraft] = useState("");
+  const [richLinkSubmitting, setRichLinkSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("filename");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -1412,6 +2440,8 @@ function App() {
   const editorGroupsRef = useRef<Record<EditorGroupId, EditorGroupState>>(editorGroups);
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
   const workspaceRef = useRef<HTMLElement | null>(null);
+  const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  const richLinkInputRef = useRef<HTMLInputElement | null>(null);
   const pageNameRef = useRef("Untitled note");
   const metaHeaderRef = useRef("");
   const metaDelimiterRef = useRef<MarkdownParts["metaDelimiter"]>(defaultMetaDelimiter);
@@ -1430,11 +2460,13 @@ function App() {
     assetDirectory: defaultVaultAssetDirectory,
     frontmatterPills: defaultFrontmatterPillSettings,
     editor: defaultEditorBehaviorSettings,
+    appearance: defaultVaultAppearanceSettings,
     theme: null,
   });
   // Track only properties we applied from the theme builder so switching vaults
   // or resetting a theme can remove stale inline CSS variables.
   const appliedThemeTokensRef = useRef<Set<string>>(new Set());
+  const windowGlassPreviewAppliedRef = useRef(false);
   const restoredWorkspace = useRef(false);
 
   useEffect(() => {
@@ -1524,6 +2556,42 @@ function App() {
   }, [appearance, resolvedAppearance]);
 
   useEffect(() => {
+    document.documentElement.dataset.windowGlass = vaultAppearanceDraft.glassEffect
+      ? "enabled"
+      : "disabled";
+
+    const shouldReportPreview = windowGlassPreviewAppliedRef.current;
+    windowGlassPreviewAppliedRef.current = true;
+
+    if (!isTauri()) {
+      if (shouldReportPreview) {
+        setStatus(
+          vaultAppearanceDraft.glassEffect
+            ? "Previewing glass window effect"
+            : "Disabled glass window effect preview",
+        );
+      }
+      return;
+    }
+
+    void invoke<boolean>("set_window_glass_effect", {
+      enabled: vaultAppearanceDraft.glassEffect,
+    })
+      .then((applied) => {
+        if (shouldReportPreview) {
+          setStatus(
+            applied
+              ? "Previewing glass window effect"
+              : "Disabled glass window effect preview",
+          );
+        }
+      })
+      .catch((error) => {
+        setStatus(error instanceof Error ? error.message : String(error));
+      });
+  }, [vaultAppearanceDraft.glassEffect]);
+
+  useEffect(() => {
     return () => {
       if (clickTimer.current) {
         clearTimeout(clickTimer.current);
@@ -1558,6 +2626,11 @@ function App() {
     }));
   }
 
+  function applyThemePreset(preset: ThemePreset) {
+    setThemeDraft(normalizeThemeTokens(preset.tokens));
+    setStatus(`Previewing theme template: ${preset.name}`);
+  }
+
   function savedThemeTokens() {
     return normalizeThemeTokens(vaultSettings.theme?.tokens);
   }
@@ -1570,11 +2643,16 @@ function App() {
     return normalizeEditorBehaviorSettings(vaultSettings.editor);
   }
 
+  function savedVaultAppearanceSettings() {
+    return normalizeVaultAppearanceSettings(vaultSettings.appearance);
+  }
+
   function settingsHaveChanges() {
     return (
       settingsDraft !== vaultSettings.assetDirectory ||
       !sameFrontmatterPillSettings(frontmatterPillDraft, savedFrontmatterPillSettings()) ||
       !sameEditorBehaviorSettings(editorBehaviorDraft, savedEditorBehaviorSettings()) ||
+      !sameVaultAppearanceSettings(vaultAppearanceDraft, savedVaultAppearanceSettings()) ||
       !sameThemeTokens(themeDraft, savedThemeTokens())
     );
   }
@@ -1588,6 +2666,7 @@ function App() {
     setSettingsDraft(vaultSettings.assetDirectory);
     setFrontmatterPillDraft(savedFrontmatterPillSettings());
     setEditorBehaviorDraft(savedEditorBehaviorSettings());
+    setVaultAppearanceDraft(savedVaultAppearanceSettings());
     setThemeDraft(savedThemeTokens());
     setStatus("Reverted settings preview");
   }
@@ -1946,11 +3025,19 @@ function App() {
         StarterKit.configure({
           codeBlock: false,
         }),
+        // Custom block extensions must be registered before Markdown so their
+        // tokenizers participate in markdown parse/serialize round-trips.
         CodeBlockLowlight.configure({
           lowlight,
         }),
         TocCodeBlockRenderer,
         ...(editorBehavior.vimMode ? [createMEditVimMode(setStatus)] : []),
+        createColumnExtension(),
+        createColumnsExtension(),
+        createCalloutExtension(),
+        createRichLinkExtension(),
+        // Vault images resolve late through refs because the same editor
+        // instance can survive vault setting changes such as the asset folder.
         createVaultImageExtension((target) =>
           joinVaultAssetPath(
             vaultRootRef.current,
@@ -2137,6 +3224,8 @@ function App() {
       return;
     }
 
+    // Restore only after the primary editor exists; hydrating before Tiptap is
+    // ready would update React state but leave the editor document stale.
     restoredWorkspace.current = true;
     const persisted = readPersistedWorkspace();
 
@@ -2283,68 +3372,52 @@ function App() {
       },
       {
         label: "UL",
+        icon: "bullet-list",
         title: "Bullet list",
         isActive: () => editorFocused && editor.isActive("bulletList"),
         run: () => editor.chain().focus().toggleBulletList().run(),
       },
       {
         label: "OL",
+        icon: "ordered-list",
         title: "Ordered list",
         isActive: () => editorFocused && editor.isActive("orderedList"),
         run: () => editor.chain().focus().toggleOrderedList().run(),
       },
       {
         label: "Quote",
+        icon: "quote",
         title: "Blockquote",
         isActive: () => editorFocused && editor.isActive("blockquote"),
         run: () => editor.chain().focus().toggleBlockquote().run(),
       },
       {
         label: "Code",
+        icon: "code",
         title: "Code block",
         isActive: () => editorFocused && editor.isActive("codeBlock"),
         run: () => editor.chain().focus().toggleCodeBlock().run(),
       },
       {
         label: "Table",
+        icon: "table",
         title: "Insert table",
         isActive: () => false,
         run: () => appendTable(),
       },
       {
-        label: "+ Row",
-        title: "Add row after",
+        label: "Cols",
+        icon: "columns",
+        title: "Insert columns",
         isActive: () => false,
-        isEnabled: () => editor.can().addRowAfter(),
-        run: () => editor.chain().focus().addRowAfter().run(),
+        run: () => appendColumns(),
       },
       {
-        label: "- Row",
-        title: "Delete row",
-        isActive: () => false,
-        isEnabled: () => editor.can().deleteRow(),
-        run: () => editor.chain().focus().deleteRow().run(),
-      },
-      {
-        label: "+ Col",
-        title: "Add column after",
-        isActive: () => false,
-        isEnabled: () => editor.can().addColumnAfter(),
-        run: () => editor.chain().focus().addColumnAfter().run(),
-      },
-      {
-        label: "- Col",
-        title: "Delete column",
-        isActive: () => false,
-        isEnabled: () => editor.can().deleteColumn(),
-        run: () => editor.chain().focus().deleteColumn().run(),
-      },
-      {
-        label: "Drop Table",
-        title: "Delete table",
-        isActive: () => false,
-        isEnabled: () => editor.can().deleteTable(),
-        run: () => editor.chain().focus().deleteTable().run(),
+        label: "Callout",
+        icon: "callout",
+        title: "Insert callout",
+        isActive: () => editorFocused && editor.isActive("callout"),
+        run: () => appendCallout(),
       },
     ];
   }, [editor, editorFocused, editorStateVersion, markdown]);
@@ -2446,16 +3519,19 @@ function App() {
           assetDirectory: defaultVaultAssetDirectory,
           frontmatterPills: defaultFrontmatterPillSettings,
           editor: defaultEditorBehaviorSettings,
+          appearance: defaultVaultAppearanceSettings,
           theme: null,
         };
     const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
     const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
     const editorSettings = normalizeEditorBehaviorSettings(settings.editor);
+    const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
 
     const normalizedSettings = {
       ...settings,
       frontmatterPills,
       editor: editorSettings,
+      appearance: vaultAppearanceSettings,
     };
 
     vaultSettingsRef.current = normalizedSettings;
@@ -2464,6 +3540,7 @@ function App() {
     setFrontmatterPillDraft(frontmatterPills);
     setEditorBehaviorDraft(editorSettings);
     setEditorBehavior(editorSettings);
+    setVaultAppearanceDraft(vaultAppearanceSettings);
     setThemeDraft(themeTokens);
 
     if (isTauri()) {
@@ -2490,6 +3567,7 @@ function App() {
           assetDirectory: settingsDraft,
           frontmatterPills: normalizeFrontmatterPillSettings(frontmatterPillDraft),
           editor: normalizeEditorBehaviorSettings(editorBehaviorDraft),
+          appearance: normalizeVaultAppearanceSettings(vaultAppearanceDraft),
           theme: Object.keys(normalizeThemeTokens(themeDraft)).length > 0
             ? { tokens: normalizeThemeTokens(themeDraft) }
             : null,
@@ -2498,10 +3576,12 @@ function App() {
       const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
       const frontmatterPills = normalizeFrontmatterPillSettings(settings.frontmatterPills);
       const editorSettings = normalizeEditorBehaviorSettings(settings.editor);
+      const vaultAppearanceSettings = normalizeVaultAppearanceSettings(settings.appearance);
       const normalizedSettings = {
         ...settings,
         frontmatterPills,
         editor: editorSettings,
+        appearance: vaultAppearanceSettings,
       };
 
       snapshotActiveTab("primary");
@@ -2514,6 +3594,7 @@ function App() {
       setFrontmatterPillDraft(frontmatterPills);
       setEditorBehaviorDraft(editorSettings);
       setEditorBehavior(editorSettings);
+      setVaultAppearanceDraft(vaultAppearanceSettings);
       setThemeDraft(themeTokens);
       await invoke("allow_vault_assets", {
         root: vaultRoot,
@@ -2673,13 +3754,45 @@ function App() {
       event.preventDefault();
       void saveCurrentFileRef.current();
     };
+    const handleGlobalCommandPaletteShortcut = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.key.toLowerCase() !== "p") {
+        return;
+      }
+
+      if (!event.metaKey && !event.ctrlKey) {
+        return;
+      }
+
+      event.preventDefault();
+      setCommandPaletteQuery("");
+      setCommandPaletteSelectedIndex(0);
+      setCommandPaletteOpen(true);
+    };
 
     window.addEventListener("keydown", handleGlobalSaveShortcut);
+    window.addEventListener("keydown", handleGlobalCommandPaletteShortcut);
 
     return () => {
       window.removeEventListener("keydown", handleGlobalSaveShortcut);
+      window.removeEventListener("keydown", handleGlobalCommandPaletteShortcut);
     };
   }, []);
+
+  useEffect(() => {
+    if (!commandPaletteOpen) {
+      return;
+    }
+
+    commandPaletteInputRef.current?.focus();
+  }, [commandPaletteOpen]);
+
+  useEffect(() => {
+    if (!richLinkDialogOpen) {
+      return;
+    }
+
+    richLinkInputRef.current?.focus();
+  }, [richLinkDialogOpen]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -2943,6 +4056,162 @@ function App() {
     }
 
     setEditorBody(`${markdown.trimEnd()}\n\n${emptyTableMarkdown}`, false);
+  }
+
+  function appendColumns() {
+    if (!editor) {
+      return;
+    }
+
+    setEditorBody(`${markdown.trimEnd()}\n\n${emptyColumnsMarkdown}`, false);
+  }
+
+  function appendCallout() {
+    if (!editor) {
+      return;
+    }
+
+    setEditorBody(`${markdown.trimEnd()}\n\n${emptyCalloutMarkdown}`, false);
+  }
+
+  function openRichLinkDialog() {
+    if (!editor) {
+      return;
+    }
+
+    setRichLinkUrlDraft("");
+    setRichLinkDialogOpen(true);
+  }
+
+  async function insertRichLinkFromUrl(url: string) {
+    const trimmedUrl = url.trim();
+
+    if (!editor || !trimmedUrl) {
+      return;
+    }
+
+    try {
+      setRichLinkSubmitting(true);
+      setStatus("Fetching rich link metadata");
+      const metadata = isTauri()
+        ? await invoke<RichLinkMetadata>("fetch_rich_link_metadata", { url: trimmedUrl })
+        : {
+            url: trimmedUrl,
+            title: trimmedUrl,
+            description: "",
+            image: "",
+            siteName: "",
+          };
+
+      setEditorBody(`${markdown.trimEnd()}\n\n${richLinkMarkdown(metadata)}`, false);
+      setRichLinkDialogOpen(false);
+      setRichLinkUrlDraft("");
+      setStatus(`Inserted rich link ${metadata.title || metadata.url}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRichLinkSubmitting(false);
+    }
+  }
+
+  const cursorInsideTable =
+    !!editor &&
+    (editor.isActive("table") ||
+      editor.isActive("tableCell") ||
+      editor.isActive("tableHeader"));
+  const tableCommandPaletteCommands: CommandPaletteCommand[] = cursorInsideTable
+    ? [
+        {
+          id: "table-add-row-after",
+          title: "Add row after",
+          description: "Insert a table row below the current row",
+          run: () => {
+            editor.chain().focus().addRowAfter().run();
+          },
+        },
+        {
+          id: "table-delete-row",
+          title: "Delete row",
+          description: "Remove the current table row",
+          run: () => {
+            editor.chain().focus().deleteRow().run();
+          },
+        },
+        {
+          id: "table-add-column-after",
+          title: "Add column after",
+          description: "Insert a table column to the right",
+          run: () => {
+            editor.chain().focus().addColumnAfter().run();
+          },
+        },
+        {
+          id: "table-delete-column",
+          title: "Delete column",
+          description: "Remove the current table column",
+          run: () => {
+            editor.chain().focus().deleteColumn().run();
+          },
+        },
+        {
+          id: "table-delete-table",
+          title: "Delete table",
+          description: "Remove the current table",
+          run: () => {
+            editor.chain().focus().deleteTable().run();
+          },
+        },
+      ]
+    : [];
+  const commandPaletteCommands: CommandPaletteCommand[] = [
+    // Table editing is contextual enough that the palette keeps it close to
+    // the cursor state instead of permanently crowding the formatting toolbar.
+    ...tableCommandPaletteCommands,
+    {
+      id: "insert-rich-link",
+      title: "Insert rich link",
+      description: "Fetch a URL preview and insert a rich link card",
+      run: openRichLinkDialog,
+    },
+    {
+      id: "insert-columns",
+      title: "Insert columns",
+      description: "Add a two-column Markdown container",
+      run: appendColumns,
+    },
+    {
+      id: "insert-callout",
+      title: "Insert callout",
+      description: "Add a note callout block",
+      run: appendCallout,
+    },
+  ];
+  const normalizedCommandPaletteQuery = commandPaletteQuery.trim().toLowerCase();
+  const filteredCommandPaletteCommands = normalizedCommandPaletteQuery
+    ? commandPaletteCommands.filter((command) =>
+        `${command.title} ${command.description}`.toLowerCase().includes(
+          normalizedCommandPaletteQuery,
+        ),
+      )
+    : commandPaletteCommands;
+  const selectedCommandPaletteCommand =
+    filteredCommandPaletteCommands[
+      Math.min(commandPaletteSelectedIndex, filteredCommandPaletteCommands.length - 1)
+    ] ?? null;
+
+  function closeCommandPalette() {
+    setCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+    setCommandPaletteSelectedIndex(0);
+  }
+
+  async function runCommandPaletteCommand(command: CommandPaletteCommand) {
+    await command.run();
+    closeCommandPalette();
+    setEditorFocused(true);
+    if (command.id !== "insert-rich-link") {
+      setStatus(command.title);
+    }
   }
 
   function updateCodeLanguage(language: string) {
@@ -3326,6 +4595,7 @@ function App() {
           <div className="toolbar" aria-label="Formatting toolbar">
             {toolbarActions.map((action) => (
               <button
+                aria-label={action.title}
                 className={action.isActive() ? "tool-button active" : "tool-button"}
                 disabled={action.isEnabled ? !action.isEnabled() : false}
                 key={action.title}
@@ -3336,7 +4606,7 @@ function App() {
                 title={action.title}
                 type="button"
               >
-                {action.label}
+                {action.icon ? renderToolbarIcon(action.icon) : action.label}
               </button>
             ))}
             <label className="code-language-control">
@@ -4081,6 +5351,59 @@ function App() {
                 </div>
               ) : (
                 <div className="settings-tab-panel" role="tabpanel" aria-label="Appearance settings">
+                  <section className="settings-section" aria-label="Window appearance">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Window</h3>
+                        <p>Choose whether the app window uses a translucent native material.</p>
+                      </div>
+                    </div>
+                    <label className="settings-check-control">
+                      <input
+                        checked={vaultAppearanceDraft.glassEffect}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) =>
+                          setVaultAppearanceDraft({
+                            glassEffect: event.currentTarget.checked,
+                          })
+                        }
+                      />
+                      <span>Use glass window effect</span>
+                    </label>
+                  </section>
+                  <section className="settings-section" aria-label="Theme templates">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Theme Templates</h3>
+                        <p>Apply a complete color system, then refine individual tokens below.</p>
+                      </div>
+                    </div>
+                    <div className="theme-preset-grid">
+                      {themePresets.map((preset) => (
+                        <button
+                          className={
+                            sameThemeTokens(themeDraft, preset.tokens)
+                              ? "theme-preset-card active"
+                              : "theme-preset-card"
+                          }
+                          disabled={!vaultRoot}
+                          key={preset.id}
+                          type="button"
+                          onClick={() => applyThemePreset(preset)}
+                        >
+                          <span className="theme-preset-swatches" aria-hidden="true">
+                            <i style={{ background: preset.tokens["--medit-app-bg"] }} />
+                            <i style={{ background: preset.tokens["--medit-surface"] }} />
+                            <i style={{ background: preset.tokens["--medit-accent"] }} />
+                            <i style={{ background: preset.tokens["--medit-code-bg"] }} />
+                          </span>
+                          <strong>{preset.name}</strong>
+                          <small>{preset.description}</small>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                   <section className="settings-section" aria-label="Theme builder">
                     <div className="settings-section-header">
                       <div>
@@ -4142,6 +5465,160 @@ function App() {
               </div>
             </div>
           </div>
+        </div>
+      ) : null}
+      {commandPaletteOpen ? (
+        <div
+          className="command-palette-screen"
+          role="presentation"
+          onMouseDown={closeCommandPalette}
+        >
+          <div
+            className="command-palette-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Quick command"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <input
+              ref={commandPaletteInputRef}
+              aria-activedescendant={
+                selectedCommandPaletteCommand
+                  ? `command-palette-${selectedCommandPaletteCommand.id}`
+                  : undefined
+              }
+              aria-autocomplete="list"
+              aria-controls="command-palette-results"
+              aria-label="Quick command"
+              autoComplete="off"
+              placeholder="Type a command..."
+              role="combobox"
+              spellCheck="false"
+              value={commandPaletteQuery}
+              onChange={(event) => {
+                setCommandPaletteQuery(event.currentTarget.value);
+                setCommandPaletteSelectedIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeCommandPalette();
+                  return;
+                }
+
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setCommandPaletteSelectedIndex((index) =>
+                    filteredCommandPaletteCommands.length > 0
+                      ? Math.min(index + 1, filteredCommandPaletteCommands.length - 1)
+                      : 0,
+                  );
+                  return;
+                }
+
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setCommandPaletteSelectedIndex((index) => Math.max(index - 1, 0));
+                  return;
+                }
+
+                if (event.key === "Enter" && selectedCommandPaletteCommand) {
+                  event.preventDefault();
+                  runCommandPaletteCommand(selectedCommandPaletteCommand);
+                }
+              }}
+            />
+            <div
+              className="command-palette-results"
+              id="command-palette-results"
+              role="listbox"
+              aria-label="Matching commands"
+            >
+              {filteredCommandPaletteCommands.length > 0 ? (
+                filteredCommandPaletteCommands.map((command, index) => (
+                  <button
+                    className={index === commandPaletteSelectedIndex ? "active" : ""}
+                    id={`command-palette-${command.id}`}
+                    key={command.id}
+                    role="option"
+                    aria-selected={index === commandPaletteSelectedIndex}
+                    type="button"
+                    onClick={() => runCommandPaletteCommand(command)}
+                    onMouseEnter={() => setCommandPaletteSelectedIndex(index)}
+                  >
+                    <span>{command.title}</span>
+                    <small>{command.description}</small>
+                  </button>
+                ))
+              ) : (
+                <p>No commands found</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {richLinkDialogOpen ? (
+        <div
+          className="rich-link-dialog-screen"
+          role="presentation"
+          onMouseDown={() => {
+            if (!richLinkSubmitting) {
+              setRichLinkDialogOpen(false);
+            }
+          }}
+        >
+          <form
+            className="rich-link-dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Insert rich link"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void insertRichLinkFromUrl(richLinkUrlDraft);
+            }}
+          >
+            <div className="rich-link-dialog-header">
+              <h2>Insert Rich Link</h2>
+              <span>Paste a URL to fetch a preview card.</span>
+            </div>
+            <label>
+              <span>URL</span>
+              <input
+                ref={richLinkInputRef}
+                disabled={richLinkSubmitting}
+                inputMode="url"
+                placeholder="https://example.com/article"
+                spellCheck="false"
+                type="url"
+                value={richLinkUrlDraft}
+                onChange={(event) => setRichLinkUrlDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !richLinkSubmitting) {
+                    event.preventDefault();
+                    setRichLinkDialogOpen(false);
+                  }
+                }}
+              />
+            </label>
+            <div className="rich-link-dialog-actions">
+              <button
+                className="inline-action"
+                disabled={richLinkSubmitting}
+                type="button"
+                onClick={() => setRichLinkDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-action"
+                disabled={richLinkSubmitting || !richLinkUrlDraft.trim()}
+                type="submit"
+              >
+                {richLinkSubmitting ? "Fetching..." : "Insert"}
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
       <footer className="statusbar">{status}</footer>

@@ -12,6 +12,46 @@ export const emptyTableMarkdown = `| Column 1 | Column 2 | Column 3 |
 |  |  |  |
 |  |  |  |`;
 
+export const emptyColumnsMarkdown = `::: columns
+::: column
+Left column
+:::
+
+::: column
+Right column
+:::
+:::`;
+
+export const emptyCalloutMarkdown = `::: callout note "Note"
+Callout content
+:::`;
+
+export type RichLinkMarkdownFields = {
+  url: string;
+  title?: string;
+  description?: string;
+  image?: string;
+  siteName?: string;
+};
+
+export function escapeRichLinkField(value: string) {
+  return value.replace(/\r?\n/g, " ").trim();
+}
+
+export function richLinkMarkdown(fields: RichLinkMarkdownFields) {
+  const lines = [
+    ["url", fields.url],
+    ["title", fields.title],
+    ["description", fields.description],
+    ["image", fields.image],
+    ["siteName", fields.siteName],
+  ]
+    .filter(([, value]) => typeof value === "string" && value.trim())
+    .map(([key, value]) => `${key}: ${escapeRichLinkField(value ?? "")}`);
+
+  return `::: rich-link\n${lines.join("\n")}\n:::`;
+}
+
 export const defaultVaultAssetDirectory = "_assets_";
 export const defaultFrontmatterPillHeader = "tags";
 export const defaultDrawerOpen = false;

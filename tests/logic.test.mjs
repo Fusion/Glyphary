@@ -15,6 +15,8 @@ import {
   defaultVaultDrawerWidth,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
+  emptyCalloutMarkdown,
+  emptyColumnsMarkdown,
   emptyTableMarkdown,
   escapeMarkdownUrl,
   fileNameForDroppedImage,
@@ -24,6 +26,7 @@ import {
   isSupportedImageFile,
   markdownHeadings,
   remainingGroupAfterSplitPaneClose,
+  richLinkMarkdown,
   splitHasDirtyTabs,
   splitMetaHeader,
   tabIdForFile,
@@ -205,6 +208,78 @@ test("table insertion seed keeps markdown table support available", () => {
   assert.match(emptyTableMarkdown, /\| --- \| --- \| --- \|/);
 });
 
+test("columns markdown containers are wired into the editor", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(emptyColumnsMarkdown, /^::: columns/);
+  assert.match(emptyColumnsMarkdown, /::: column/);
+  assert.match(app, /function createMarkdownContainerToken/);
+  assert.match(app, /name: "columns"/);
+  assert.match(app, /name: "column"/);
+  assert.match(app, /markdownTokenName: "columns"/);
+  assert.match(app, /markdownTokenName: "column"/);
+  assert.match(app, /createColumnExtension\(\)/);
+  assert.match(app, /createColumnsExtension\(\)/);
+  assert.match(app, /appendColumns\(\)/);
+  assert.match(css, /\.markdown-columns/);
+  assert.match(css, /\.markdown-column/);
+});
+
+test("callout markdown containers are wired into the editor", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(emptyCalloutMarkdown, /^::: callout note "Note"/);
+  assert.match(app, /function calloutContainerOpening/);
+  assert.match(app, /name: "callout"/);
+  assert.match(app, /markdownTokenName: "callout"/);
+  assert.match(app, /data-medit-callout/);
+  assert.match(app, /data-callout-kind/);
+  assert.match(app, /escapeCalloutTitle/);
+  assert.match(app, /createCalloutExtension\(\)/);
+  assert.match(app, /appendCallout\(\)/);
+  assert.match(css, /\.markdown-callout/);
+  assert.match(css, /\.markdown-callout-warning/);
+  assert.match(css, /\.markdown-callout-title/);
+});
+
+test("rich link markdown containers are wired into the editor", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.equal(
+    richLinkMarkdown({
+      url: "https://example.com",
+      title: "Example",
+      description: "Line one\nline two",
+      image: "https://example.com/card.png",
+      siteName: "Example Site",
+    }),
+    `::: rich-link
+url: https://example.com
+title: Example
+description: Line one line two
+image: https://example.com/card.png
+siteName: Example Site
+:::`,
+  );
+  assert.match(app, /name: "richLink"/);
+  assert.match(app, /markdownTokenName: "rich-link"/);
+  assert.match(app, /data-medit-rich-link/);
+  assert.match(app, /fetch_rich_link_metadata/);
+  assert.match(app, /id: "insert-rich-link"/);
+  assert.doesNotMatch(app, /window\.prompt/);
+  assert.match(app, /openRichLinkDialog/);
+  assert.match(app, /insertRichLinkFromUrl/);
+  assert.match(app, /richLinkDialogOpen/);
+  assert.match(app, /aria-label="Insert rich link"/);
+  assert.match(css, /\.rich-link-card/);
+  assert.match(css, /\.rich-link-dialog-screen/);
+  assert.match(css, /\.rich-link-image/);
+  assert.match(css, /\.rich-link-content/);
+});
+
 test("default drawer and vault asset settings match the current product defaults", () => {
   assert.equal(defaultDrawerOpen, false);
   assert.equal(defaultVaultDrawerOpen, true);
@@ -216,6 +291,9 @@ test("default drawer and vault asset settings match the current product defaults
 test("app css exposes the Obsidian theme compatibility surface", () => {
   const css = readFileSync("src/App.css", "utf8");
   const app = readFileSync("src/App.tsx", "utf8");
+  const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
 
   assert.match(css, /--background-primary:/);
   assert.match(css, /--interactive-accent:/);
@@ -226,8 +304,28 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /theme-light/);
   assert.match(app, /markdown-preview-view/);
   assert.match(app, /Theme Builder/);
+  assert.match(app, /type ThemePreset/);
+  assert.match(app, /const themePresets: ThemePreset\[\]/);
+  const presetBlock = app.match(/const themePresets: ThemePreset\[\] = \[([\s\S]*?)\];/)?.[1] ?? "";
+  assert.equal((presetBlock.match(/id: "[a-z-]+"/g) ?? []).length, 12);
+  assert.match(app, /Theme Templates/);
+  assert.match(app, /applyThemePreset/);
   assert.match(app, /--medit-accent/);
   assert.match(app, /Reset Theme/);
+  assert.match(app, /type VaultAppearanceSettings/);
+  assert.match(app, /glassEffect/);
+  assert.match(app, /Use glass window effect/);
+  assert.match(app, /set_window_glass_effect/);
+  assert.match(css, /data-window-glass="enabled"/);
+  assert.match(css, /\.theme-preset-grid/);
+  assert.match(css, /\.theme-preset-card/);
+  assert.equal(config.app.macOSPrivateApi, true);
+  assert.equal(config.app.windows[0].transparent, true);
+  assert.match(cargo, /macos-private-api/);
+  assert.match(backend, /struct AppearanceSettings/);
+  assert.match(backend, /glass_effect/);
+  assert.match(backend, /Effect::UnderWindowBackground/);
+  assert.match(backend, /set_background_color\(Some\(Color\(0, 0, 0, 0\)\)\)/);
 });
 
 test("vim-style editing is wired behind a settings option", () => {
@@ -272,10 +370,77 @@ test("command save shortcut is wrapped in the webview", () => {
   const app = readFileSync("src/App.tsx", "utf8");
 
   assert.match(app, /handleGlobalSaveShortcut/);
+  assert.match(app, /handleGlobalCommandPaletteShortcut/);
   assert.match(app, /event\.key\.toLowerCase\(\) !== "s"/);
+  assert.match(app, /event\.key\.toLowerCase\(\) !== "p"/);
   assert.match(app, /!event\.metaKey && !event\.ctrlKey/);
   assert.match(app, /void saveCurrentFileRef\.current\(\)/);
+  assert.match(app, /setCommandPaletteOpen\(true\)/);
   assert.match(app, /window\.addEventListener\("keydown", handleGlobalSaveShortcut\)/);
+  assert.match(app, /window\.addEventListener\("keydown", handleGlobalCommandPaletteShortcut\)/);
+});
+
+test("quick command palette exposes initial editor commands", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /type CommandPaletteCommand/);
+  assert.match(app, /commandPaletteCommands/);
+  assert.match(app, /id: "insert-rich-link"/);
+  assert.match(app, /title: "Insert rich link"/);
+  assert.match(app, /id: "insert-columns"/);
+  assert.match(app, /title: "Insert columns"/);
+  assert.match(app, /id: "insert-callout"/);
+  assert.match(app, /title: "Insert callout"/);
+  assert.match(app, /role="combobox"/);
+  assert.match(app, /role="listbox"/);
+  assert.match(app, /runCommandPaletteCommand/);
+  assert.match(css, /\.command-palette-screen/);
+  assert.match(css, /\.command-palette-card/);
+  assert.match(css, /\.command-palette-results/);
+});
+
+test("table row and column actions are contextual command palette entries", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(app, /const cursorInsideTable/);
+  assert.match(app, /editor\.isActive\("table"\)/);
+  assert.match(app, /editor\.isActive\("tableCell"\)/);
+  assert.match(app, /editor\.isActive\("tableHeader"\)/);
+  assert.match(app, /id: "table-add-row-after"/);
+  assert.match(app, /title: "Add row after"/);
+  assert.match(app, /id: "table-delete-row"/);
+  assert.match(app, /title: "Delete row"/);
+  assert.match(app, /id: "table-add-column-after"/);
+  assert.match(app, /title: "Add column after"/);
+  assert.match(app, /id: "table-delete-column"/);
+  assert.match(app, /title: "Delete column"/);
+  assert.match(app, /id: "table-delete-table"/);
+  assert.match(app, /title: "Delete table"/);
+  assert.match(app, /\.\.\.tableCommandPaletteCommands/);
+  assert.doesNotMatch(app, /label: "\+ Row"/);
+  assert.doesNotMatch(app, /label: "- Row"/);
+  assert.doesNotMatch(app, /label: "\+ Col"/);
+  assert.doesNotMatch(app, /label: "- Col"/);
+  assert.doesNotMatch(app, /label: "Drop Table"/);
+});
+
+test("list quote code table columns and callout toolbar actions render as icons", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /type ToolbarIconName/);
+  assert.match(app, /function renderToolbarIcon/);
+  assert.match(app, /icon: "bullet-list"/);
+  assert.match(app, /icon: "ordered-list"/);
+  assert.match(app, /icon: "quote"/);
+  assert.match(app, /icon: "code"/);
+  assert.match(app, /icon: "table"/);
+  assert.match(app, /icon: "columns"/);
+  assert.match(app, /icon: "callout"/);
+  assert.match(app, /aria-label=\{action\.title\}/);
+  assert.match(app, /action\.icon \? renderToolbarIcon\(action\.icon\) : action\.label/);
+  assert.match(css, /\.tool-button svg/);
 });
 
 test("toolbar state refreshes when editor selection changes", () => {

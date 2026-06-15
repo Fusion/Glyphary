@@ -4,6 +4,7 @@ use std::{
     fs,
     path::{Component, Path, PathBuf},
     process::Command,
+    time::Duration,
 };
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -41,6 +42,8 @@ struct VaultSettings {
     frontmatter_pills: FrontmatterPillSettings,
     #[serde(default)]
     editor: EditorSettings,
+    #[serde(default)]
+    appearance: AppearanceSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<VaultTheme>,
 }
@@ -49,6 +52,12 @@ struct VaultSettings {
 #[serde(rename_all = "camelCase")]
 struct EditorSettings {
     vim_mode: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct AppearanceSettings {
+    glass_effect: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -71,6 +80,16 @@ struct SearchResult {
     line_number: Option<usize>,
     line_text: Option<String>,
     is_content_match: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RichLinkMetadata {
+    url: String,
+    title: String,
+    description: String,
+    image: String,
+    site_name: String,
 }
 
 #[derive(Deserialize)]
@@ -101,6 +120,8 @@ enum RipgrepEvent {
 
 const SEARCH_RESULT_LIMIT: usize = 200;
 const MAX_ASSET_BYTES: usize = 50 * 1024 * 1024;
+const MAX_RICH_LINK_HTML_BYTES: u64 = 2 * 1024 * 1024;
+const RICH_LINK_IMAGE_SCAN_BYTES: usize = 160 * 1024;
 const DEFAULT_ASSET_DIRECTORY: &str = "_assets_";
 const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
 const SETTINGS_FILE_NAME: &str = ".medit";
@@ -142,6 +163,7 @@ impl Default for VaultSettings {
             asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             frontmatter_pills: FrontmatterPillSettings::default(),
             editor: EditorSettings::default(),
+            appearance: AppearanceSettings::default(),
             theme: None,
         }
     }
@@ -217,6 +239,7 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
             asset_directory,
             frontmatter_pills,
             editor: settings.editor,
+            appearance: settings.appearance,
             theme,
         })
     }
@@ -601,6 +624,242 @@ fn search_content_fallback(
     Ok(results)
 }
 
+fn normalize_metadata_text(value: &str) -> String {
+    decode_html_entities(value)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(500)
+        .collect()
+}
+
+fn decode_html_entities(value: &str) -> String {
+    value
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+}
+
+fn parse_html_attrs(tag: &str) -> HashMap<String, String> {
+    // Rich-link previews only need attributes from already-located tags. This
+    // small scanner avoids pulling in a full HTML parser while still handling
+    // quoted, unquoted, and boolean-style attributes used by metadata tags.
+    let bytes = tag.as_bytes();
+    let mut attrs = HashMap::new();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        while index < bytes.len() && !bytes[index].is_ascii_alphabetic() {
+            index += 1;
+        }
+
+        let name_start = index;
+        while index < bytes.len()
+            && (bytes[index].is_ascii_alphanumeric() || matches!(bytes[index], b':' | b'-' | b'_'))
+        {
+            index += 1;
+        }
+
+        if name_start == index {
+            break;
+        }
+
+        let name = tag[name_start..index].to_ascii_lowercase();
+
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+
+        if index >= bytes.len() || bytes[index] != b'=' {
+            attrs.insert(name, String::new());
+            continue;
+        }
+
+        index += 1;
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+            index += 1;
+        }
+
+        if index >= bytes.len() {
+            attrs.insert(name, String::new());
+            break;
+        }
+
+        let value = if matches!(bytes[index], b'"' | b'\'') {
+            let quote = bytes[index];
+            index += 1;
+            let value_start = index;
+            while index < bytes.len() && bytes[index] != quote {
+                index += 1;
+            }
+            let value = tag[value_start..index].to_string();
+            if index < bytes.len() {
+                index += 1;
+            }
+            value
+        } else {
+            let value_start = index;
+            while index < bytes.len()
+                && !bytes[index].is_ascii_whitespace()
+                && !matches!(bytes[index], b'>')
+            {
+                index += 1;
+            }
+            tag[value_start..index].to_string()
+        };
+
+        attrs.insert(name, decode_html_entities(&value));
+    }
+
+    attrs
+}
+
+fn find_meta_content(html: &str, key: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let mut search_from = 0;
+    let wanted = key.to_ascii_lowercase();
+
+    while let Some(offset) = lower[search_from..].find("<meta") {
+        let start = search_from + offset;
+        let Some(end_offset) = lower[start..].find('>') else {
+            break;
+        };
+        let end = start + end_offset + 1;
+        let attrs = parse_html_attrs(&html[start..end]);
+        let matches_key = attrs.get("property").is_some_and(|value| value.eq_ignore_ascii_case(&wanted))
+            || attrs.get("name").is_some_and(|value| value.eq_ignore_ascii_case(&wanted));
+
+        if matches_key {
+            if let Some(content) = attrs.get("content").map(|value| normalize_metadata_text(value)) {
+                if !content.is_empty() {
+                    return Some(content);
+                }
+            }
+        }
+
+        search_from = end;
+    }
+
+    None
+}
+
+fn find_html_title(html: &str) -> Option<String> {
+    let lower = html.to_ascii_lowercase();
+    let start = lower.find("<title")?;
+    let content_start = lower[start..].find('>')? + start + 1;
+    let content_end = lower[content_start..].find("</title>")? + content_start;
+    let title = normalize_metadata_text(&html[content_start..content_end]);
+
+    (!title.is_empty()).then_some(title)
+}
+
+fn absolute_metadata_url(base_url: &str, value: &str) -> String {
+    let value = value.trim();
+
+    if value.is_empty() {
+        return String::new();
+    }
+
+    if let Ok(url) = reqwest::Url::parse(value) {
+        return url.to_string();
+    }
+
+    reqwest::Url::parse(base_url)
+        .and_then(|base| base.join(value))
+        .map(|url| url.to_string())
+        .unwrap_or_else(|_| value.to_string())
+}
+
+fn first_srcset_url(srcset: &str) -> Option<String> {
+    srcset
+        .split(',')
+        .filter_map(|candidate| candidate.split_whitespace().next())
+        .find(|candidate| !candidate.is_empty())
+        .map(str::to_string)
+}
+
+fn is_usable_rich_link_image(value: &str) -> bool {
+    let value = value.trim();
+    let lower = value.to_ascii_lowercase();
+
+    !value.is_empty()
+        && !lower.starts_with("data:")
+        && !lower.starts_with("blob:")
+        && !lower.ends_with(".svg")
+}
+
+fn find_first_page_image(html: &str, base_url: &str) -> Option<String> {
+    // Page-image fallback is intentionally shallow: early content is likely to
+    // contain the article/card image, while scanning an entire page increases
+    // latency and the chance of picking navigation or tracking images.
+    let scan_end = html
+        .char_indices()
+        .map(|(index, _)| index)
+        .take_while(|index| *index <= RICH_LINK_IMAGE_SCAN_BYTES)
+        .last()
+        .unwrap_or(html.len());
+    let html = &html[..scan_end];
+    let lower = html.to_ascii_lowercase();
+    let mut search_from = 0;
+
+    while let Some(offset) = lower[search_from..].find("<img") {
+        let start = search_from + offset;
+        let Some(end_offset) = lower[start..].find('>') else {
+            break;
+        };
+        let end = start + end_offset + 1;
+        let attrs = parse_html_attrs(&html[start..end]);
+        let image = attrs
+            .get("src")
+            .or_else(|| attrs.get("data-src"))
+            .or_else(|| attrs.get("data-original"))
+            .cloned()
+            .or_else(|| attrs.get("srcset").and_then(|value| first_srcset_url(value)));
+
+        if let Some(image) = image {
+            if is_usable_rich_link_image(&image) {
+                return Some(absolute_metadata_url(base_url, &image));
+            }
+        }
+
+        search_from = end;
+    }
+
+    None
+}
+
+fn extract_rich_link_metadata(url: &str, html: &str) -> RichLinkMetadata {
+    // Prefer explicit social metadata. The page image fallback is a last resort
+    // so an author-provided Open Graph/Twitter image wins over decorative body
+    // images that happen to appear earlier in the HTML.
+    let title = find_meta_content(html, "og:title")
+        .or_else(|| find_meta_content(html, "twitter:title"))
+        .or_else(|| find_html_title(html))
+        .unwrap_or_else(|| url.to_string());
+    let description = find_meta_content(html, "og:description")
+        .or_else(|| find_meta_content(html, "twitter:description"))
+        .or_else(|| find_meta_content(html, "description"))
+        .unwrap_or_default();
+    let image = find_meta_content(html, "og:image")
+        .or_else(|| find_meta_content(html, "twitter:image"))
+        .map(|image| absolute_metadata_url(url, &image))
+        .or_else(|| find_first_page_image(html, url))
+        .unwrap_or_default();
+    let site_name = find_meta_content(html, "og:site_name").unwrap_or_default();
+
+    RichLinkMetadata {
+        url: url.to_string(),
+        title,
+        description,
+        image,
+        site_name,
+    }
+}
+
 #[tauri::command]
 fn list_vault_dir(root: String, relative: String) -> Result<Vec<VaultEntry>, String> {
     let (root, dir) = resolve_existing(&root, &relative)?;
@@ -865,6 +1124,53 @@ fn allow_vault_assets(
         .map_err(|err| format!("Could not allow vault assets: {err}"))
 }
 
+#[cfg(target_os = "macos")]
+fn apply_window_glass_effect(app: &tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    use tauri::window::{Color, Effect, EffectState, EffectsBuilder};
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is not available".to_string())?;
+
+    if enabled {
+        // Native material is only visible if both the window and WKWebView
+        // backgrounds are transparent. The Tauri config handles creation-time
+        // transparency; this runtime call updates the current WebView when the
+        // user toggles the vault setting.
+        window
+            .set_background_color(Some(Color(0, 0, 0, 0)))
+            .map_err(|err| format!("Could not make window background transparent: {err}"))?;
+        window
+            .set_effects(
+                EffectsBuilder::new()
+                    .effect(Effect::UnderWindowBackground)
+                    .state(EffectState::FollowsWindowActiveState)
+                    .radius(12.0)
+                    .build(),
+            )
+            .map_err(|err| format!("Could not enable window glass effect: {err}"))?;
+    } else {
+        window
+            .set_effects(None::<tauri::utils::config::WindowEffectsConfig>)
+            .map_err(|err| format!("Could not disable window glass effect: {err}"))?;
+        window
+            .set_background_color(None)
+            .map_err(|err| format!("Could not restore window background: {err}"))?;
+    }
+
+    Ok(enabled)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn apply_window_glass_effect(_app: &tauri::AppHandle, _enabled: bool) -> Result<bool, String> {
+    Ok(false)
+}
+
+#[tauri::command]
+fn set_window_glass_effect(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
+    apply_window_glass_effect(&app, enabled)
+}
+
 #[tauri::command]
 fn save_vault_asset(
     root: String,
@@ -941,6 +1247,47 @@ fn search_vault(
     }
 
     Ok(results)
+}
+
+#[tauri::command]
+async fn fetch_rich_link_metadata(url: String) -> Result<RichLinkMetadata, String> {
+    let parsed = reqwest::Url::parse(url.trim())
+        .map_err(|_| "Enter a valid http or https URL".to_string())?;
+
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return Err("Rich links only support http and https URLs".into());
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .user_agent("MEdit/0.1 rich-link preview")
+        .build()
+        .map_err(|err| format!("Could not prepare rich link request: {err}"))?;
+    let response = client
+        .get(parsed.clone())
+        .send()
+        .await
+        .map_err(|err| format!("Could not fetch rich link: {err}"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Rich link request returned {}", response.status()));
+    }
+
+    if response.content_length().unwrap_or(0) > MAX_RICH_LINK_HTML_BYTES {
+        return Err("Rich link page is too large to preview".into());
+    }
+
+    let final_url = response.url().to_string();
+    let html = response
+        .text()
+        .await
+        .map_err(|err| format!("Could not read rich link page: {err}"))?;
+
+    if html.len() as u64 > MAX_RICH_LINK_HTML_BYTES {
+        return Err("Rich link page is too large to preview".into());
+    }
+
+    Ok(extract_rich_link_metadata(&final_url, &html))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -1091,8 +1438,10 @@ pub fn run() {
             read_vault_settings,
             write_vault_settings,
             allow_vault_assets,
+            set_window_glass_effect,
             save_vault_asset,
-            search_vault
+            search_vault,
+            fetch_rich_link_metadata
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -1153,6 +1502,7 @@ mod tests {
             DEFAULT_FRONTMATTER_PILL_HEADER
         );
         assert!(!settings.editor.vim_mode);
+        assert!(!settings.appearance.glass_effect);
         assert!(settings.theme.is_none());
 
         fs::remove_dir_all(root).expect("test root should be removed");
@@ -1171,6 +1521,7 @@ mod tests {
                     header_name: "topics".into(),
                 },
                 editor: EditorSettings { vim_mode: true },
+                appearance: AppearanceSettings { glass_effect: true },
                 theme: None,
             },
         )
@@ -1180,6 +1531,7 @@ mod tests {
         assert!(!settings.frontmatter_pills.enabled);
         assert_eq!(settings.frontmatter_pills.header_name, "topics");
         assert!(settings.editor.vim_mode);
+        assert!(settings.appearance.glass_effect);
         assert!(
             fs::read_to_string(root.join(SETTINGS_FILE_NAME))
                 .expect("settings should be readable")
@@ -1199,6 +1551,7 @@ mod tests {
                 asset_directory: " ".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: None,
             },
         )
@@ -1209,6 +1562,7 @@ mod tests {
                 asset_directory: "../assets".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: None,
             },
         )
@@ -1233,6 +1587,7 @@ mod tests {
                     header_name: " ".into(),
                 },
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: None,
             },
         )
@@ -1246,6 +1601,7 @@ mod tests {
                     header_name: "tags: bad".into(),
                 },
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: None,
             },
         )
@@ -1270,6 +1626,7 @@ mod tests {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: Some(VaultTheme { tokens }),
             },
         )
@@ -1297,6 +1654,7 @@ mod tests {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
                 editor: EditorSettings::default(),
+                appearance: AppearanceSettings::default(),
                 theme: Some(VaultTheme { tokens }),
             },
         )
@@ -1459,6 +1817,104 @@ mod tests {
         }));
 
         fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn extracts_rich_link_metadata_from_open_graph_tags() {
+        let metadata = extract_rich_link_metadata(
+            "https://example.com/articles/post",
+            r#"
+              <html>
+                <head>
+                  <meta property="og:title" content="Example &amp; Title">
+                  <meta property="og:description" content="A useful summary">
+                  <meta property="og:image" content="/images/card.png">
+                  <meta property="og:site_name" content="Example Site">
+                </head>
+              </html>
+            "#,
+        );
+
+        assert_eq!(metadata.url, "https://example.com/articles/post");
+        assert_eq!(metadata.title, "Example & Title");
+        assert_eq!(metadata.description, "A useful summary");
+        assert_eq!(metadata.image, "https://example.com/images/card.png");
+        assert_eq!(metadata.site_name, "Example Site");
+    }
+
+    #[test]
+    fn extracts_rich_link_metadata_from_standard_html_fallbacks() {
+        let metadata = extract_rich_link_metadata(
+            "https://example.com/",
+            r#"
+              <html>
+                <head>
+                  <title>Fallback Title</title>
+                  <meta name="description" content="Fallback description">
+                </head>
+              </html>
+            "#,
+        );
+
+        assert_eq!(metadata.title, "Fallback Title");
+        assert_eq!(metadata.description, "Fallback description");
+        assert_eq!(metadata.image, "");
+        assert_eq!(metadata.site_name, "");
+    }
+
+    #[test]
+    fn extracts_rich_link_image_from_early_page_image_when_metadata_is_missing() {
+        let metadata = extract_rich_link_metadata(
+            "https://example.com/articles/post",
+            r#"
+              <html>
+                <head><title>Fallback Image</title></head>
+                <body>
+                  <img src="data:image/gif;base64,abc">
+                  <img src="/images/hero.jpg">
+                </body>
+              </html>
+            "#,
+        );
+
+        assert_eq!(metadata.title, "Fallback Image");
+        assert_eq!(metadata.image, "https://example.com/images/hero.jpg");
+    }
+
+    #[test]
+    fn extracts_rich_link_image_from_srcset_when_src_is_missing() {
+        let metadata = extract_rich_link_metadata(
+            "https://example.com/articles/post",
+            r#"
+              <html>
+                <head><title>Srcset Image</title></head>
+                <body>
+                  <img srcset="/small.webp 480w, /large.webp 1200w">
+                </body>
+              </html>
+            "#,
+        );
+
+        assert_eq!(metadata.image, "https://example.com/small.webp");
+    }
+
+    #[test]
+    fn keeps_metadata_image_before_page_image_fallback() {
+        let metadata = extract_rich_link_metadata(
+            "https://example.com/articles/post",
+            r#"
+              <html>
+                <head>
+                  <meta property="og:image" content="/images/social.jpg">
+                </head>
+                <body>
+                  <img src="/images/hero.jpg">
+                </body>
+              </html>
+            "#,
+        );
+
+        assert_eq!(metadata.image, "https://example.com/images/social.jpg");
     }
 
     #[test]

@@ -14,11 +14,16 @@ MEdit is a Tauri desktop Markdown editor built with React, TypeScript, and Tipta
 - Configurable frontmatter pills can show a chosen metadata list, defaulting to `tags`.
 - Page name can be edited by double-clicking the displayed page title; saving can rename the file.
 - Table support through Tiptap table extensions.
+- Column layout blocks using `::: columns` and nested `::: column` containers.
+- Callout blocks using `::: callout <type> "Optional title"` containers.
+- Rich link cards that fetch page metadata and render URL previews.
 - Code blocks support language selection and Markdown fences such as ```` ```python ```` or ```` ```sh ````.
 - Syntax highlighting for code blocks using `highlight.js` and `lowlight`.
 - A ```` ```toc ```` fenced block renders as an inline table of contents when not being edited.
 - Light, dark, and auto appearance modes.
 - Vault-specific theme builder with live preview and a first-pass Obsidian CSS variable compatibility layer.
+- Optional vault-scoped glass window effect on supported native windows.
+- Quick command palette opened with `Cmd+P` or `Ctrl+P`.
 - Native macOS/Tauri menu actions plus the in-window File menu.
 - Toolbar and drawer actions use icon buttons with hover titles.
 
@@ -79,6 +84,81 @@ The same heading engine powers inline `toc` code blocks. A fenced block like thi
 
 renders as an embedded table of contents while the cursor is outside the block. The block remains a normal fenced code block in Markdown and can be edited again with its inline Edit button.
 
+## Columns
+
+MEdit supports an editable column layout using Markdown container fences:
+
+```markdown
+::: columns
+::: column
+Left content
+:::
+
+::: column
+Right content
+:::
+:::
+```
+
+The WYSIWYG editor renders the child `column` containers side by side when there is enough horizontal space and stacks them on narrower layouts. The Markdown serializer writes the same container syntax back to disk.
+
+## Callouts
+
+MEdit supports editable callout blocks using the same container-fence family as columns:
+
+```markdown
+::: callout note
+This is the callout body.
+:::
+```
+
+The word after `callout` controls the visual variant. Current variants include `note`, `info`, `tip`, and `warning`; unknown variants still render as callouts with the default accent.
+
+Callouts can also include an optional quoted title:
+
+```markdown
+::: callout warning "Database Migration"
+Back up the database before running this.
+:::
+```
+
+The body can contain normal block Markdown such as paragraphs, lists, links, and code blocks. Saving writes the same `::: callout` syntax back to disk.
+
+## Quick Commands
+
+Press `Cmd+P` on macOS or `Ctrl+P` on other platforms to open the quick command palette. Type to filter commands, use arrow keys to move selection, press `Enter` to run the selected command, and press `Escape` to close it.
+
+Initial commands:
+
+- `Insert callout`: inserts a note callout block.
+- `Insert columns`: inserts a two-column container.
+- `Insert rich link`: opens a URL dialog, fetches page metadata, and inserts a rich link card.
+
+When the cursor is inside a table, the palette lists table actions first: `Add row after`, `Delete row`, `Add column after`, `Delete column`, and `Delete table`. These contextual commands stay out of the main formatting toolbar so table-only controls do not occupy permanent space.
+
+## Rich Links
+
+The `Insert rich link` command opens an in-app URL dialog, fetches the URL through the Tauri backend, and extracts common preview metadata:
+
+- Open Graph title, description, image, and site name.
+- Twitter card title, description, and image.
+- HTML `<title>` and meta description as fallbacks.
+- If no metadata image exists, the backend looks for an early page `<img>` or `srcset` image and uses it as a best-effort preview.
+
+Rich links are stored in Markdown as a readable container:
+
+```markdown
+::: rich-link
+url: https://example.com/article
+title: Example Article
+description: Short summary
+image: https://example.com/card.png
+siteName: Example
+:::
+```
+
+The WYSIWYG editor renders this as a rounded preview card. If metadata is missing, the URL is still inserted and shown as the title/fallback text.
+
 ## Calendar Notes
 
 The `CAL` drawer view shows a monthly calendar.
@@ -133,12 +213,13 @@ Currently supported setting:
 - `frontmatterPills.enabled`: whether to show a frontmatter list as pills above the editor. Defaults to `true`.
 - `frontmatterPills.headerName`: the frontmatter header used for pills. Defaults to `tags`.
 - `editor.vimMode`: whether editor panes use Vim-style keybindings. Defaults to `false`.
+- `appearance.glassEffect`: whether the app window previews a translucent native glass material. Defaults to `false`.
 - `theme.tokens`: vault-specific theme token overrides created by the Settings theme builder.
 
 The settings screen is separate from the right drawer and can be opened through the menu or `Cmd+,`. Settings are grouped into tabs:
 
 - `Main`: vault asset directory, metadata pill settings, and editor behavior.
-- `Appearance`: theme builder and vault-specific color tokens.
+- `Appearance`: window glass effect, theme builder, and vault-specific color tokens.
 
 Theme tokens are allowlisted and validated by the Tauri backend before they are written to `.medit`.
 
@@ -286,7 +367,7 @@ MEdit has built-in light, dark, and auto appearance modes. The current theme sys
 
 The app maps its own internal theme tokens through those variables, and it applies `theme-light` / `theme-dark` classes based on the resolved appearance. This is a compatibility foundation for future Obsidian-theme imports, not full Obsidian theme support yet. Obsidian themes can still depend on Obsidian-specific DOM structure and selectors that MEdit does not currently emulate.
 
-The Settings screen includes a Theme Builder for the current vault. It groups editable colors for canvas, text, accents, borders, code blocks, quotes, tables, and syntax highlighting. Changes preview immediately by applying CSS variables to the running app. Saving writes the selected token values to `<vault root>/.medit`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
+The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.medit`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected token values to `<vault root>/.medit`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
 
 The app also exposes an icon-only Auto/Light/Dark appearance control for quick switching.
 
@@ -380,6 +461,9 @@ Frontend unit tests cover helper behavior such as:
 - Calendar filename/key generation.
 - Markdown heading extraction for the table of contents.
 - Inline `toc` fenced-block support.
+- Markdown column container integration.
+- Markdown callout container integration.
+- Rich link Markdown formatting and metadata extraction.
 - Frontmatter list extraction for display pills.
 - Vim-mode integration surface.
 - Split-pane tab lookup and pane closing behavior.
