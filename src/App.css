@@ -25,6 +25,10 @@
   --glyphary-editor-padding-y: 38px;
   --glyphary-editor-padding-x: min(6vw, 72px);
   --glyphary-block-gap: 0.85em;
+  --glyphary-motion-duration-fast: 120ms;
+  --glyphary-motion-duration-base: 160ms;
+  --glyphary-motion-duration-slow: 180ms;
+  --glyphary-motion-ease: cubic-bezier(0.2, 0, 0, 1);
   --glyphary-heading-h1-size: 2rem;
   --glyphary-heading-h2-size: 1.45rem;
   --glyphary-code-font-size: 0.92em;
@@ -111,6 +115,10 @@
   --font-ui: var(--glyphary-font-ui);
   --font-editor: var(--glyphary-font-editor);
   --font-mono: var(--glyphary-font-mono);
+  --motion-duration-fast: var(--glyphary-motion-duration-fast);
+  --motion-duration-base: var(--glyphary-motion-duration-base);
+  --motion-duration-slow: var(--glyphary-motion-duration-slow);
+  --motion-ease: var(--glyphary-motion-ease);
   --radius-sm: var(--glyphary-radius-sm);
   --radius-md: var(--glyphary-radius-md);
   --radius-lg: var(--glyphary-radius-lg);
@@ -470,10 +478,10 @@ h2 {
   color: var(--heading);
   cursor: pointer;
   transition:
-    background 160ms ease,
-    border-color 160ms ease,
-    color 160ms ease,
-    transform 160ms ease;
+    background var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .secondary-action {
@@ -529,6 +537,7 @@ h2 {
     var(--drawer-width, 48px);
   /* Gaps are represented by resizer columns so pointer targets have stable width. */
   gap: 0;
+  transition: grid-template-columns var(--motion-duration-slow) var(--motion-ease);
 }
 
 .editor-pane,
@@ -540,6 +549,10 @@ h2 {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 18px 45px var(--shadow);
+  transition:
+    border-color var(--motion-duration-base) var(--motion-ease),
+    box-shadow var(--motion-duration-base) var(--motion-ease),
+    opacity var(--motion-duration-base) var(--motion-ease);
 }
 
 .editor-groups {
@@ -577,6 +590,10 @@ h2 {
   background: var(--border-strong);
   opacity: 0.6;
   transform: translateX(-50%);
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    opacity var(--motion-duration-fast) var(--motion-ease),
+    width var(--motion-duration-fast) var(--motion-ease);
   content: "";
 }
 
@@ -632,6 +649,11 @@ body.workspace-resizing * {
   font-size: 0.56rem;
   font-weight: 900;
   letter-spacing: 0;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .vault-tab svg,
@@ -652,12 +674,25 @@ body.workspace-resizing * {
   color: var(--accent-text);
 }
 
+.vault-tab:hover {
+  transform: translateY(-1px);
+}
+
 .vault-content {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  opacity: 1;
+  transition:
+    opacity var(--motion-duration-base) var(--motion-ease),
+    transform var(--motion-duration-base) var(--motion-ease);
+}
+
+.workspace.vault-drawer-closed .vault-content {
+  opacity: 0;
+  transform: translateX(-4px);
 }
 
 .vault-header {
@@ -845,11 +880,19 @@ body.workspace-resizing * {
   color: var(--heading);
   cursor: default;
   text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .vault-entry:hover,
 .vault-entry.active {
   background: var(--hover);
+}
+
+.vault-entry:hover {
+  transform: translateX(1px);
 }
 
 .vault-entry-icon {
@@ -979,17 +1022,25 @@ body.workspace-resizing * {
   overflow: hidden;
   font-size: 0.78rem;
   font-weight: 800;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    opacity var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .document-tab:hover {
   background: var(--hover);
   color: var(--heading);
+  transform: translateY(-1px);
 }
 
 .document-tab.active {
   border-color: var(--border-soft);
   background: var(--surface);
   color: var(--heading);
+  transform: translateY(0);
 }
 
 .document-tab-select {
@@ -1033,11 +1084,16 @@ body.workspace-resizing * {
   font: inherit;
   font-size: 0.82rem;
   font-weight: 900;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .document-tab-close:hover {
   background: var(--hover);
   color: var(--heading);
+  transform: scale(1.04);
 }
 
 .metadata-shell {
@@ -1951,6 +2007,11 @@ body.workspace-resizing * {
   font-size: 0.62rem;
   font-weight: 900;
   letter-spacing: 0;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .drawer-tab:hover,
@@ -1960,12 +2021,25 @@ body.workspace-resizing * {
   color: var(--accent-text);
 }
 
+.drawer-tab:hover {
+  transform: translateY(-1px);
+}
+
 .drawer-content {
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  opacity: 1;
+  transition:
+    opacity var(--motion-duration-base) var(--motion-ease),
+    transform var(--motion-duration-base) var(--motion-ease);
+}
+
+.workspace.drawer-closed .drawer-content {
+  opacity: 0;
+  transform: translateX(4px);
 }
 
 .drawer-header {
@@ -2025,10 +2099,14 @@ body.workspace-resizing * {
   cursor: pointer;
   padding: 8px;
   text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .toc-entry:hover {
   background: var(--hover);
+  transform: translateX(1px);
 }
 
 .toc-entry.level-2 {
@@ -2095,6 +2173,7 @@ body.workspace-resizing * {
   overflow: auto;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
+  animation: glyphary-fade-shift var(--motion-duration-base) var(--motion-ease);
 }
 
 .calendar-weekday {
@@ -2118,11 +2197,18 @@ body.workspace-resizing * {
   font: inherit;
   font-size: 0.78rem;
   font-weight: 800;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    border-color var(--motion-duration-fast) var(--motion-ease),
+    box-shadow var(--motion-duration-fast) var(--motion-ease),
+    color var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .calendar-day:hover {
   border-color: var(--focus);
   background: var(--hover);
+  transform: translateY(-1px);
 }
 
 .calendar-day.outside-month {
@@ -2476,6 +2562,7 @@ body.workspace-resizing * {
   justify-items: center;
   background: color-mix(in srgb, var(--app-bg) 58%, transparent);
   padding: 12vh 20px 20px;
+  animation: glyphary-fade-in var(--motion-duration-fast) var(--motion-ease);
 }
 
 .command-palette-card {
@@ -2485,6 +2572,7 @@ body.workspace-resizing * {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 22px 60px var(--shadow-strong);
+  animation: glyphary-pop-in var(--motion-duration-base) var(--motion-ease);
 }
 
 .command-palette-card input {
@@ -2522,11 +2610,16 @@ body.workspace-resizing * {
   font: inherit;
   padding: 10px;
   text-align: left;
+  transition:
+    background var(--motion-duration-fast) var(--motion-ease),
+    box-shadow var(--motion-duration-fast) var(--motion-ease),
+    transform var(--motion-duration-fast) var(--motion-ease);
 }
 
 .command-palette-results button:hover,
 .command-palette-results button.active {
   background: var(--hover);
+  transform: translateX(1px);
 }
 
 .command-palette-results button.active {
@@ -2857,6 +2950,7 @@ body.workspace-resizing * {
   place-items: center;
   background: transparent;
   padding: 24px;
+  animation: glyphary-fade-in var(--motion-duration-fast) var(--motion-ease);
 }
 
 .settings-card {
@@ -2866,6 +2960,7 @@ body.workspace-resizing * {
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 22px 60px var(--shadow-strong);
+  animation: glyphary-pop-in var(--motion-duration-base) var(--motion-ease);
 }
 
 .settings-header {
@@ -2988,6 +3083,60 @@ body.workspace-resizing * {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+  animation: glyphary-status-update var(--motion-duration-slow) var(--motion-ease);
+}
+
+@keyframes glyphary-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes glyphary-fade-shift {
+  from {
+    opacity: 0.72;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes glyphary-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes glyphary-status-update {
+  from {
+    opacity: 0.58;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }
 
 @media (max-width: 840px) {

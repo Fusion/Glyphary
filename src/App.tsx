@@ -7046,7 +7046,12 @@ function App() {
                       Next
                     </button>
                   </div>
-                  <div className="calendar-grid" role="grid" aria-label={monthTitle(calendarMonth)}>
+                  <div
+                    className="calendar-grid"
+                    key={`${calendarMonth.getFullYear()}-${calendarMonth.getMonth()}`}
+                    role="grid"
+                    aria-label={monthTitle(calendarMonth)}
+                  >
                     {weekdayLabels.map((weekday) => (
                       <span className="calendar-weekday" key={weekday}>
                         {weekday}
@@ -7893,7 +7898,9 @@ function App() {
           </form>
         </div>
       ) : null}
-      <footer className="statusbar">{status}</footer>
+      <footer className="statusbar" key={status}>
+        {status}
+      </footer>
     </main>
   );
 }

@@ -318,6 +318,21 @@ test("default drawer and vault asset settings match the current product defaults
   assert.equal(defaultInspectorDrawerWidth, 360);
 });
 
+test("motion layer keeps interface animations short and reduced-motion aware", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(css, /--glyphary-motion-duration-fast: 120ms/);
+  assert.match(css, /--glyphary-motion-duration-base: 160ms/);
+  assert.match(css, /--glyphary-motion-duration-slow: 180ms/);
+  assert.match(css, /transition: grid-template-columns var\(--motion-duration-slow\) var\(--motion-ease\)/);
+  assert.match(css, /animation: glyphary-pop-in var\(--motion-duration-base\) var\(--motion-ease\)/);
+  assert.match(css, /@keyframes glyphary-status-update/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(app, /key=\{`\$\{calendarMonth\.getFullYear\(\)\}-\$\{calendarMonth\.getMonth\(\)\}`\}/);
+  assert.match(app, /<footer className="statusbar" key=\{status\}>/);
+});
+
 test("recent files are newest-first unique and capped", () => {
   const existing = Array.from({ length: maxRecentFiles }, (_, index) => ({
     name: `Note ${index}.md`,
