@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": false,
+    "declaration": false,
+    "module": "ES2020",
+    "noEmit": false,
+    "outDir": ".test-dist",
+    "sourceMap": false
+  },
+  "include": ["src/logic.ts"]
+}
