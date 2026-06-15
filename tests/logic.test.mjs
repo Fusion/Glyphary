@@ -12,7 +12,9 @@ import {
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
   emptyTableMarkdown,
+  escapeMarkdownUrl,
   fileNameForDroppedImage,
+  isMacOsPlatform,
   isSupportedImageFile,
   markdownHeadings,
   splitMetaHeader,
@@ -46,9 +48,27 @@ test("frontmatter supports toml delimiters and ignores unterminated headers", ()
 test("local vault image references are accepted while URLs and path escapes are rejected", () => {
   assert.equal(cleanVaultAssetReference("image.png"), "image.png");
   assert.equal(cleanVaultAssetReference("folder/image.png|alias"), "folder/image.png");
+  assert.equal(
+    cleanVaultAssetReference("Pasted%20image%2020220413143858.png"),
+    "Pasted image 20220413143858.png",
+  );
   assert.equal(cleanVaultAssetReference("https://example.com/image.png"), null);
+  assert.equal(cleanVaultAssetReference("https%3A%2F%2Fexample.com%2Fimage.png"), null);
   assert.equal(cleanVaultAssetReference("../image.png"), null);
   assert.equal(cleanVaultAssetReference("folder/../image.png"), null);
+  assert.equal(cleanVaultAssetReference("bad%zz.png"), null);
+});
+
+test("markdown local image URLs are percent-encoded while external URLs stay intact", () => {
+  assert.equal(
+    escapeMarkdownUrl("Pasted image 20220413143858.png"),
+    "Pasted%20image%2020220413143858.png",
+  );
+  assert.equal(
+    escapeMarkdownUrl("folder/Pasted image 20220413143858.png"),
+    "folder/Pasted%20image%2020220413143858.png",
+  );
+  assert.equal(escapeMarkdownUrl("https://example.com/Pasted image.png"), "https://example.com/Pasted image.png");
 });
 
 test("dropped image names follow the pasted-image timestamp convention", () => {
@@ -72,6 +92,13 @@ test("drag and paste image filtering accepts supported image formats", () => {
   assert.equal(isSupportedImageFile({ name: "photo.png", type: "" }), true);
   assert.equal(isSupportedImageFile({ name: "photo.dat", type: "image/webp" }), true);
   assert.equal(isSupportedImageFile({ name: "notes.txt", type: "text/plain" }), false);
+});
+
+test("macOS platform detection controls platform-specific window actions", () => {
+  assert.equal(isMacOsPlatform("MacIntel"), true);
+  assert.equal(isMacOsPlatform("", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), true);
+  assert.equal(isMacOsPlatform("Win32"), false);
+  assert.equal(isMacOsPlatform("Linux x86_64"), false);
 });
 
 test("calendar filenames match the requested note naming scheme and dot marker keys", () => {

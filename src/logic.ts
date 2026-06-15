@@ -59,6 +59,17 @@ type ImageFileLike = {
   type: string;
 };
 
+export function isMacOsPlatform(platform: string, userAgent = "") {
+  const normalizedPlatform = platform.toLowerCase();
+  const normalizedUserAgent = userAgent.toLowerCase();
+
+  return (
+    normalizedPlatform.startsWith("mac") ||
+    normalizedUserAgent.includes("macintosh") ||
+    normalizedUserAgent.includes("mac os x")
+  );
+}
+
 export function timestampForAssetName(date = new Date()) {
   const pad = (value: number) => value.toString().padStart(2, "0");
 
@@ -325,7 +336,19 @@ export function cleanVaultAssetReference(value: string) {
   }
 
   const withoutAlias = trimmed.split("|")[0]?.trim() ?? "";
-  const parts = withoutAlias.split(/[\\/]+/).filter(Boolean);
+  let decoded = withoutAlias;
+
+  try {
+    decoded = decodeURIComponent(withoutAlias);
+  } catch {
+    return null;
+  }
+
+  if (isUrlLike(decoded)) {
+    return null;
+  }
+
+  const parts = decoded.split(/[\\/]+/).filter(Boolean);
 
   if (
     parts.length === 0 ||
@@ -342,5 +365,13 @@ export function escapeMarkdownImageText(value: string) {
 }
 
 export function escapeMarkdownUrl(value: string) {
-  return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+  if (isUrlLike(value)) {
+    return value.replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
+  }
+
+  return value
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/")
+    .replace(/\)/g, "\\)");
 }

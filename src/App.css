@@ -110,9 +110,16 @@
   box-sizing: border-box;
 }
 
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   min-width: 320px;
-  min-height: 100vh;
   margin: 0;
   background: var(--app-bg);
 }
@@ -123,14 +130,17 @@ button {
 
 .app-shell {
   display: flex;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   flex-direction: column;
   gap: 20px;
+  overflow: hidden;
   padding: 24px;
 }
 
 .titlebar {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 18px;
@@ -298,6 +308,7 @@ h2 {
   display: grid;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
   grid-template-columns: minmax(0, 1.2fr) minmax(300px, 0.8fr);
   gap: 18px;
 }
@@ -332,6 +343,7 @@ h2 {
 .vault-pane {
   display: flex;
   min-width: 0;
+  min-height: 0;
 }
 
 .vault-rail {
@@ -347,6 +359,8 @@ h2 {
 }
 
 .vault-tab {
+  display: grid;
+  place-items: center;
   width: 34px;
   height: 34px;
   border: 1px solid var(--border-strong);
@@ -359,6 +373,17 @@ h2 {
   letter-spacing: 0;
 }
 
+.vault-tab svg,
+.drawer-tab svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
 .vault-tab:hover,
 .vault-tab.active {
   border-color: var(--accent);
@@ -369,12 +394,14 @@ h2 {
 .vault-content {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
 }
 
 .vault-header {
   display: flex;
+  flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
@@ -408,6 +435,7 @@ h2 {
 }
 
 .vault-path {
+  flex: 0 0 auto;
   overflow: hidden;
   border-bottom: 1px solid var(--border-soft);
   padding: 10px 14px;
@@ -430,6 +458,7 @@ h2 {
 
 .vault-search label {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 6px;
   color: var(--muted);
@@ -458,6 +487,7 @@ h2 {
 
 .search-options {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 1fr 1fr 48px;
   gap: 6px;
 }
@@ -487,6 +517,7 @@ h2 {
 
 .search-results {
   display: flex;
+  flex: 1;
   min-height: 0;
   flex-direction: column;
   gap: 4px;
@@ -561,46 +592,63 @@ h2 {
 }
 
 .vault-entry-icon {
-  position: relative;
-  display: block;
-  width: 22px;
-  height: 18px;
+  width: 28px;
+  height: 28px;
   justify-self: center;
+  overflow: visible;
 }
 
-.vault-entry-icon.directory {
-  border: 1.5px solid var(--muted);
-  border-radius: 3px;
+.folder-tab {
+  fill: #63b6f5;
 }
 
-.vault-entry-icon.directory::before {
-  position: absolute;
-  top: -5px;
-  left: 1px;
-  width: 10px;
-  height: 5px;
-  border: 1.5px solid var(--muted);
-  border-bottom: 0;
-  border-radius: 3px 3px 0 0;
-  background: var(--surface);
-  content: "";
+.folder-back {
+  fill: #2e9df0;
 }
 
-.vault-entry-icon.file {
-  border: 1.5px solid var(--muted);
-  border-radius: 3px;
+.folder-front {
+  fill: #1687e0;
 }
 
-.vault-entry-icon.file::before {
-  position: absolute;
-  top: -1.5px;
-  right: -1.5px;
-  width: 7px;
-  height: 7px;
-  border-bottom: 1.5px solid var(--muted);
-  border-left: 1.5px solid var(--muted);
-  background: var(--surface);
-  content: "";
+.folder-shine {
+  fill: rgb(255 255 255 / 0.28);
+}
+
+.markdown-icon .document-page {
+  fill: #f7f9fb;
+  stroke: #8d99a8;
+  stroke-width: 1;
+}
+
+.markdown-icon .document-fold {
+  fill: #dfe6ee;
+  stroke: #8d99a8;
+  stroke-linejoin: round;
+  stroke-width: 1;
+}
+
+.markdown-icon .document-line {
+  fill: none;
+  stroke: #b3beca;
+  stroke-linecap: round;
+  stroke-width: 1.15;
+}
+
+.markdown-icon .markdown-badge {
+  fill: #3f8ee8;
+}
+
+.markdown-icon text {
+  fill: #ffffff;
+  font-size: 5.6px;
+  font-weight: 900;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.vault-entry:hover .vault-entry-icon,
+.vault-entry.active .vault-entry-icon {
+  filter: saturate(1.08) brightness(1.03);
 }
 
 .vault-entry strong {
@@ -620,11 +668,14 @@ h2 {
 
 .editor-pane {
   display: flex;
+  min-width: 0;
+  min-height: 0;
   flex-direction: column;
 }
 
 .document-tabs {
   display: flex;
+  flex: 0 0 auto;
   min-height: 42px;
   gap: 4px;
   overflow-x: auto;
@@ -710,6 +761,7 @@ h2 {
 
 .metadata-shell {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 1fr;
   gap: 10px;
   padding: 12px;
@@ -844,6 +896,7 @@ h2 {
 
 .toolbar {
   display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
   padding: 12px;
@@ -1075,6 +1128,7 @@ h2 {
 .drawer-pane {
   display: flex;
   min-width: 0;
+  min-height: 0;
 }
 
 .drawer-rail {
@@ -1090,6 +1144,8 @@ h2 {
 }
 
 .drawer-tab {
+  display: grid;
+  place-items: center;
   width: 34px;
   height: 34px;
   border: 1px solid var(--border-strong);
@@ -1112,12 +1168,14 @@ h2 {
 .drawer-content {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex: 1;
   flex-direction: column;
 }
 
 .drawer-header {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1141,6 +1199,7 @@ h2 {
 .drawer-panel {
   display: flex;
   min-height: 0;
+  overflow: hidden;
   flex: 1;
   flex-direction: column;
 }
@@ -1219,6 +1278,7 @@ h2 {
 
 .calendar-toolbar {
   display: grid;
+  flex: 0 0 auto;
   grid-template-columns: 64px minmax(0, 1fr) 64px;
   align-items: center;
   gap: 8px;
@@ -1236,6 +1296,8 @@ h2 {
 
 .calendar-grid {
   display: grid;
+  min-height: 0;
+  overflow: auto;
   grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 4px;
 }
@@ -1382,11 +1444,13 @@ h2 {
 .markdown-export {
   display: flex;
   min-height: 0;
+  overflow: hidden;
   flex-direction: column;
 }
 
 .markdown-import {
-  min-height: 220px;
+  flex: 0 1 42%;
+  min-height: 160px;
   border-bottom: 1px solid var(--border-soft);
 }
 
@@ -1396,6 +1460,7 @@ h2 {
 
 .pane-header {
   display: flex;
+  flex: 0 0 auto;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
@@ -1458,6 +1523,7 @@ h2 {
 }
 
 .statusbar {
+  flex: 0 0 auto;
   min-height: 20px;
   overflow: hidden;
   color: var(--muted);

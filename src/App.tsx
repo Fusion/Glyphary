@@ -39,6 +39,7 @@ import {
   fileNameForDroppedImage,
   fileNameWithoutMarkdownExtension,
   initialMarkdown,
+  isMacOsPlatform,
   isSupportedImageFile,
   markdownHeadings,
   monthTitle,
@@ -377,6 +378,10 @@ function App() {
   const [searching, setSearching] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("No vault open");
+  const hideWindowDocumentActions = isMacOsPlatform(
+    window.navigator.platform,
+    window.navigator.userAgent,
+  );
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeFileRef = useRef<ActiveFile | null>(null);
   const documentTabsRef = useRef<DocumentTab[]>([]);
@@ -1609,25 +1614,27 @@ function App() {
           <p>{activeFile ? activeFile.relativePath : "Open a vault file to begin"}</p>
         </div>
         <div className="app-actions">
-          <div className="file-menu">
-            <button className="secondary-action" type="button">
-              File
-            </button>
-            <div className="file-menu-popover">
-              <button type="button" onClick={openVault}>
-                Open Vault...
+          {!hideWindowDocumentActions ? (
+            <div className="file-menu">
+              <button className="secondary-action" type="button">
+                File
               </button>
-              <button disabled={!activeFile || !dirty} type="button" onClick={saveCurrentFile}>
-                Save
-              </button>
-              <button type="button" onClick={resetDocument}>
-                New
-              </button>
-              <button type="button" onClick={() => setSettingsOpen(true)}>
-                Settings...
-              </button>
+              <div className="file-menu-popover">
+                <button type="button" onClick={openVault}>
+                  Open Vault...
+                </button>
+                <button disabled={!activeFile || !dirty} type="button" onClick={saveCurrentFile}>
+                  Save
+                </button>
+                <button type="button" onClick={resetDocument}>
+                  New
+                </button>
+                <button type="button" onClick={() => setSettingsOpen(true)}>
+                  Settings...
+                </button>
+              </div>
             </div>
-          </div>
+          ) : null}
           <button
             className="secondary-action"
             disabled={!activeFile || !dirty}
@@ -1636,9 +1643,11 @@ function App() {
           >
             Save
           </button>
-          <button className="secondary-action" type="button" onClick={resetDocument}>
-            New
-          </button>
+          {!hideWindowDocumentActions ? (
+            <button className="secondary-action" type="button" onClick={resetDocument}>
+              New
+            </button>
+          ) : null}
           <label className="appearance-control">
             <span>Style</span>
             <select
@@ -1675,7 +1684,10 @@ function App() {
               title={vaultDrawerOpen && vaultDrawerItem === "files" ? "Close Files" : "Open Files"}
               onClick={() => toggleVaultDrawerItem("files")}
             >
-              FILE
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M3.5 6.5h6.2l2 2h8.8v9a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+                <path d="M2.5 9.5h19" />
+              </svg>
             </button>
             <button
               className={vaultDrawerItem === "search" && vaultDrawerOpen ? "vault-tab active" : "vault-tab"}
@@ -1688,7 +1700,10 @@ function App() {
               title={vaultDrawerOpen && vaultDrawerItem === "search" ? "Close Search" : "Open Search"}
               onClick={() => toggleVaultDrawerItem("search")}
             >
-              SRCH
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="10.5" cy="10.5" r="5.8" />
+                <path d="m15 15 4.5 4.5" />
+              </svg>
             </button>
           </div>
           {vaultDrawerOpen ? (
@@ -1745,10 +1760,45 @@ function App() {
                         }}
                         type="button"
                       >
-                        <span
-                          aria-hidden="true"
-                          className={entry.isDir ? "vault-entry-icon directory" : "vault-entry-icon file"}
-                        />
+                        {entry.isDir ? (
+                          <svg
+                            aria-hidden="true"
+                            className="vault-entry-icon folder-icon"
+                            viewBox="0 0 32 32"
+                          >
+                            <path
+                              className="folder-tab"
+                              d="M3.5 8.2c0-1.3 1-2.2 2.3-2.2h7.1c.8 0 1.5.3 2 .9l1.7 2h9.6c1.3 0 2.3 1 2.3 2.3v1.4h-25z"
+                            />
+                            <path
+                              className="folder-back"
+                              d="M2.5 10.6c0-1.4 1.1-2.5 2.5-2.5h22c1.4 0 2.5 1.1 2.5 2.5v13.1c0 1.4-1.1 2.5-2.5 2.5h-22c-1.4 0-2.5-1.1-2.5-2.5z"
+                            />
+                            <path
+                              className="folder-front"
+                              d="M3.2 13.1h25.6l-2.2 10.8c-.3 1.4-1.5 2.3-2.9 2.3h-19c-1.5 0-2.7-1.1-2.9-2.6z"
+                            />
+                            <path className="folder-shine" d="M5.1 14.3h21.8l-.4 1.6h-21.1z" />
+                          </svg>
+                        ) : (
+                          <svg
+                            aria-hidden="true"
+                            className="vault-entry-icon markdown-icon"
+                            viewBox="0 0 32 32"
+                          >
+                            <path
+                              className="document-page"
+                              d="M8.5 3.8h10.9l4.1 4.2v20.2h-15z"
+                            />
+                            <path className="document-fold" d="M19.2 3.9v4.4h4.2z" />
+                            <path className="document-line" d="M11.3 11.8h9.3" />
+                            <path className="document-line" d="M11.3 14.7h9.3" />
+                            <rect className="markdown-badge" x="9.9" y="18.3" width="12.2" height="6.1" rx="1.8" />
+                            <text x="16" y="22.8" textAnchor="middle">
+                              md
+                            </text>
+                          </svg>
+                        )}
                         <strong>{entry.name}</strong>
                       </button>
                     ))}
@@ -1980,7 +2030,11 @@ function App() {
               title={drawerOpen && drawerItem === "source" ? "Close Source" : "Open Source"}
               onClick={() => toggleDrawerItem("source")}
             >
-              SRC
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m8.5 8-4 4 4 4" />
+                <path d="m15.5 8 4 4-4 4" />
+                <path d="m13 5.5-2 13" />
+              </svg>
             </button>
             <button
               className={drawerItem === "toc" && drawerOpen ? "drawer-tab active" : "drawer-tab"}
@@ -1993,7 +2047,14 @@ function App() {
               title={drawerOpen && drawerItem === "toc" ? "Close TOC" : "Open TOC"}
               onClick={() => toggleDrawerItem("toc")}
             >
-              TOC
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M9 6.5h11" />
+                <path d="M9 12h11" />
+                <path d="M9 17.5h11" />
+                <circle cx="4.5" cy="6.5" r="1.1" />
+                <circle cx="4.5" cy="12" r="1.1" />
+                <circle cx="4.5" cy="17.5" r="1.1" />
+              </svg>
             </button>
             <button
               className={drawerItem === "calendar" && drawerOpen ? "drawer-tab active" : "drawer-tab"}
@@ -2006,7 +2067,17 @@ function App() {
               title={drawerOpen && drawerItem === "calendar" ? "Close Calendar" : "Open Calendar"}
               onClick={() => toggleDrawerItem("calendar")}
             >
-              CAL
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="4" y="5.5" width="16" height="15" rx="2" />
+                <path d="M8 3.5v4" />
+                <path d="M16 3.5v4" />
+                <path d="M4 10h16" />
+                <path d="M8 14h.1" />
+                <path d="M12 14h.1" />
+                <path d="M16 14h.1" />
+                <path d="M8 17h.1" />
+                <path d="M12 17h.1" />
+              </svg>
             </button>
           </div>
           {drawerOpen ? (
