@@ -6,18 +6,25 @@ import {
   calendarDayRelativePath,
   calendarDayTitle,
   calendarPathDateKey,
+  clampResizableDrawerWidth,
   cleanVaultAssetReference,
   composeMarkdown,
   defaultDrawerOpen,
+  defaultInspectorDrawerWidth,
+  defaultVaultDrawerWidth,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
   emptyTableMarkdown,
   escapeMarkdownUrl,
   fileNameForDroppedImage,
+  findTabAcrossSplitGroups,
   isMacOsPlatform,
   isSupportedImageFile,
   markdownHeadings,
+  remainingGroupAfterSplitPaneClose,
+  splitHasDirtyTabs,
   splitMetaHeader,
+  tabIdForFile,
 } from "../.test-dist/logic.js";
 
 test("frontmatter is split out of the editor body and composed back without losing it", () => {
@@ -143,6 +150,8 @@ test("default drawer and vault asset settings match the current product defaults
   assert.equal(defaultDrawerOpen, false);
   assert.equal(defaultVaultDrawerOpen, true);
   assert.equal(defaultVaultAssetDirectory, "_assets_");
+  assert.equal(defaultVaultDrawerWidth, 320);
+  assert.equal(defaultInspectorDrawerWidth, 360);
 });
 
 test("tauri starts with the requested default window size", () => {
@@ -151,4 +160,76 @@ test("tauri starts with the requested default window size", () => {
 
   assert.equal(windowConfig.width, 1470);
   assert.equal(windowConfig.height, 956);
+});
+
+test("split editor groups find an already open file across both panes", () => {
+  const groups = {
+    primary: {
+      id: "primary",
+      activeTabId: tabIdForFile("Notes/A.md"),
+      tabs: [{ id: tabIdForFile("Notes/A.md"), dirty: false }],
+    },
+    secondary: {
+      id: "secondary",
+      activeTabId: tabIdForFile("Notes/B.md"),
+      tabs: [{ id: tabIdForFile("Notes/B.md"), dirty: false }],
+    },
+  };
+
+  assert.deepEqual(findTabAcrossSplitGroups(groups, tabIdForFile("Notes/B.md")), {
+    groupId: "secondary",
+    tab: { id: tabIdForFile("Notes/B.md"), dirty: false },
+  });
+  assert.equal(findTabAcrossSplitGroups(groups, tabIdForFile("Notes/C.md")), null);
+});
+
+test("split editor refuses to close a secondary group with dirty tabs", () => {
+  assert.equal(splitHasDirtyTabs([{ dirty: false }, { dirty: false }]), false);
+  assert.equal(splitHasDirtyTabs([{ dirty: false }, { dirty: true }]), true);
+});
+
+test("closing the final tab in a split pane leaves the other pane as primary", () => {
+  const groups = {
+    primary: {
+      id: "primary",
+      activeTabId: "a",
+      tabs: [{ id: "a", title: "Alpha" }],
+    },
+    secondary: {
+      id: "secondary",
+      activeTabId: "b",
+      tabs: [
+        { id: "b", title: "Beta" },
+        { id: "c", title: "Gamma" },
+      ],
+    },
+  };
+
+  assert.deepEqual(remainingGroupAfterSplitPaneClose(groups, "secondary"), {
+    remainingGroupId: "primary",
+    activeTab: { id: "a", title: "Alpha" },
+    primaryGroup: {
+      id: "primary",
+      activeTabId: "a",
+      tabs: [{ id: "a", title: "Alpha" }],
+    },
+  });
+  assert.deepEqual(remainingGroupAfterSplitPaneClose(groups, "primary"), {
+    remainingGroupId: "secondary",
+    activeTab: { id: "b", title: "Beta" },
+    primaryGroup: {
+      id: "primary",
+      activeTabId: "b",
+      tabs: [
+        { id: "b", title: "Beta" },
+        { id: "c", title: "Gamma" },
+      ],
+    },
+  });
+});
+
+test("resizable drawer widths are clamped to preserve editor workspace", () => {
+  assert.equal(clampResizableDrawerWidth(140, 1200, 360, 20), 220);
+  assert.equal(clampResizableDrawerWidth(420, 1200, 360, 20), 420);
+  assert.equal(clampResizableDrawerWidth(900, 1200, 360, 20), 460);
 });

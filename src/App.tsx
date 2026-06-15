@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from "react";
 import { mergeAttributes, Node } from "@tiptap/core";
 import type { Editor, JSONContent, MarkdownToken } from "@tiptap/core";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
@@ -26,30 +31,38 @@ import {
   calendarDayRelativePath,
   calendarDayTitle,
   calendarPathDateKey,
+  clampResizableDrawerWidth,
   cleanVaultAssetReference,
   composeMarkdown,
   defaultDrawerOpen,
+  defaultInspectorDrawerWidth,
   defaultMetaDelimiter,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
+  defaultVaultDrawerWidth,
   displayPath,
   emptyTableMarkdown,
   escapeMarkdownImageText,
   escapeMarkdownUrl,
   fileNameForDroppedImage,
   fileNameWithoutMarkdownExtension,
+  findTabAcrossSplitGroups,
   initialMarkdown,
   isMacOsPlatform,
   isSupportedImageFile,
   markdownHeadings,
+  minEditorWorkspaceWidth,
+  minResizableDrawerWidth,
   monthTitle,
   parentDirectory,
+  remainingGroupAfterSplitPaneClose,
   sameCalendarDate,
   splitMetaHeader,
+  splitHasDirtyTabs,
   tabIdForFile,
   weekdayLabels,
 } from "./logic";
-import type { MarkdownParts } from "./logic";
+import type { MarkdownParts, SplitGroupId } from "./logic";
 import type { TocEntry } from "./logic";
 import "./App.css";
 
@@ -133,6 +146,14 @@ type DocumentTab = {
   dirty: boolean;
 };
 
+type EditorGroupId = SplitGroupId;
+
+type EditorGroupState = {
+  id: EditorGroupId;
+  tabs: DocumentTab[];
+  activeTabId: string;
+};
+
 type SearchResult = {
   relativePath: string;
   lineNumber?: number;
@@ -144,6 +165,7 @@ type SearchMode = "filename" | "content";
 type AppearanceMode = "auto" | "light" | "dark";
 type DrawerItem = "source" | "toc" | "calendar";
 type VaultDrawerItem = "files" | "search";
+type ResizeSide = "vault" | "drawer";
 
 type PersistedWorkspace = {
   vaultRoot: string;
@@ -153,6 +175,8 @@ type PersistedWorkspace = {
 
 const workspaceStorageKey = "medit.workspace";
 const appearanceStorageKey = "medit.appearance";
+const closedDrawerWidth = 48;
+const workspaceResizeHandleWidth = 10;
 
 function readPersistedWorkspace() {
   try {
@@ -204,6 +228,34 @@ function writePersistedAppearance(appearance: AppearanceMode) {
 
 function tabTitle(tab: DocumentTab) {
   return tab.pageName || tab.activeFile?.name || "Untitled note";
+}
+
+function createUntitledTab(markdown = initialMarkdown): DocumentTab {
+  return {
+    id: `untitled:${Date.now()}:${Math.random().toString(36).slice(2)}`,
+    activeFile: null,
+    pageName: "Untitled note",
+    metaHeader: "",
+    metaDelimiter: defaultMetaDelimiter,
+    markdown,
+    markdownDraft: markdown,
+    dirty: false,
+  };
+}
+
+function createEditorGroups(tab = createUntitledTab()): Record<EditorGroupId, EditorGroupState> {
+  return {
+    primary: {
+      id: "primary",
+      tabs: [tab],
+      activeTabId: tab.id,
+    },
+    secondary: {
+      id: "secondary",
+      tabs: [],
+      activeTabId: "",
+    },
+  };
 }
 
 function joinVaultAssetPath(root: string, assetDirectory: string, reference: string) {
@@ -352,8 +404,10 @@ function App() {
   const [currentDir, setCurrentDir] = useState("");
   const [entries, setEntries] = useState<VaultEntry[]>([]);
   const [activeFile, setActiveFile] = useState<ActiveFile | null>(null);
-  const [documentTabs, setDocumentTabs] = useState<DocumentTab[]>([]);
-  const [activeTabId, setActiveTabId] = useState("");
+  const [editorGroups, setEditorGroups] =
+    useState<Record<EditorGroupId, EditorGroupState>>(createEditorGroups);
+  const [activeGroupId, setActiveGroupId] = useState<EditorGroupId>("primary");
+  const [splitOpen, setSplitOpen] = useState(false);
   const [pageName, setPageName] = useState("Untitled note");
   const [metaHeader, setMetaHeader] = useState("");
   const [metaDelimiter, setMetaDelimiter] =
@@ -362,8 +416,12 @@ function App() {
   const [pageNameEditing, setPageNameEditing] = useState(false);
   const [appearance, setAppearance] = useState<AppearanceMode>(readPersistedAppearance);
   const [vaultDrawerOpen, setVaultDrawerOpen] = useState(defaultVaultDrawerOpen);
+  const [vaultDrawerWidth, setVaultDrawerWidth] = useState(defaultVaultDrawerWidth);
   const [vaultDrawerItem, setVaultDrawerItem] = useState<VaultDrawerItem>("files");
   const [drawerOpen, setDrawerOpen] = useState(defaultDrawerOpen);
+  const [inspectorDrawerWidth, setInspectorDrawerWidth] = useState(
+    defaultInspectorDrawerWidth,
+  );
   const [drawerItem, setDrawerItem] = useState<DrawerItem>("source");
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const now = new Date();
@@ -384,12 +442,16 @@ function App() {
   );
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeFileRef = useRef<ActiveFile | null>(null);
-  const documentTabsRef = useRef<DocumentTab[]>([]);
-  const activeTabIdRef = useRef("");
+  const editorGroupsRef = useRef<Record<EditorGroupId, EditorGroupState>>(editorGroups);
+  const activeGroupIdRef = useRef<EditorGroupId>("primary");
+  const workspaceRef = useRef<HTMLElement | null>(null);
   const pageNameRef = useRef("Untitled note");
   const metaHeaderRef = useRef("");
   const metaDelimiterRef = useRef<MarkdownParts["metaDelimiter"]>(defaultMetaDelimiter);
-  const hydratingEditor = useRef(false);
+  const hydratingEditor = useRef<Record<EditorGroupId, boolean>>({
+    primary: false,
+    secondary: false,
+  });
   const openVaultRef = useRef<() => void | Promise<void>>(() => undefined);
   const saveCurrentFileRef = useRef<() => void | Promise<void>>(() => undefined);
   const resetDocumentRef = useRef<() => void>(() => undefined);
@@ -404,12 +466,12 @@ function App() {
   }, [activeFile]);
 
   useEffect(() => {
-    documentTabsRef.current = documentTabs;
-  }, [documentTabs]);
+    editorGroupsRef.current = editorGroups;
+  }, [editorGroups]);
 
   useEffect(() => {
-    activeTabIdRef.current = activeTabId;
-  }, [activeTabId]);
+    activeGroupIdRef.current = activeGroupId;
+  }, [activeGroupId]);
 
   useEffect(() => {
     pageNameRef.current = pageName;
@@ -451,35 +513,98 @@ function App() {
     setCodeLanguage(nextEditor.getAttributes("codeBlock").language ?? "");
   }
 
+  function editorForGroup(groupId: EditorGroupId) {
+    return groupId === "primary" ? primaryEditor : secondaryEditor;
+  }
+
+  function setEditorGroupsAndRef(nextGroups: Record<EditorGroupId, EditorGroupState>) {
+    editorGroupsRef.current = nextGroups;
+    setEditorGroups(nextGroups);
+  }
+
+  function updateGroupTab(
+    groupId: EditorGroupId,
+    tabId: string,
+    patch: Partial<DocumentTab>,
+  ) {
+    if (!tabId) {
+      return;
+    }
+
+    const nextGroups = {
+      ...editorGroupsRef.current,
+      [groupId]: {
+        ...editorGroupsRef.current[groupId],
+        tabs: editorGroupsRef.current[groupId].tabs.map((tab) =>
+          tab.id === tabId ? { ...tab, ...patch } : tab,
+        ),
+      },
+    };
+
+    setEditorGroupsAndRef(nextGroups);
+  }
+
   function updateActiveTab(patch: Partial<DocumentTab>) {
-    const tabId = activeTabIdRef.current;
+    const groupId = activeGroupIdRef.current;
+    const tabId = editorGroupsRef.current[groupId].activeTabId;
 
     if (!tabId) {
       return;
     }
 
-    const nextTabs = documentTabsRef.current.map((tab) =>
-      tab.id === tabId ? { ...tab, ...patch } : tab,
-    );
-
-    documentTabsRef.current = nextTabs;
-    setDocumentTabs(nextTabs);
+    updateGroupTab(groupId, tabId, patch);
   }
 
-  function currentDocumentSnapshot(): Partial<DocumentTab> {
+  function replaceEditorGroupsWithPrimaryTab(tab: DocumentTab) {
+    const nextGroups = createEditorGroups(tab);
+
+    activeGroupIdRef.current = "primary";
+    setActiveGroupId("primary");
+    setSplitOpen(false);
+    setEditorGroupsAndRef(nextGroups);
+  }
+
+  function addTabToGroup(tab: DocumentTab, groupId = activeGroupIdRef.current) {
+    const nextTabs = [...editorGroupsRef.current[groupId].tabs, tab];
+    const nextGroups = {
+      ...editorGroupsRef.current,
+      [groupId]: {
+        ...editorGroupsRef.current[groupId],
+        tabs: nextTabs,
+        activeTabId: tab.id,
+      },
+    };
+
+    setEditorGroupsAndRef(nextGroups);
+  }
+
+  function findOpenFileTab(relativePath: string) {
+    return findTabAcrossSplitGroups(editorGroupsRef.current, tabIdForFile(relativePath));
+  }
+
+  function currentDocumentSnapshot(groupId = activeGroupIdRef.current): Partial<DocumentTab> {
+    const group = editorGroupsRef.current[groupId];
+    const tab = group.tabs.find((documentTab) => documentTab.id === group.activeTabId);
+    const groupEditor = editorForGroup(groupId);
+    const nextMarkdown = groupEditor?.getMarkdown() ?? tab?.markdown ?? initialMarkdown;
+    const isActiveGroup = groupId === activeGroupIdRef.current;
+
     return {
-      activeFile: activeFileRef.current,
-      pageName: pageNameRef.current,
-      metaHeader: metaHeaderRef.current,
-      metaDelimiter: metaDelimiterRef.current,
-      markdown,
-      markdownDraft,
-      dirty,
+      activeFile: isActiveGroup ? activeFileRef.current : tab?.activeFile ?? null,
+      pageName: isActiveGroup ? pageNameRef.current : tab?.pageName ?? "Untitled note",
+      metaHeader: isActiveGroup ? metaHeaderRef.current : tab?.metaHeader ?? "",
+      metaDelimiter: isActiveGroup
+        ? metaDelimiterRef.current
+        : tab?.metaDelimiter ?? defaultMetaDelimiter,
+      markdown: nextMarkdown,
+      markdownDraft: isActiveGroup ? markdownDraft : tab?.markdownDraft ?? nextMarkdown,
+      dirty: isActiveGroup ? dirty : tab?.dirty ?? false,
     };
   }
 
-  function snapshotActiveTab() {
-    updateActiveTab(currentDocumentSnapshot());
+  function snapshotActiveTab(groupId = activeGroupIdRef.current) {
+    const tabId = editorGroupsRef.current[groupId].activeTabId;
+    updateGroupTab(groupId, tabId, currentDocumentSnapshot(groupId));
   }
 
   function setActiveDocumentDirty(nextDirty: boolean) {
@@ -487,18 +612,55 @@ function App() {
     updateActiveTab({ dirty: nextDirty });
   }
 
-  function hydrateDocumentTab(tab: DocumentTab) {
-    if (!editor) {
+  function activateEditorGroup(groupId: EditorGroupId) {
+    if (activeGroupIdRef.current === groupId) {
       return;
     }
 
-    hydratingEditor.current = true;
-    activeFileRef.current = tab.activeFile;
-    activeTabIdRef.current = tab.id;
-    pageNameRef.current = tab.pageName;
-    metaHeaderRef.current = tab.metaHeader;
-    metaDelimiterRef.current = tab.metaDelimiter;
-    setActiveTabId(tab.id);
+    snapshotActiveTab();
+    activeGroupIdRef.current = groupId;
+    setActiveGroupId(groupId);
+    const group = editorGroupsRef.current[groupId];
+    const tab = group.tabs.find((documentTab) => documentTab.id === group.activeTabId);
+
+    if (tab) {
+      hydrateDocumentTab(tab, groupId);
+    }
+  }
+
+  function hydrateDocumentTab(tab: DocumentTab, groupId = activeGroupIdRef.current) {
+    const groupEditor = editorForGroup(groupId);
+
+    if (!groupEditor) {
+      return;
+    }
+
+    hydratingEditor.current[groupId] = true;
+    const nextGroups = {
+      ...editorGroupsRef.current,
+      [groupId]: {
+        ...editorGroupsRef.current[groupId],
+        activeTabId: tab.id,
+      },
+    };
+
+    setEditorGroupsAndRef(nextGroups);
+
+    if (groupId === activeGroupIdRef.current) {
+      activeFileRef.current = tab.activeFile;
+      pageNameRef.current = tab.pageName;
+      metaHeaderRef.current = tab.metaHeader;
+      metaDelimiterRef.current = tab.metaDelimiter;
+    }
+
+    if (groupId !== activeGroupIdRef.current) {
+      groupEditor.commands.setContent(tab.markdown, { contentType: "markdown" });
+      window.setTimeout(() => {
+        hydratingEditor.current[groupId] = false;
+      }, 0);
+      return;
+    }
+
     setActiveFile(tab.activeFile);
     setPageName(tab.pageName);
     setMetaHeader(tab.metaHeader);
@@ -507,10 +669,10 @@ function App() {
     setMarkdownDraft(tab.markdownDraft);
     setDirty(tab.dirty);
     setPageNameEditing(false);
-    editor.commands.setContent(tab.markdown, { contentType: "markdown" });
-    syncEditorState(editor);
+    groupEditor.commands.setContent(tab.markdown, { contentType: "markdown" });
+    syncEditorState(groupEditor);
     window.setTimeout(() => {
-      hydratingEditor.current = false;
+      hydratingEditor.current[groupId] = false;
     }, 0);
   }
 
@@ -532,15 +694,19 @@ function App() {
     };
   }
 
-  function switchToDocumentTab(tabId: string) {
-    const tab = documentTabsRef.current.find((documentTab) => documentTab.id === tabId);
+  function switchToDocumentTab(tabId: string, groupId = activeGroupIdRef.current) {
+    const tab = editorGroupsRef.current[groupId].tabs.find(
+      (documentTab) => documentTab.id === tabId,
+    );
 
     if (!tab) {
       return;
     }
 
     snapshotActiveTab();
-    hydrateDocumentTab(tab);
+    activeGroupIdRef.current = groupId;
+    setActiveGroupId(groupId);
+    hydrateDocumentTab(tab, groupId);
     if (tab.activeFile) {
       persistWorkspace({ activeFile: tab.activeFile });
       setStatus(`Switched to ${tab.activeFile.relativePath}`);
@@ -550,8 +716,8 @@ function App() {
     }
   }
 
-  function closeDocumentTab(tabId: string) {
-    const tabs = documentTabsRef.current;
+  function closeDocumentTab(tabId: string, groupId = activeGroupIdRef.current) {
+    const tabs = editorGroupsRef.current[groupId].tabs;
     const tab = tabs.find((documentTab) => documentTab.id === tabId);
 
     if (!tab) {
@@ -564,34 +730,68 @@ function App() {
     }
 
     if (tabs.length === 1) {
-      setStatus("Keep at least one document tab open");
+      if (!splitOpen) {
+        setStatus("Keep at least one document tab open");
+        return;
+      }
+
+      const promotedGroup = remainingGroupAfterSplitPaneClose(editorGroupsRef.current, groupId);
+
+      if (!promotedGroup) {
+        setStatus("Keep at least one document tab open");
+        return;
+      }
+
+      const nextGroups = createEditorGroups(promotedGroup.activeTab);
+      nextGroups.primary = promotedGroup.primaryGroup;
+
+      activeGroupIdRef.current = "primary";
+      setActiveGroupId("primary");
+      setSplitOpen(false);
+      setEditorGroupsAndRef(nextGroups);
+      hydrateDocumentTab(promotedGroup.activeTab, "primary");
+      persistWorkspace({ activeFile: promotedGroup.activeTab.activeFile });
+      setStatus(`Closed ${tabTitle(tab)} and unsplit editor`);
       return;
     }
 
     const closedIndex = tabs.findIndex((documentTab) => documentTab.id === tabId);
     const nextTabs = tabs.filter((documentTab) => documentTab.id !== tabId);
+    const wasActiveTab = tabId === editorGroupsRef.current[groupId].activeTabId;
+    const nextActiveTabId =
+      wasActiveTab
+        ? nextTabs[Math.min(closedIndex, nextTabs.length - 1)].id
+        : editorGroupsRef.current[groupId].activeTabId;
 
-    documentTabsRef.current = nextTabs;
-    setDocumentTabs(nextTabs);
+    setEditorGroupsAndRef({
+      ...editorGroupsRef.current,
+      [groupId]: {
+        ...editorGroupsRef.current[groupId],
+        tabs: nextTabs,
+        activeTabId: nextActiveTabId,
+      },
+    });
 
-    if (tabId !== activeTabIdRef.current) {
+    if (!wasActiveTab) {
       setStatus(`Closed ${tabTitle(tab)}`);
       return;
     }
 
     const nextTab = nextTabs[Math.min(closedIndex, nextTabs.length - 1)];
 
-    hydrateDocumentTab(nextTab);
+    hydrateDocumentTab(nextTab, groupId);
     persistWorkspace({ activeFile: nextTab.activeFile });
     setStatus(`Closed ${tabTitle(tab)}`);
   }
 
   function insertVaultImage(fileName: string) {
-    if (!editor) {
+    const groupEditor = editorForGroup(activeGroupIdRef.current);
+
+    if (!groupEditor) {
       return;
     }
 
-    editor
+    groupEditor
       .chain()
       .focus()
       .insertContent({
@@ -650,117 +850,139 @@ function App() {
     return true;
   }
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit.configure({
-        codeBlock: false,
-      }),
-      CodeBlockLowlight.configure({
-        lowlight,
-      }),
-      createVaultImageExtension((target) =>
-        joinVaultAssetPath(
-          vaultRootRef.current,
-          vaultSettingsRef.current.assetDirectory,
-          target,
+  function createEditorOptions(groupId: EditorGroupId) {
+    return {
+      extensions: [
+        StarterKit.configure({
+          codeBlock: false,
+        }),
+        CodeBlockLowlight.configure({
+          lowlight,
+        }),
+        createVaultImageExtension((target) =>
+          joinVaultAssetPath(
+            vaultRootRef.current,
+            vaultSettingsRef.current.assetDirectory,
+            target,
+          ),
         ),
-      ),
-      TableKit.configure({
-        table: {
-          resizable: true,
+        TableKit.configure({
+          table: {
+            resizable: true,
+          },
+        }),
+        Markdown.configure({
+          markedOptions: { gfm: true },
+        }),
+      ],
+      content: initialMarkdown,
+      contentType: "markdown" as const,
+      editorProps: {
+        attributes: {
+          "aria-label": "Markdown document editor",
+          spellcheck: "false",
         },
-      }),
-      Markdown.configure({
-        markedOptions: { gfm: true },
-      }),
-    ],
-    content: initialMarkdown,
-    contentType: "markdown",
-    editorProps: {
-      attributes: {
-        "aria-label": "Markdown document editor",
-        spellcheck: "false",
+        handleDrop: (_view: unknown, event: DragEvent) => {
+          if (!queueImageImport(event.dataTransfer?.files)) {
+            return false;
+          }
+
+          event.preventDefault();
+          return true;
+        },
+        handlePaste: (_view: unknown, event: ClipboardEvent) => {
+          if (!queueImageImport(event.clipboardData?.files)) {
+            return false;
+          }
+
+          event.preventDefault();
+          return true;
+        },
       },
-      handleDrop: (_view, event) => {
-        if (!queueImageImport(event.dataTransfer?.files)) {
-          return false;
-        }
+      onUpdate: ({ editor }: { editor: Editor }) => {
+        const nextMarkdown = editor.getMarkdown();
+        const isActiveGroup = activeGroupIdRef.current === groupId;
 
-        event.preventDefault();
-        return true;
-      },
-      handlePaste: (_view, event) => {
-        if (!queueImageImport(event.clipboardData?.files)) {
-          return false;
-        }
-
-        event.preventDefault();
-        return true;
-      },
-    },
-    onUpdate: ({ editor }) => {
-      const nextMarkdown = editor.getMarkdown();
-
-      setMarkdown(nextMarkdown);
-      setMarkdownDraft(nextMarkdown);
-      syncEditorState(editor);
-
-      if (!hydratingEditor.current) {
-        setActiveDocumentDirty(true);
-        updateActiveTab({
+        updateGroupTab(groupId, editorGroupsRef.current[groupId].activeTabId, {
           markdown: nextMarkdown,
           markdownDraft: nextMarkdown,
-          dirty: true,
+          dirty: hydratingEditor.current[groupId]
+            ? editorGroupsRef.current[groupId].tabs.find(
+                (tab) => tab.id === editorGroupsRef.current[groupId].activeTabId,
+              )?.dirty ?? false
+            : true,
         });
-        setStatus(
-          activeFileRef.current
-            ? `Unsaved changes in ${activeFileRef.current.name}`
-            : "Unsaved changes in untitled note",
-        );
-      }
-    },
-    onSelectionUpdate: ({ editor }) => {
-      syncEditorState(editor);
-    },
-    onFocus: ({ editor }) => {
-      setEditorFocused(true);
-      syncEditorState(editor);
-    },
-    onBlur: ({ editor }) => {
-      setEditorFocused(false);
-      syncEditorState(editor);
-    },
-  });
+
+        if (isActiveGroup) {
+          setMarkdown(nextMarkdown);
+          setMarkdownDraft(nextMarkdown);
+          syncEditorState(editor);
+        }
+
+        if (!hydratingEditor.current[groupId]) {
+          if (isActiveGroup) {
+            setDirty(true);
+          }
+          setStatus(
+            isActiveGroup && activeFileRef.current
+              ? `Unsaved changes in ${activeFileRef.current.name}`
+              : "Unsaved changes in untitled note",
+          );
+        }
+      },
+      onSelectionUpdate: ({ editor }: { editor: Editor }) => {
+        if (activeGroupIdRef.current === groupId) {
+          syncEditorState(editor);
+        }
+      },
+      onFocus: ({ editor }: { editor: Editor }) => {
+        activateEditorGroup(groupId);
+        setEditorFocused(true);
+        syncEditorState(editor);
+      },
+      onBlur: ({ editor }: { editor: Editor }) => {
+        if (activeGroupIdRef.current === groupId) {
+          setEditorFocused(false);
+          syncEditorState(editor);
+        }
+      },
+    };
+  }
+
+  const primaryEditor = useEditor(createEditorOptions("primary"));
+  const secondaryEditor = useEditor(createEditorOptions("secondary"));
+  const editor = activeGroupId === "secondary" ? secondaryEditor : primaryEditor;
 
   useEffect(() => {
-    if (editor) {
-      const nextMarkdown = editor.getMarkdown();
-
-      setMarkdown(nextMarkdown);
-      setMarkdownDraft(nextMarkdown);
-      syncEditorState(editor);
-
-      if (documentTabsRef.current.length === 0) {
-        const tab: DocumentTab = {
-          id: `untitled:${Date.now()}`,
-          activeFile: null,
-          pageName: "Untitled note",
-          metaHeader: "",
-          metaDelimiter: defaultMetaDelimiter,
-          markdown: nextMarkdown,
-          markdownDraft: nextMarkdown,
-          dirty: false,
-        };
-
-        activeTabIdRef.current = tab.id;
-        setActiveTabId(tab.id);
-        setDocumentTabs([tab]);
-      }
+    if (!primaryEditor) {
+      return;
     }
-  }, [editor]);
+
+    const tab = editorGroupsRef.current.primary.tabs.find(
+      (documentTab) => documentTab.id === editorGroupsRef.current.primary.activeTabId,
+    );
+
+    if (tab) {
+      hydrateDocumentTab(tab, "primary");
+    }
+  }, [primaryEditor]);
 
   useEffect(() => {
-    if (!editor || restoredWorkspace.current || !isTauri()) {
+    if (!secondaryEditor || editorGroupsRef.current.secondary.tabs.length === 0) {
+      return;
+    }
+
+    const tab = editorGroupsRef.current.secondary.tabs.find(
+      (documentTab) => documentTab.id === editorGroupsRef.current.secondary.activeTabId,
+    );
+
+    if (tab) {
+      hydrateDocumentTab(tab, "secondary");
+    }
+  }, [secondaryEditor]);
+
+  useEffect(() => {
+    if (!primaryEditor || restoredWorkspace.current || !isTauri()) {
       return;
     }
 
@@ -794,27 +1016,16 @@ function App() {
           });
           const tab = createDocumentTabFromFile(file);
 
-          setDocumentTabs([tab]);
-          documentTabsRef.current = [tab];
-          hydrateDocumentTab(tab);
+          replaceEditorGroupsWithPrimaryTab(tab);
+          hydrateDocumentTab(tab, "primary");
           setStatus(`Restored ${file.relativePath}`);
           return;
         }
 
-        const tab: DocumentTab = {
-          id: `untitled:${Date.now()}`,
-          activeFile: null,
-          pageName: "Untitled note",
-          metaHeader: "",
-          metaDelimiter: defaultMetaDelimiter,
-          markdown: initialMarkdown,
-          markdownDraft: initialMarkdown,
-          dirty: false,
-        };
+        const tab = createUntitledTab();
 
-        setDocumentTabs([tab]);
-        documentTabsRef.current = [tab];
-        hydrateDocumentTab(tab);
+        replaceEditorGroupsWithPrimaryTab(tab);
+        hydrateDocumentTab(tab, "primary");
         setStatus(`Restored vault ${workspace.vaultRoot}`);
       } catch (error) {
         setStatus(error instanceof Error ? error.message : String(error));
@@ -822,7 +1033,7 @@ function App() {
     }
 
     restoreWorkspace();
-  }, [editor]);
+  }, [primaryEditor]);
 
   const stats = useMemo(() => {
     const words = markdown.trim() ? markdown.trim().split(/\s+/).length : 0;
@@ -1027,7 +1238,7 @@ function App() {
       return;
     }
 
-    hydratingEditor.current = clean;
+    hydratingEditor.current[activeGroupIdRef.current] = clean;
     editor.commands.setContent(content, { contentType: "markdown" });
     setMarkdown(content);
     setMarkdownDraft(content);
@@ -1040,7 +1251,7 @@ function App() {
     if (clean) {
       setActiveDocumentDirty(false);
       window.setTimeout(() => {
-        hydratingEditor.current = false;
+        hydratingEditor.current[activeGroupIdRef.current] = false;
       }, 0);
     } else {
       setActiveDocumentDirty(true);
@@ -1125,10 +1336,12 @@ function App() {
       return;
     }
 
+    const groupId = activeGroupIdRef.current;
     let file = activeFileRef.current;
     const requestedName = pageNameRef.current.trim();
 
     if (requestedName && requestedName !== fileNameWithoutMarkdownExtension(file.name)) {
+      const previousTabId = editorGroupsRef.current[groupId].activeTabId;
       const renamed = await invoke<OpenedFile>("rename_vault_file", {
         root: vaultRoot,
         relative: file.relativePath,
@@ -1140,14 +1353,11 @@ function App() {
         relativePath: renamed.relativePath,
       };
       const nextTabId = tabIdForFile(file.relativePath);
-      const previousTabId = activeTabIdRef.current;
 
       activeFileRef.current = file;
-      activeTabIdRef.current = nextTabId;
-      setActiveTabId(nextTabId);
       setActiveFile(file);
       setActivePageName(fileNameWithoutMarkdownExtension(file.name));
-      const renamedTabs = documentTabsRef.current.map((tab) =>
+      const renamedTabs = editorGroupsRef.current[groupId].tabs.map((tab) =>
         tab.id === previousTabId
           ? {
               ...tab,
@@ -1157,9 +1367,16 @@ function App() {
             }
           : tab,
       );
+      const nextGroups = {
+        ...editorGroupsRef.current,
+        [groupId]: {
+          ...editorGroupsRef.current[groupId],
+          tabs: renamedTabs,
+          activeTabId: nextTabId,
+        },
+      };
 
-      documentTabsRef.current = renamedTabs;
-      setDocumentTabs(renamedTabs);
+      setEditorGroupsAndRef(nextGroups);
       persistWorkspace({ activeFile: file });
       await loadEntries(vaultRoot, currentDir);
     }
@@ -1177,8 +1394,9 @@ function App() {
     });
     const savedMarkdown = editor.getMarkdown();
     const savedDraft = markdownDraft;
-    const savedTabs = documentTabsRef.current.map((tab) =>
-      tab.id === activeTabIdRef.current
+    const activeTabIdForGroup = editorGroupsRef.current[groupId].activeTabId;
+    const savedTabs = editorGroupsRef.current[groupId].tabs.map((tab) =>
+      tab.id === activeTabIdForGroup
         ? {
             ...tab,
             activeFile: file,
@@ -1191,9 +1409,15 @@ function App() {
           }
         : tab,
     );
+    const nextGroups = {
+      ...editorGroupsRef.current,
+      [groupId]: {
+        ...editorGroupsRef.current[groupId],
+        tabs: savedTabs,
+      },
+    };
 
-    documentTabsRef.current = savedTabs;
-    setDocumentTabs(savedTabs);
+    setEditorGroupsAndRef(nextGroups);
     setDirty(false);
     setStatus(`Saved ${file.name}`);
   }
@@ -1218,20 +1442,10 @@ function App() {
       setDrawerOpen(false);
       await loadVaultSettings(selected);
       setCurrentDir("");
-      const tab: DocumentTab = {
-        id: `untitled:${Date.now()}`,
-        activeFile: null,
-        pageName: "Untitled note",
-        metaHeader: "",
-        metaDelimiter: defaultMetaDelimiter,
-        markdown: initialMarkdown,
-        markdownDraft: initialMarkdown,
-        dirty: false,
-      };
+      const tab = createUntitledTab();
 
-      setDocumentTabs([tab]);
-      documentTabsRef.current = [tab];
-      hydrateDocumentTab(tab);
+      replaceEditorGroupsWithPrimaryTab(tab);
+      hydrateDocumentTab(tab, "primary");
       setSearchQuery("");
       setSearchResults([]);
       await loadEntries(selected, "");
@@ -1320,16 +1534,18 @@ function App() {
 
     try {
       snapshotActiveTab();
-      const existing = documentTabsRef.current.find(
-        (tab) => tab.id === tabIdForFile(relativePath),
-      );
+      const existing = findOpenFileTab(relativePath);
 
       if (existing) {
-        hydrateDocumentTab(existing);
+        activeGroupIdRef.current = existing.groupId;
+        setActiveGroupId(existing.groupId);
+        hydrateDocumentTab(existing.tab, existing.groupId);
         persistWorkspace({
-          activeFile: existing.activeFile,
+          activeFile: existing.tab.activeFile,
         });
-        setStatus(`Switched to ${existing.activeFile?.relativePath ?? tabTitle(existing)}`);
+        setStatus(
+          `Switched to ${existing.tab.activeFile?.relativePath ?? tabTitle(existing.tab)}`,
+        );
         return;
       }
 
@@ -1339,8 +1555,7 @@ function App() {
       });
       const tab = createDocumentTabFromFile(file);
 
-      setDocumentTabs((tabs) => [...tabs, tab]);
-      documentTabsRef.current = [...documentTabsRef.current, tab];
+      addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistWorkspace({
         activeFile: tab.activeFile,
@@ -1358,16 +1573,18 @@ function App() {
     }
 
     const relativePath = calendarDayRelativePath(date);
-    const existing = documentTabsRef.current.find(
-      (tab) => tab.id === tabIdForFile(relativePath),
-    );
+    const existing = findOpenFileTab(relativePath);
 
     snapshotActiveTab();
 
     if (existing) {
-      hydrateDocumentTab(existing);
-      persistWorkspace({ activeFile: existing.activeFile });
-      setStatus(`Switched to ${existing.activeFile?.relativePath ?? tabTitle(existing)}`);
+      activeGroupIdRef.current = existing.groupId;
+      setActiveGroupId(existing.groupId);
+      hydrateDocumentTab(existing.tab, existing.groupId);
+      persistWorkspace({ activeFile: existing.tab.activeFile });
+      setStatus(
+        `Switched to ${existing.tab.activeFile?.relativePath ?? tabTitle(existing.tab)}`,
+      );
       return;
     }
 
@@ -1379,8 +1596,7 @@ function App() {
       });
       const tab = createDocumentTabFromFile(file);
 
-      setDocumentTabs((tabs) => [...tabs, tab]);
-      documentTabsRef.current = [...documentTabsRef.current, tab];
+      addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistWorkspace({ activeFile: tab.activeFile });
       await loadEntries(vaultRoot, currentDir);
@@ -1404,23 +1620,24 @@ function App() {
         root: vaultRoot,
         relative: relativePath,
       });
-      const existing = documentTabsRef.current.find(
-        (tab) => tab.id === tabIdForFile(file.relativePath),
-      );
+      const existing = findOpenFileTab(file.relativePath);
 
       if (existing) {
-        hydrateDocumentTab(existing);
+        activeGroupIdRef.current = existing.groupId;
+        setActiveGroupId(existing.groupId);
+        hydrateDocumentTab(existing.tab, existing.groupId);
         persistWorkspace({
-          activeFile: existing.activeFile,
+          activeFile: existing.tab.activeFile,
         });
-        setStatus(`Switched to ${existing.activeFile?.relativePath ?? tabTitle(existing)}`);
+        setStatus(
+          `Switched to ${existing.tab.activeFile?.relativePath ?? tabTitle(existing.tab)}`,
+        );
         return;
       }
 
       const tab = createDocumentTabFromFile(file);
 
-      setDocumentTabs((tabs) => [...tabs, tab]);
-      documentTabsRef.current = [...documentTabsRef.current, tab];
+      addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistWorkspace({
         activeFile: tab.activeFile,
@@ -1475,19 +1692,9 @@ function App() {
 
   function resetDocument() {
     snapshotActiveTab();
-    const tab: DocumentTab = {
-      id: `untitled:${Date.now()}`,
-      activeFile: null,
-      pageName: "Untitled note",
-      metaHeader: "",
-      metaDelimiter: defaultMetaDelimiter,
-      markdown: initialMarkdown,
-      markdownDraft: initialMarkdown,
-      dirty: false,
-    };
+    const tab = createUntitledTab();
 
-    setDocumentTabs((tabs) => [...tabs, tab]);
-    documentTabsRef.current = [...documentTabsRef.current, tab];
+    addTabToGroup(tab);
     hydrateDocumentTab(tab);
     persistWorkspace({ activeFile: null });
     setStatus("New unsaved document");
@@ -1606,6 +1813,348 @@ function App() {
     await openFile(result.relativePath);
   }
 
+  function workspaceWidth() {
+    return workspaceRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+  }
+
+  function totalResizeHandleWidth() {
+    return (
+      (vaultDrawerOpen ? workspaceResizeHandleWidth : 0) +
+      (drawerOpen ? workspaceResizeHandleWidth : 0)
+    );
+  }
+
+  function resizeDrawerTo(side: ResizeSide, requestedWidth: number) {
+    if (side === "vault") {
+      setVaultDrawerWidth(
+        clampResizableDrawerWidth(
+          requestedWidth,
+          workspaceWidth(),
+          drawerOpen ? inspectorDrawerWidth : closedDrawerWidth,
+          totalResizeHandleWidth(),
+        ),
+      );
+      return;
+    }
+
+    setInspectorDrawerWidth(
+      clampResizableDrawerWidth(
+        requestedWidth,
+        workspaceWidth(),
+        vaultDrawerOpen ? vaultDrawerWidth : closedDrawerWidth,
+        totalResizeHandleWidth(),
+      ),
+    );
+  }
+
+  function beginWorkspaceResize(side: ResizeSide, event: ReactPointerEvent<HTMLDivElement>) {
+    if ((side === "vault" && !vaultDrawerOpen) || (side === "drawer" && !drawerOpen)) {
+      return;
+    }
+
+    event.preventDefault();
+    const startX = event.clientX;
+    const startVaultWidth = vaultDrawerWidth;
+    const startInspectorWidth = inspectorDrawerWidth;
+    const startWorkspaceWidth = workspaceWidth();
+    const startHandleWidth = totalResizeHandleWidth();
+    document.body.classList.add("workspace-resizing");
+
+    const handlePointerMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+
+      if (side === "vault") {
+        setVaultDrawerWidth(
+          clampResizableDrawerWidth(
+            startVaultWidth + delta,
+            startWorkspaceWidth,
+            drawerOpen ? startInspectorWidth : closedDrawerWidth,
+            startHandleWidth,
+          ),
+        );
+        return;
+      }
+
+      setInspectorDrawerWidth(
+        clampResizableDrawerWidth(
+          startInspectorWidth - delta,
+          startWorkspaceWidth,
+          vaultDrawerOpen ? startVaultWidth : closedDrawerWidth,
+          startHandleWidth,
+        ),
+      );
+    };
+
+    const stopResize = () => {
+      document.removeEventListener("pointermove", handlePointerMove);
+      document.removeEventListener("pointerup", stopResize);
+      document.removeEventListener("pointercancel", stopResize);
+      document.body.classList.remove("workspace-resizing");
+      setStatus("Resized workspace drawers");
+    };
+
+    document.addEventListener("pointermove", handlePointerMove);
+    document.addEventListener("pointerup", stopResize);
+    document.addEventListener("pointercancel", stopResize);
+  }
+
+  function handleResizeKey(side: ResizeSide, event: ReactKeyboardEvent<HTMLDivElement>) {
+    const step = event.shiftKey ? 48 : 24;
+
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (side === "vault") {
+      resizeDrawerTo(
+        "vault",
+        vaultDrawerWidth + (event.key === "ArrowRight" ? step : -step),
+      );
+      return;
+    }
+
+    resizeDrawerTo(
+      "drawer",
+      inspectorDrawerWidth + (event.key === "ArrowLeft" ? step : -step),
+    );
+  }
+
+  function toggleSplitEditor() {
+    if (splitOpen) {
+      const secondaryDirty = splitHasDirtyTabs(editorGroupsRef.current.secondary.tabs);
+
+      if (secondaryDirty) {
+        setStatus("Save secondary split tabs before closing the split");
+        return;
+      }
+
+      const nextGroups = {
+        ...editorGroupsRef.current,
+        secondary: {
+          id: "secondary" as const,
+          tabs: [],
+          activeTabId: "",
+        },
+      };
+
+      setEditorGroupsAndRef(nextGroups);
+      activeGroupIdRef.current = "primary";
+      setActiveGroupId("primary");
+      setSplitOpen(false);
+      const primaryTab = nextGroups.primary.tabs.find(
+        (tab) => tab.id === nextGroups.primary.activeTabId,
+      );
+
+      if (primaryTab) {
+        hydrateDocumentTab(primaryTab, "primary");
+      }
+      setStatus("Closed split editor");
+      return;
+    }
+
+    const secondaryTab =
+      editorGroupsRef.current.secondary.tabs.find(
+        (tab) => tab.id === editorGroupsRef.current.secondary.activeTabId,
+      ) ?? createUntitledTab();
+    const nextGroups = {
+      ...editorGroupsRef.current,
+      secondary: {
+        id: "secondary" as const,
+        tabs:
+          editorGroupsRef.current.secondary.tabs.length > 0
+            ? editorGroupsRef.current.secondary.tabs
+            : [secondaryTab],
+        activeTabId: secondaryTab.id,
+      },
+    };
+
+    setEditorGroupsAndRef(nextGroups);
+    setSplitOpen(true);
+
+    if (secondaryEditor) {
+      hydrateDocumentTab(secondaryTab, "secondary");
+    }
+
+    setStatus("Opened split editor");
+  }
+
+  function renderEditorPane(groupId: EditorGroupId, groupEditor: Editor | null) {
+    const group = editorGroups[groupId];
+    const groupActiveTab =
+      group.tabs.find((tab) => tab.id === group.activeTabId) ?? group.tabs[0] ?? null;
+    const isActiveGroup = groupId === activeGroupId;
+    const panePageName = isActiveGroup ? pageName : groupActiveTab?.pageName ?? "Untitled note";
+    const paneMetaHeader = isActiveGroup ? metaHeader : groupActiveTab?.metaHeader ?? "";
+    const paneActiveFile = isActiveGroup ? activeFile : groupActiveTab?.activeFile ?? null;
+
+    return (
+      <div
+        className={isActiveGroup ? "editor-pane active-group" : "editor-pane"}
+        key={groupId}
+        onMouseDown={() => {
+          if (!isActiveGroup) {
+            activateEditorGroup(groupId);
+          }
+        }}
+      >
+        <div className="document-tabs" role="tablist" aria-label={`${groupId} open documents`}>
+          {group.tabs.map((tab) => (
+            <div
+              className={tab.id === group.activeTabId ? "document-tab active" : "document-tab"}
+              key={tab.id}
+              role="tab"
+              aria-selected={tab.id === group.activeTabId}
+              title={tab.activeFile?.relativePath ?? tabTitle(tab)}
+            >
+              <button
+                className="document-tab-select"
+                type="button"
+                onClick={() => switchToDocumentTab(tab.id, groupId)}
+              >
+                <span>{tabTitle(tab)}</span>
+                {tab.dirty ? <em aria-label="Unsaved changes" /> : null}
+              </button>
+              <button
+                className="document-tab-close"
+                type="button"
+                aria-label={`Close ${tabTitle(tab)}`}
+                title={`Close ${tabTitle(tab)}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  closeDocumentTab(tab.id, groupId);
+                }}
+              >
+                x
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="metadata-shell" aria-label="Metadata editor">
+          <div className="page-name-control">
+            {pageNameEditing && isActiveGroup ? (
+              <input
+                aria-label="Page name"
+                autoFocus
+                disabled={!paneActiveFile}
+                value={pageName}
+                onBlur={finishPageNameEdit}
+                onChange={(event) => {
+                  setActivePageName(event.currentTarget.value);
+                  markPageNameDirty();
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.currentTarget.blur();
+                  } else if (event.key === "Escape") {
+                    if (activeFileRef.current) {
+                      setActivePageName(
+                        fileNameWithoutMarkdownExtension(activeFileRef.current.name),
+                      );
+                    }
+                    setPageNameEditing(false);
+                  }
+                }}
+              />
+            ) : (
+              <button
+                className="page-name-display"
+                disabled={!paneActiveFile}
+                type="button"
+                title="Double-click to rename on save"
+                onDoubleClick={() => {
+                  activateEditorGroup(groupId);
+                  if (paneActiveFile) {
+                    setPageNameEditing(true);
+                  }
+                }}
+              >
+                {panePageName || "Untitled note"}
+              </button>
+            )}
+          </div>
+          <div className="frontmatter-header">
+            <button
+              className={metadataOpen ? "metadata-toggle open" : "metadata-toggle"}
+              type="button"
+              aria-expanded={metadataOpen}
+              aria-controls={`${groupId}-frontmatter-editor`}
+              aria-label={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
+              title={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
+              onClick={() => setMetadataOpen((open) => !open)}
+            />
+            <span>Frontmatter</span>
+          </div>
+          {metadataOpen ? (
+            <label className="metadata-control" id={`${groupId}-frontmatter-editor`}>
+              <textarea
+                disabled={!paneActiveFile}
+                spellCheck="false"
+                value={paneMetaHeader}
+                onChange={(event) => {
+                  activateEditorGroup(groupId);
+                  setActiveMetaHeader(event.currentTarget.value);
+                  if (activeFileRef.current) {
+                    setActiveDocumentDirty(true);
+                    setStatus(`Unsaved changes in ${activeFileRef.current.name}`);
+                  }
+                }}
+                placeholder="title: Example&#10;tags: [note]"
+              />
+            </label>
+          ) : null}
+        </div>
+        {isActiveGroup ? (
+          <div className="toolbar" aria-label="Formatting toolbar">
+            {toolbarActions.map((action) => (
+              <button
+                className={action.isActive() ? "tool-button active" : "tool-button"}
+                disabled={action.isEnabled ? !action.isEnabled() : false}
+                key={action.title}
+                onClick={() => {
+                  action.run();
+                  setEditorFocused(true);
+                }}
+                title={action.title}
+                type="button"
+              >
+                {action.label}
+              </button>
+            ))}
+            <label className="code-language-control">
+              <span>Lang</span>
+              <input
+                aria-label="Code block language"
+                list="code-language-options"
+                disabled={!codeBlockActive}
+                value={codeLanguage}
+                onChange={(event) => updateCodeLanguage(event.currentTarget.value)}
+                placeholder="plain"
+              />
+              <datalist id="code-language-options">
+                {codeLanguages.map((language) => (
+                  <option key={language.value || "plain"} value={language.value}>
+                    {language.label}
+                  </option>
+                ))}
+              </datalist>
+            </label>
+          </div>
+        ) : null}
+
+        <EditorContent className="editor-surface" editor={groupEditor} />
+      </div>
+    );
+  }
+
+  const workspaceStyle = {
+    "--vault-width": `${vaultDrawerOpen ? vaultDrawerWidth : closedDrawerWidth}px`,
+    "--drawer-width": `${drawerOpen ? inspectorDrawerWidth : closedDrawerWidth}px`,
+    "--vault-resizer-width": vaultDrawerOpen ? `${workspaceResizeHandleWidth}px` : "0px",
+    "--drawer-resizer-width": drawerOpen ? `${workspaceResizeHandleWidth}px` : "0px",
+  } as CSSProperties;
+
   return (
     <main className="app-shell">
       <header className="titlebar">
@@ -1636,40 +2185,107 @@ function App() {
             </div>
           ) : null}
           <button
-            className="secondary-action"
+            className="secondary-action icon-action"
             disabled={!activeFile || !dirty}
             type="button"
             onClick={saveCurrentFile}
+            aria-label="Save"
+            title="Save"
           >
-            Save
+            <svg aria-hidden="true" viewBox="0 0 24 24">
+              <path d="M5 4.5h11.2L19 7.3v12.2H5z" />
+              <path d="M8 4.5v5h7v-5" />
+              <path d="M8 19.5v-6h8v6" />
+            </svg>
+          </button>
+          <button
+            className="secondary-action icon-action"
+            type="button"
+            onClick={toggleSplitEditor}
+            aria-label={splitOpen ? "Unsplit editor" : "Split editor"}
+            title={splitOpen ? "Unsplit Editor" : "Split Editor"}
+          >
+            {splitOpen ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="14" rx="2" />
+                <path d="M9 5v14" />
+                <path d="m15.5 9-3 3 3 3" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <rect x="4" y="5" width="16" height="14" rx="2" />
+                <path d="M12 5v14" />
+              </svg>
+            )}
           </button>
           {!hideWindowDocumentActions ? (
             <button className="secondary-action" type="button" onClick={resetDocument}>
               New
             </button>
           ) : null}
-          <label className="appearance-control">
-            <span>Style</span>
-            <select
-              aria-label="App style"
-              value={appearance}
-              onChange={(event) => setAppearance(event.currentTarget.value as AppearanceMode)}
+          <div className="appearance-control" role="group" aria-label="App style">
+            <button
+              className={appearance === "auto" ? "appearance-button active" : "appearance-button"}
+              type="button"
+              aria-label="Auto style"
+              aria-pressed={appearance === "auto"}
+              title="Auto Style"
+              onClick={() => setAppearance("auto")}
             >
-              <option value="auto">Auto</option>
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="5.5" />
+                <path d="M12 6.5v11" />
+                <path d="M12 3.5v1.3" />
+                <path d="M12 19.2v1.3" />
+                <path d="M4.8 12H3.5" />
+                <path d="M20.5 12h-1.3" />
+              </svg>
+            </button>
+            <button
+              className={appearance === "light" ? "appearance-button active" : "appearance-button"}
+              type="button"
+              aria-label="Light style"
+              aria-pressed={appearance === "light"}
+              title="Light Style"
+              onClick={() => setAppearance("light")}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="4.6" />
+                <path d="M12 3v2" />
+                <path d="M12 19v2" />
+                <path d="M4.2 4.2 5.6 5.6" />
+                <path d="m18.4 18.4 1.4 1.4" />
+                <path d="M3 12h2" />
+                <path d="M19 12h2" />
+                <path d="m4.2 19.8 1.4-1.4" />
+                <path d="m18.4 5.6 1.4-1.4" />
+              </svg>
+            </button>
+            <button
+              className={appearance === "dark" ? "appearance-button active" : "appearance-button"}
+              type="button"
+              aria-label="Dark style"
+              aria-pressed={appearance === "dark"}
+              title="Dark Style"
+              onClick={() => setAppearance("dark")}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M18.5 15.2A7 7 0 0 1 8.8 5.5 7.3 7.3 0 1 0 18.5 15.2Z" />
+              </svg>
+            </button>
+          </div>
         </div>
       </header>
 
       <section
+        ref={workspaceRef}
         className={[
           "workspace with-vault",
           vaultDrawerOpen ? "vault-drawer-open" : "vault-drawer-closed",
           drawerOpen ? "drawer-open" : "drawer-closed",
         ].join(" ")}
         aria-label="Editor workspace"
+        style={workspaceStyle}
       >
         <aside className="vault-pane" aria-label="Vault drawer">
           <div className="vault-rail" aria-label="Vault drawer items">
@@ -1873,149 +2489,48 @@ function App() {
           ) : null}
         </aside>
 
-        <div className="editor-pane">
-          <div className="document-tabs" role="tablist" aria-label="Open documents">
-            {documentTabs.map((tab) => (
-              <div
-                className={tab.id === activeTabId ? "document-tab active" : "document-tab"}
-                key={tab.id}
-                role="tab"
-                aria-selected={tab.id === activeTabId}
-                title={tab.activeFile?.relativePath ?? tabTitle(tab)}
-              >
-                <button
-                  className="document-tab-select"
-                  type="button"
-                  onClick={() => switchToDocumentTab(tab.id)}
-                >
-                  <span>{tabTitle(tab)}</span>
-                  {tab.dirty ? <em aria-label="Unsaved changes" /> : null}
-                </button>
-                <button
-                  className="document-tab-close"
-                  type="button"
-                  aria-label={`Close ${tabTitle(tab)}`}
-                  title={`Close ${tabTitle(tab)}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    closeDocumentTab(tab.id);
-                  }}
-                >
-                  x
-                </button>
-              </div>
-            ))}
-          </div>
-          <div className="metadata-shell" aria-label="Metadata editor">
-            <div className="page-name-control">
-              {pageNameEditing ? (
-                <input
-                  aria-label="Page name"
-                  autoFocus
-                  disabled={!activeFile}
-                  value={pageName}
-                  onBlur={finishPageNameEdit}
-                  onChange={(event) => {
-                    setActivePageName(event.currentTarget.value);
-                    markPageNameDirty();
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.currentTarget.blur();
-                    } else if (event.key === "Escape") {
-                      if (activeFileRef.current) {
-                        setActivePageName(
-                          fileNameWithoutMarkdownExtension(activeFileRef.current.name),
-                        );
-                      }
-                      setPageNameEditing(false);
-                    }
-                  }}
-                />
-              ) : (
-                <button
-                  className="page-name-display"
-                  disabled={!activeFile}
-                  type="button"
-                  title="Double-click to rename on save"
-                  onDoubleClick={() => {
-                    if (activeFileRef.current) {
-                      setPageNameEditing(true);
-                    }
-                  }}
-                >
-                  {pageName || "Untitled note"}
-                </button>
-              )}
-            </div>
-            <div className="frontmatter-header">
-              <button
-                className={metadataOpen ? "metadata-toggle open" : "metadata-toggle"}
-                type="button"
-                aria-expanded={metadataOpen}
-                aria-controls="frontmatter-editor"
-                aria-label={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
-                title={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
-                onClick={() => setMetadataOpen((open) => !open)}
-              />
-              <span>Frontmatter</span>
-            </div>
-            {metadataOpen ? (
-              <label className="metadata-control" id="frontmatter-editor">
-                <textarea
-                  disabled={!activeFile}
-                  spellCheck="false"
-                  value={metaHeader}
-                  onChange={(event) => {
-                    setActiveMetaHeader(event.currentTarget.value);
-                    if (activeFileRef.current) {
-                      setActiveDocumentDirty(true);
-                      setStatus(`Unsaved changes in ${activeFileRef.current.name}`);
-                    }
-                  }}
-                  placeholder="title: Example&#10;tags: [note]"
-                />
-              </label>
-            ) : null}
-          </div>
-          <div className="toolbar" aria-label="Formatting toolbar">
-            {toolbarActions.map((action) => (
-              <button
-                className={action.isActive() ? "tool-button active" : "tool-button"}
-                disabled={action.isEnabled ? !action.isEnabled() : false}
-                key={action.title}
-                onClick={() => {
-                  action.run();
-                  setEditorFocused(true);
-                }}
-                title={action.title}
-                type="button"
-              >
-                {action.label}
-              </button>
-            ))}
-            <label className="code-language-control">
-              <span>Lang</span>
-              <input
-                aria-label="Code block language"
-                list="code-language-options"
-                disabled={!codeBlockActive}
-                value={codeLanguage}
-                onChange={(event) => updateCodeLanguage(event.currentTarget.value)}
-                placeholder="plain"
-              />
-              <datalist id="code-language-options">
-                {codeLanguages.map((language) => (
-                  <option key={language.value || "plain"} value={language.value}>
-                    {language.label}
-                  </option>
-                ))}
-              </datalist>
-            </label>
-          </div>
+        <div
+          className={vaultDrawerOpen ? "workspace-resizer vault-resizer" : "workspace-resizer hidden"}
+          role="separator"
+          aria-label="Resize vault drawer"
+          aria-orientation="vertical"
+          aria-valuemin={minResizableDrawerWidth}
+          aria-valuemax={Math.max(
+            minResizableDrawerWidth,
+            workspaceWidth() -
+              (drawerOpen ? inspectorDrawerWidth : closedDrawerWidth) -
+              totalResizeHandleWidth() -
+              minEditorWorkspaceWidth,
+          )}
+          aria-valuenow={vaultDrawerWidth}
+          tabIndex={vaultDrawerOpen ? 0 : -1}
+          onKeyDown={(event) => handleResizeKey("vault", event)}
+          onPointerDown={(event) => beginWorkspaceResize("vault", event)}
+        />
 
-          <EditorContent className="editor-surface" editor={editor} />
+        <div className={splitOpen ? "editor-groups split" : "editor-groups"}>
+          {renderEditorPane("primary", primaryEditor)}
+          {splitOpen ? renderEditorPane("secondary", secondaryEditor) : null}
         </div>
+
+        <div
+          className={drawerOpen ? "workspace-resizer drawer-resizer" : "workspace-resizer hidden"}
+          role="separator"
+          aria-label="Resize inspector drawer"
+          aria-orientation="vertical"
+          aria-valuemin={minResizableDrawerWidth}
+          aria-valuemax={Math.max(
+            minResizableDrawerWidth,
+            workspaceWidth() -
+              (vaultDrawerOpen ? vaultDrawerWidth : closedDrawerWidth) -
+              totalResizeHandleWidth() -
+              minEditorWorkspaceWidth,
+          )}
+          aria-valuenow={inspectorDrawerWidth}
+          tabIndex={drawerOpen ? 0 : -1}
+          onKeyDown={(event) => handleResizeKey("drawer", event)}
+          onPointerDown={(event) => beginWorkspaceResize("drawer", event)}
+        />
 
         <aside className="drawer-pane" aria-label="Inspector drawer">
           <div className="drawer-rail" aria-label="Drawer items">

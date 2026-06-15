@@ -15,6 +15,10 @@ export const emptyTableMarkdown = `| Column 1 | Column 2 | Column 3 |
 export const defaultVaultAssetDirectory = "_assets_";
 export const defaultDrawerOpen = false;
 export const defaultVaultDrawerOpen = true;
+export const defaultVaultDrawerWidth = 320;
+export const defaultInspectorDrawerWidth = 360;
+export const minResizableDrawerWidth = 220;
+export const minEditorWorkspaceWidth = 360;
 export const calendarDirectory = "Calendar";
 export const weekdayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export const monthLabels = [
@@ -43,6 +47,14 @@ export type TocEntry = {
   level: number;
   title: string;
   occurrence: number;
+};
+
+export type SplitGroupId = "primary" | "secondary";
+
+export type SplitTabGroup<Tab> = {
+  id: SplitGroupId;
+  tabs: Tab[];
+  activeTabId: string;
 };
 
 export const defaultMetaDelimiter: MarkdownParts["metaDelimiter"] = "---";
@@ -139,6 +151,66 @@ export function fileNameWithoutMarkdownExtension(fileName: string) {
 
 export function tabIdForFile(relativePath: string) {
   return `file:${relativePath}`;
+}
+
+export function findTabAcrossSplitGroups<Tab extends { id: string }>(
+  groups: Record<SplitGroupId, SplitTabGroup<Tab>>,
+  tabId: string,
+) {
+  const groupIds: SplitGroupId[] = ["primary", "secondary"];
+
+  for (const groupId of groupIds) {
+    const tab = groups[groupId].tabs.find((candidate) => candidate.id === tabId);
+
+    if (tab) {
+      return { groupId, tab };
+    }
+  }
+
+  return null;
+}
+
+export function splitHasDirtyTabs<Tab extends { dirty: boolean }>(tabs: Tab[]) {
+  return tabs.some((tab) => tab.dirty);
+}
+
+export function remainingGroupAfterSplitPaneClose<Tab extends { id: string }>(
+  groups: Record<SplitGroupId, SplitTabGroup<Tab>>,
+  closedGroupId: SplitGroupId,
+) {
+  const remainingGroupId: SplitGroupId = closedGroupId === "primary" ? "secondary" : "primary";
+  const remainingGroup = groups[remainingGroupId];
+  const activeTab =
+    remainingGroup.tabs.find((tab) => tab.id === remainingGroup.activeTabId) ??
+    remainingGroup.tabs[0];
+
+  if (!activeTab) {
+    return null;
+  }
+
+  return {
+    remainingGroupId,
+    activeTab,
+    primaryGroup: {
+      id: "primary" as const,
+      tabs: remainingGroup.tabs,
+      activeTabId: remainingGroup.activeTabId || activeTab.id,
+    },
+  };
+}
+
+export function clampResizableDrawerWidth(
+  requestedWidth: number,
+  workspaceWidth: number,
+  oppositeWidth: number,
+  handleWidth: number,
+  minimumWidth = minResizableDrawerWidth,
+  minimumEditorWidth = minEditorWorkspaceWidth,
+) {
+  const availableWidth = workspaceWidth - oppositeWidth - handleWidth - minimumEditorWidth;
+  const maximumWidth = Math.max(minimumWidth, availableWidth);
+
+  return Math.min(Math.max(requestedWidth, minimumWidth), maximumWidth);
 }
 
 export function ordinalSuffix(day: number) {
