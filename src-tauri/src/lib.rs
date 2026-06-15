@@ -39,8 +39,16 @@ struct VaultSettings {
     asset_directory: String,
     #[serde(default)]
     frontmatter_pills: FrontmatterPillSettings,
+    #[serde(default)]
+    editor: EditorSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     theme: Option<VaultTheme>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct EditorSettings {
+    vim_mode: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -133,6 +141,7 @@ impl Default for VaultSettings {
         Self {
             asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             frontmatter_pills: FrontmatterPillSettings::default(),
+            editor: EditorSettings::default(),
             theme: None,
         }
     }
@@ -207,6 +216,7 @@ fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, String> {
         Ok(VaultSettings {
             asset_directory,
             frontmatter_pills,
+            editor: settings.editor,
             theme,
         })
     }
@@ -1142,6 +1152,7 @@ mod tests {
             settings.frontmatter_pills.header_name,
             DEFAULT_FRONTMATTER_PILL_HEADER
         );
+        assert!(!settings.editor.vim_mode);
         assert!(settings.theme.is_none());
 
         fs::remove_dir_all(root).expect("test root should be removed");
@@ -1159,6 +1170,7 @@ mod tests {
                     enabled: false,
                     header_name: "topics".into(),
                 },
+                editor: EditorSettings { vim_mode: true },
                 theme: None,
             },
         )
@@ -1167,6 +1179,7 @@ mod tests {
         assert_eq!(settings.asset_directory, "media/images");
         assert!(!settings.frontmatter_pills.enabled);
         assert_eq!(settings.frontmatter_pills.header_name, "topics");
+        assert!(settings.editor.vim_mode);
         assert!(
             fs::read_to_string(root.join(SETTINGS_FILE_NAME))
                 .expect("settings should be readable")
@@ -1185,6 +1198,7 @@ mod tests {
             VaultSettings {
                 asset_directory: " ".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                editor: EditorSettings::default(),
                 theme: None,
             },
         )
@@ -1194,6 +1208,7 @@ mod tests {
             VaultSettings {
                 asset_directory: "../assets".into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                editor: EditorSettings::default(),
                 theme: None,
             },
         )
@@ -1217,6 +1232,7 @@ mod tests {
                     enabled: true,
                     header_name: " ".into(),
                 },
+                editor: EditorSettings::default(),
                 theme: None,
             },
         )
@@ -1229,6 +1245,7 @@ mod tests {
                     enabled: true,
                     header_name: "tags: bad".into(),
                 },
+                editor: EditorSettings::default(),
                 theme: None,
             },
         )
@@ -1252,6 +1269,7 @@ mod tests {
             VaultSettings {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                editor: EditorSettings::default(),
                 theme: Some(VaultTheme { tokens }),
             },
         )
@@ -1278,6 +1296,7 @@ mod tests {
             VaultSettings {
                 asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
                 frontmatter_pills: FrontmatterPillSettings::default(),
+                editor: EditorSettings::default(),
                 theme: Some(VaultTheme { tokens }),
             },
         )

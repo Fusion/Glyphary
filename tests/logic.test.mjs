@@ -230,6 +230,63 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /Reset Theme/);
 });
 
+test("vim-style editing is wired behind a settings option", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+
+  assert.equal(pkg.dependencies["@prose-motions/core"], undefined);
+  assert.match(app, /name: "meditVimMode"/);
+  assert.match(app, /editorBehavior\.vimMode \? \[createMEditVimMode\(setStatus\)\] : \[\]/);
+  assert.match(app, /Vim normal mode/);
+  assert.match(app, /Vim insert mode/);
+  assert.match(app, /case "u":/);
+  assert.match(app, /event\.key\.toLowerCase\(\) === "r"/);
+  assert.match(app, /case "A":/);
+  assert.match(app, /case "0":/);
+  assert.match(app, /case "\$":/);
+  assert.match(app, /case "\^":/);
+  assert.match(app, /case "Space":/);
+  assert.match(app, /case "%":/);
+  assert.match(app, /case "G":/);
+  assert.match(app, /case "g":/);
+  assert.match(app, /moveToFileStart/);
+  assert.match(app, /Selection\.atStart\(state\.doc\)/);
+  assert.match(app, /case "c":/);
+  assert.match(app, /case "d":/);
+  assert.match(app, /case "w":/);
+  assert.match(app, /case "b":/);
+  assert.match(app, /case "x":/);
+  assert.match(app, /case "s":/);
+  assert.match(app, /case "S":/);
+  assert.match(app, /case "p":/);
+  assert.match(app, /case "O":/);
+  assert.match(app, /case "y":/);
+  assert.match(app, /writeCopyBuffer\(\{ text, linewise: true \}\)/);
+  assert.match(app, /deleteWordUnderCursor/);
+  assert.match(app, /yankWordUnderCursor/);
+  assert.match(app, /handleTextInput: \(\) =>/);
+  assert.match(app, /Use Vim keybindings/);
+});
+
+test("command save shortcut is wrapped in the webview", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(app, /handleGlobalSaveShortcut/);
+  assert.match(app, /event\.key\.toLowerCase\(\) !== "s"/);
+  assert.match(app, /!event\.metaKey && !event\.ctrlKey/);
+  assert.match(app, /void saveCurrentFileRef\.current\(\)/);
+  assert.match(app, /window\.addEventListener\("keydown", handleGlobalSaveShortcut\)/);
+});
+
+test("toolbar state refreshes when editor selection changes", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+
+  assert.match(app, /editorStateVersion/);
+  assert.match(app, /setEditorStateVersion\(\(version\) => version \+ 1\)/);
+  assert.match(app, /onSelectionUpdate: \(\{ editor \}: \{ editor: Editor \}\) => \{/);
+  assert.match(app, /\[editor, editorFocused, editorStateVersion, markdown\]/);
+});
+
 test("tauri starts with the requested default window size", () => {
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   const [windowConfig] = config.app.windows;

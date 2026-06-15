@@ -6,6 +6,7 @@ MEdit is a Tauri desktop Markdown editor built with React, TypeScript, and Tipta
 
 - Tauri 2 macOS desktop app with a default window size of `1470 x 956`.
 - Tiptap WYSIWYG Markdown editing.
+- Optional local Vim-style editor keybindings.
 - Markdown source editing and export/stats view in the right drawer.
 - Multiple editable documents using tabs.
 - Optional split editor layout with independent tabs in each pane.
@@ -131,11 +132,12 @@ Currently supported setting:
 - `assetDirectory`: where local image assets are stored and resolved from. Defaults to `_assets_`.
 - `frontmatterPills.enabled`: whether to show a frontmatter list as pills above the editor. Defaults to `true`.
 - `frontmatterPills.headerName`: the frontmatter header used for pills. Defaults to `tags`.
+- `editor.vimMode`: whether editor panes use Vim-style keybindings. Defaults to `false`.
 - `theme.tokens`: vault-specific theme token overrides created by the Settings theme builder.
 
 The settings screen is separate from the right drawer and can be opened through the menu or `Cmd+,`. Settings are grouped into tabs:
 
-- `Main`: vault asset directory and metadata pill settings.
+- `Main`: vault asset directory, metadata pill settings, and editor behavior.
 - `Appearance`: theme builder and vault-specific color tokens.
 
 Theme tokens are allowlisted and validated by the Tauri backend before they are written to `.medit`.
@@ -188,6 +190,73 @@ Editor tabs let multiple documents stay open at once.
 - Formatting controls stay fixed above the scrollable document surface.
 - Each editor pane scrolls independently; the whole app shell does not scroll during document editing.
 
+## Vim-Style Editing
+
+Vim-style editing is optional and can be enabled per vault in `Settings -> Main -> Editor` with `Use Vim keybindings`. The setting is persisted in the vault `.medit` file as `editor.vimMode`.
+
+The implementation is a local MEdit Tiptap extension. It owns Normal/Insert mode state, motions, yanks, deletes, paste behavior, status updates, and a small Vim copy buffer.
+
+### Modes
+
+| Key | Behavior |
+| --- | --- |
+| `Esc` | Enter Normal mode. |
+| `i` | Enter Insert mode. |
+| `Shift-A` | Move to the end of the current line and enter Insert mode. |
+
+The bottom status bar reports transitions as `Vim normal mode` and `Vim insert mode`.
+
+### Motions
+
+| Key | Behavior |
+| --- | --- |
+| `h` | Move left. |
+| `j` | Move down one visual line. |
+| `k` | Move up one visual line. |
+| `l` | Move right. |
+| `Space` | Move forward one character without inserting a space. |
+| `0` | Move to the start of the current line. |
+| `$` | Move to the end of the current line. |
+| `^` | Move to the first non-blank character in the current line. |
+| `%` | Move to the matching `()`, `[]`, or `{}` character on the current line. |
+| `w` | Move forward to the start of the next word. |
+| `b` | Move backward to the start of a word. |
+| `G` | Move to the last line. |
+| `gg` | Move to the first editable character of the file. |
+
+### Editing
+
+| Key | Behavior |
+| --- | --- |
+| `x` | Delete the character under the cursor and store it in the copy buffer. |
+| `s` | Delete the character under the cursor and enter Insert mode. |
+| `S` | Delete the current line and enter Insert mode. |
+| `dd` | Yank the current line into the copy buffer, then delete it. |
+| `dw` | Yank the word under the cursor into the copy buffer, then delete it. |
+| `cw` | Delete the word under the cursor and enter Insert mode. |
+
+### Yank And Paste
+
+| Key | Behavior |
+| --- | --- |
+| `yy` | Yank the current line into the copy buffer. |
+| `yw` | Yank the word under the cursor into the copy buffer. |
+| `p` | Paste the copy buffer after the cursor. |
+| `O` | Paste the copy buffer before the cursor. |
+
+MEdit keeps its own Vim copy buffer as the source of truth. Yank and delete operations also attempt a best-effort write to the system clipboard when the webview allows it.
+
+### Undo And Redo
+
+| Key | Behavior |
+| --- | --- |
+| `u` | Undo in Normal mode. |
+| `Ctrl-r` | Redo in Normal mode. |
+
+### Current Limits
+
+This is not full Vim emulation. Printable text input is blocked in Normal mode, but only the commands listed above are intentionally supported. Multi-key commands such as `gg`, `dd`, `dw`, `cw`, `yy`, and `yw` use a short pending-key timeout.
+
 ## Menus
 
 The app includes native Tauri/macOS menus for core actions:
@@ -197,6 +266,8 @@ The app includes native Tauri/macOS menus for core actions:
 - New document
 - Settings
 - Appearance: Auto, Light, Dark
+
+`Cmd+S` on macOS, or `Ctrl+S` on other platforms, is also handled inside the webview and saves the current document.
 
 The in-window File menu remains as a fallback UI.
 On macOS, the in-window File and New buttons are hidden because those actions are available from the native menu bar.
@@ -310,6 +381,7 @@ Frontend unit tests cover helper behavior such as:
 - Markdown heading extraction for the table of contents.
 - Inline `toc` fenced-block support.
 - Frontmatter list extraction for display pills.
+- Vim-mode integration surface.
 - Split-pane tab lookup and pane closing behavior.
 - Resizable drawer width clamping.
 - Product defaults such as drawer state and asset directory.
