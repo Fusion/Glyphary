@@ -4883,6 +4883,9 @@ function App() {
     }
 
     const normalizedSettings = normalizePluginSettings(settings);
+    // Discovery and style loading are separate backend calls by design: invalid
+    // plugins remain visible as catalog errors, while only enabled plugins may
+    // inject CSS into the running editor.
     const [catalog, styles] = await Promise.all([
       invoke<PluginCatalog>("list_vault_plugins", { root }),
       invoke<PluginStyleContent[]>("read_plugin_styles", {
@@ -6138,6 +6141,8 @@ function App() {
     input: string,
   ) {
     return new Promise<string>((resolve, reject) => {
+      // Each command run gets a fresh worker and WASM instance. That keeps
+      // plugin memory isolated and lets the timeout terminate stuck transforms.
       const worker = new Worker(new URL("./pluginWorker.ts", import.meta.url), {
         type: "module",
       });
@@ -6222,6 +6227,8 @@ function App() {
         if (command.wasm.output === "replaceDocument") {
           setEditorBody(output, false);
         } else if (command.wasm.output === "insertAtCursor") {
+          // Insert-at-cursor should append after a selection rather than replace
+          // it, so collapse the selection to its end before writing Markdown.
           editor.chain().focus().setTextSelection(editor.state.selection.to).run();
           insertMarkdownAtCursor(output);
         } else {
@@ -6362,6 +6369,8 @@ function App() {
       ]
     : [];
   const enabledPluginIds = new Set(pluginDraft.enabled);
+  // Palette entries are derived from the validated catalog but gated by the
+  // unsaved draft, so enabling a plugin previews its commands before Save.
   const pluginCommandPaletteCommands: CommandPaletteCommand[] = pluginCatalog.plugins
     .filter((plugin) => enabledPluginIds.has(plugin.id))
     .flatMap((plugin) =>
@@ -6897,6 +6906,8 @@ function App() {
         </style>
       ))}
       {pluginStyles.map((style) => (
+        // Plugin styles are read through the backend manifest allowlist; the
+        // data attributes make any injected sheet easy to identify in DevTools.
         <style
           data-glyphary-plugin={style.pluginId}
           data-glyphary-plugin-style={style.name}

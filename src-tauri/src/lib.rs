@@ -213,6 +213,8 @@ struct PluginSettings {
 struct PluginManifest {
     id: String,
     name: String,
+    // Runtime is intentionally separate from the plugin package version. It
+    // lets future runtimes coexist without guessing from command shape.
     runtime: String,
     #[serde(default)]
     version: String,
@@ -315,6 +317,8 @@ const DEFAULT_TIDBIT_PATH_PATTERN: &str =
 const DEFAULT_CSS_SNIPPET_DIRECTORY: &str = "_snippets_";
 const PLUGIN_DIRECTORY: &str = ".glyphary/plugins";
 const PLUGIN_MANIFEST_FILE: &str = "plugin.json";
+// Current v1 plugin runtime: a pure WASM transform loaded by the frontend worker.
+// Native/Extism/component runtimes should get their own manifest value.
 const PLUGIN_RUNTIME_WASM_TRANSFORM_V1: &str = "glyphary-wasm-transform@1";
 const SETTINGS_DIRECTORY_NAME: &str = ".glyphary";
 const SETTINGS_CONFIG_FILE_NAME: &str = "config.json";
@@ -380,8 +384,7 @@ const THEME_TOKEN_ALLOWLIST: &[&str] = &[
     "--syntax-red",
     "--syntax-yellow",
 ];
-const THEME_CALLOUT_STYLE_ALLOWLIST: &[&str] =
-    &["plain", "striped", "card", "compact", "obsidian"];
+const THEME_CALLOUT_STYLE_ALLOWLIST: &[&str] = &["plain", "striped", "card", "compact", "obsidian"];
 const THEME_CALLOUT_ICON_KEY_ALLOWLIST: &[&str] = &["note", "info", "tip", "warning"];
 const THEME_CALLOUT_ICON_ALLOWLIST: &[&str] =
     &["info", "sparkles", "alert", "check", "quote", "none"];
@@ -573,6 +576,8 @@ fn clean_plugin_id(id: &str) -> Result<String, String> {
 fn clean_plugin_file_path(path: &str, allowed_extensions: &[&str]) -> Result<String, String> {
     let path = path.trim();
     let clean = clean_relative(path)?;
+    // Manifest paths are persisted and compared as forward-slash strings so
+    // declared assets match the frontend command payloads across platforms.
     let normalized = clean
         .components()
         .filter_map(|component| match component {
@@ -592,7 +597,9 @@ fn clean_plugin_file_path(path: &str, allowed_extensions: &[&str]) -> Result<Str
         .unwrap_or_default();
 
     if !allowed_extensions.contains(&extension.as_str()) {
-        return Err(format!("Plugin file has unsupported extension: {normalized}"));
+        return Err(format!(
+            "Plugin file has unsupported extension: {normalized}"
+        ));
     }
 
     Ok(normalized)
@@ -619,7 +626,12 @@ fn clean_plugin_command(command: PluginCommandManifest) -> Result<PluginCommandM
         return Err("Plugin command title must be 1-96 characters".into());
     }
 
-    let description = command.description.trim().chars().take(180).collect::<String>();
+    let description = command
+        .description
+        .trim()
+        .chars()
+        .take(180)
+        .collect::<String>();
     let insert_markdown = command
         .insert_markdown
         .map(|value| value.trim().to_string())
@@ -653,7 +665,10 @@ fn clean_plugin_wasm_command(command: PluginWasmCommand) -> Result<PluginWasmCom
         return Err(format!("Unsupported WASM input mode: {input}"));
     }
 
-    if !matches!(output, "replaceSelection" | "insertAtCursor" | "replaceDocument") {
+    if !matches!(
+        output,
+        "replaceSelection" | "insertAtCursor" | "replaceDocument"
+    ) {
         return Err(format!("Unsupported WASM output mode: {output}"));
     }
 
@@ -661,6 +676,8 @@ fn clean_plugin_wasm_command(command: PluginWasmCommand) -> Result<PluginWasmCom
         module,
         input: input.into(),
         output: output.into(),
+        // Keep author-specified timeouts bounded so plugins cannot become
+        // accidental long-running editor operations.
         timeout_ms: command.timeout_ms.clamp(50, 2_000),
     })
 }
@@ -672,7 +689,9 @@ fn clean_plugin_manifest(
     let id = clean_plugin_id(&manifest.id)?;
 
     if id != expected_id {
-        return Err(format!("Plugin manifest id {id} does not match directory {expected_id}"));
+        return Err(format!(
+            "Plugin manifest id {id} does not match directory {expected_id}"
+        ));
     }
 
     let name = manifest.name.trim().to_string();
@@ -683,6 +702,8 @@ fn clean_plugin_manifest(
 
     let runtime = manifest.runtime.trim();
 
+    // Rejecting unknown runtimes at discovery time makes unsupported plugins
+    // visible in Settings while keeping them out of the executable command set.
     if runtime != PLUGIN_RUNTIME_WASM_TRANSFORM_V1 {
         return Err(format!("Unsupported plugin runtime: {runtime}"));
     }
@@ -800,6 +821,9 @@ fn plugin_file_path(root: &Path, plugin_id: &str, relative: &str) -> Result<Path
     let relative = clean_relative(relative)?;
     let path = base.join(relative);
 
+    // Plugins may reference only files inside their own directory. This is a
+    // second check after `clean_relative` because the plugin directory is a
+    // narrower sandbox than the vault root.
     if !path.starts_with(&base) || !path.starts_with(root) {
         return Err("Plugin file path escapes the plugin directory".into());
     }
@@ -814,7 +838,9 @@ fn read_plugin_manifest_from_dir(
     let manifest_path = plugin_dir.join(PLUGIN_MANIFEST_FILE);
 
     if !manifest_path.is_file() {
-        return Err(format!("Plugin {expected_id} is missing {PLUGIN_MANIFEST_FILE}"));
+        return Err(format!(
+            "Plugin {expected_id} is missing {PLUGIN_MANIFEST_FILE}"
+        ));
     }
 
     let metadata = manifest_path
@@ -2166,7 +2192,10 @@ fn list_css_snippets(root: String, directory: String) -> Result<Vec<CssSnippetFi
             continue;
         }
 
-        let Some(name) = path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+        let Some(name) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+        else {
             continue;
         };
 
@@ -2244,6 +2273,8 @@ fn list_vault_plugins(root: String) -> Result<PluginCatalog, String> {
     let mut plugins = Vec::new();
     let mut errors = Vec::new();
 
+    // A malformed plugin should not hide every other plugin in the vault. The
+    // catalog carries per-plugin errors so Settings can show what was rejected.
     for entry in fs::read_dir(&plugins_dir)
         .map_err(|err| format!("Could not read plugin directory: {err}"))?
     {
@@ -2254,7 +2285,10 @@ fn list_vault_plugins(root: String) -> Result<PluginCatalog, String> {
             continue;
         }
 
-        let Some(id) = path.file_name().map(|name| name.to_string_lossy().into_owned()) else {
+        let Some(id) = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+        else {
             continue;
         };
 
@@ -2286,6 +2320,8 @@ fn read_plugin_styles(
             continue;
         }
 
+        // Enabled plugin ids are persisted settings; reread the manifest before
+        // loading styles so deleted or edited plugins cannot bypass validation.
         let manifest = read_plugin_manifest_from_dir(&plugin_dir, &plugin_id)?;
 
         for style in manifest.styles {
@@ -2318,7 +2354,11 @@ fn read_plugin_styles(
 }
 
 #[tauri::command]
-fn read_plugin_template(root: String, plugin_id: String, template: String) -> Result<String, String> {
+fn read_plugin_template(
+    root: String,
+    plugin_id: String,
+    template: String,
+) -> Result<String, String> {
     let root = vault_root(&root)?;
     let plugin_id = clean_plugin_id(&plugin_id)?;
     let template = clean_plugin_file_path(&template, &["md", "markdown", "txt"])?;
@@ -2329,21 +2369,29 @@ fn read_plugin_template(root: String, plugin_id: String, template: String) -> Re
         .iter()
         .any(|command| command.template.as_deref() == Some(template.as_str()));
 
+    // Command payloads can be influenced by the frontend, so the backend only
+    // serves assets that the manifest explicitly declared.
     if !declared {
-        return Err(format!("Plugin template is not declared: {plugin_id}/{template}"));
+        return Err(format!(
+            "Plugin template is not declared: {plugin_id}/{template}"
+        ));
     }
 
     let path = plugin_file_path(&root, &plugin_id, &template)?;
 
     if !path.is_file() {
-        return Err(format!("Plugin template is not a file: {plugin_id}/{template}"));
+        return Err(format!(
+            "Plugin template is not a file: {plugin_id}/{template}"
+        ));
     }
 
     let content = fs::read_to_string(&path)
         .map_err(|err| format!("Could not read plugin template {plugin_id}/{template}: {err}"))?;
 
     if content.len() > 500_000 {
-        return Err(format!("Plugin template is too large: {plugin_id}/{template}"));
+        return Err(format!(
+            "Plugin template is too large: {plugin_id}/{template}"
+        ));
     }
 
     Ok(content)
@@ -2356,26 +2404,33 @@ fn read_plugin_wasm(root: String, plugin_id: String, module: String) -> Result<V
     let module = clean_plugin_file_path(&module, &["wasm"])?;
     let plugin_dir = plugin_directory(&root, &plugin_id)?;
     let manifest = read_plugin_manifest_from_dir(&plugin_dir, &plugin_id)?;
-    let declared = manifest
-        .commands
-        .iter()
-        .any(|command| command.wasm.as_ref().map(|wasm| wasm.module.as_str()) == Some(module.as_str()));
+    let declared = manifest.commands.iter().any(|command| {
+        command.wasm.as_ref().map(|wasm| wasm.module.as_str()) == Some(module.as_str())
+    });
 
+    // Treat the manifest as the capability list: an arbitrary .wasm file in the
+    // plugin directory is not executable unless a command references it.
     if !declared {
-        return Err(format!("Plugin WASM module is not declared: {plugin_id}/{module}"));
+        return Err(format!(
+            "Plugin WASM module is not declared: {plugin_id}/{module}"
+        ));
     }
 
     let path = plugin_file_path(&root, &plugin_id, &module)?;
 
     if !path.is_file() {
-        return Err(format!("Plugin WASM module is not a file: {plugin_id}/{module}"));
+        return Err(format!(
+            "Plugin WASM module is not a file: {plugin_id}/{module}"
+        ));
     }
 
     let bytes = fs::read(&path)
         .map_err(|err| format!("Could not read plugin WASM module {plugin_id}/{module}: {err}"))?;
 
     if bytes.len() > 5 * 1024 * 1024 {
-        return Err(format!("Plugin WASM module is too large: {plugin_id}/{module}"));
+        return Err(format!(
+            "Plugin WASM module is too large: {plugin_id}/{module}"
+        ));
     }
 
     Ok(bytes)
@@ -2866,7 +2921,10 @@ mod tests {
         assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
         assert!(!settings.editor.vim_mode);
         assert!(!settings.appearance.glass_effect);
-        assert_eq!(settings.css_snippets.directory, DEFAULT_CSS_SNIPPET_DIRECTORY);
+        assert_eq!(
+            settings.css_snippets.directory,
+            DEFAULT_CSS_SNIPPET_DIRECTORY
+        );
         assert!(settings.css_snippets.enabled.is_empty());
         assert!(settings.plugins.enabled.is_empty());
         assert!(settings.theme.is_none());
@@ -2974,8 +3032,11 @@ mod tests {
         let root = test_root();
         let snippets_dir = root.join(DEFAULT_CSS_SNIPPET_DIRECTORY);
         fs::create_dir_all(&snippets_dir).expect("snippet directory should be created");
-        fs::write(snippets_dir.join("wide.css"), ".editor-surface { max-width: 90ch; }\n")
-            .expect("snippet should be created");
+        fs::write(
+            snippets_dir.join("wide.css"),
+            ".editor-surface { max-width: 90ch; }\n",
+        )
+        .expect("snippet should be created");
         fs::write(snippets_dir.join("quiet.css"), "body { opacity: 0.99; }\n")
             .expect("snippet should be created");
         fs::write(snippets_dir.join("note.md"), "not css\n")
@@ -3050,10 +3111,16 @@ mod tests {
 }"#,
         )
         .expect("manifest should be written");
-        fs::write(plugin_dir.join("styles.css"), ".plugin-meeting { color: red; }\n")
-            .expect("style should be written");
-        fs::write(plugin_dir.join("templates").join("agenda.md"), "## Agenda\n\n- ")
-            .expect("template should be written");
+        fs::write(
+            plugin_dir.join("styles.css"),
+            ".plugin-meeting { color: red; }\n",
+        )
+        .expect("style should be written");
+        fs::write(
+            plugin_dir.join("templates").join("agenda.md"),
+            "## Agenda\n\n- ",
+        )
+        .expect("template should be written");
         fs::write(plugin_dir.join("plugin.wasm"), [0_u8, 97, 115, 109])
             .expect("wasm should be written");
 

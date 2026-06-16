@@ -5,6 +5,8 @@ use core::{panic::PanicInfo, ptr};
 const HEAP_SIZE: usize = 64 * 1024;
 const ALIGNMENT: usize = 8;
 
+// This sample runs as one short-lived WASM instance per command, so a static
+// linear heap is easier to audit than pulling in a general allocator.
 static mut HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 static mut NEXT_OFFSET: usize = 0;
 

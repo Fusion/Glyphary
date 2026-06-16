@@ -28,6 +28,8 @@ function wasmPluginError(message: string): never {
 }
 
 async function runWasmPlugin({ bytes, input }: WasmPluginRequest) {
+  // Runtime v1 deliberately has no imports. Plugins are pure transforms and
+  // receive their entire capability surface through the manifest-selected input.
   const module = await WebAssembly.instantiate(bytes, {});
   const exports = module.instance.exports as WasmPluginExports;
   const memory = exports.memory ?? wasmPluginError("WASM plugin must export memory");
@@ -40,6 +42,9 @@ async function runWasmPlugin({ bytes, input }: WasmPluginRequest) {
 
   inputMemory.set(inputBytes);
 
+  // The transform returns a pointer to `[u32 little-endian length][UTF-8 bytes]`.
+  // Copy the output before optional deallocation so decoded text is independent
+  // of any future allocator implementation the plugin may use.
   const outputPointer = transform(inputPointer, inputBytes.length);
   const outputLength = new DataView(memory.buffer).getUint32(outputPointer, true);
   const outputBytes = new Uint8Array(memory.buffer, outputPointer + 4, outputLength);
