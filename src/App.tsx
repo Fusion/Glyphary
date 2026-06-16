@@ -69,6 +69,7 @@ import {
   defaultTidbitGlobalShortcut,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
+  defaultVaultImageDirectory,
   defaultVaultDrawerWidth,
   displayPath,
   displayVaultRelativePath,
@@ -3085,6 +3086,16 @@ function joinVaultAssetPath(root: string, assetDirectory: string, reference: str
   return convertFileSrc(`${root}/${assetDirectory || defaultVaultAssetDirectory}/${cleanReference}`);
 }
 
+function joinVaultImagePath(root: string, reference: string) {
+  const cleanReference = cleanVaultAssetReference(reference);
+
+  if (!root || !cleanReference) {
+    return "";
+  }
+
+  return convertFileSrc(`${root}/${defaultVaultImageDirectory}/${cleanReference}`);
+}
+
 type ContainerMarkdownLexer = {
   blockTokens: (src: string) => MarkdownToken[];
 };
@@ -3933,7 +3944,10 @@ function createExcalidrawEmbedExtension(options: ExcalidrawEmbedOptions) {
   });
 }
 
-function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => string) {
+function createVaultImageExtension(
+  resolveVaultImageSrc: (target: string) => string,
+  resolveVaultAssetSrc: (target: string) => string,
+) {
   return Node.create({
     name: "image",
     priority: 1000,
@@ -4018,7 +4032,7 @@ function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => str
       const href = String(token.href ?? token.src ?? "");
       const assetReference = !vaultTarget ? cleanVaultAssetReference(href) : null;
       const src = vaultTarget
-        ? resolveVaultAssetSrc(vaultTarget)
+        ? resolveVaultImageSrc(vaultTarget)
         : assetReference
           ? resolveVaultAssetSrc(assetReference)
           : href;
@@ -5089,11 +5103,7 @@ function App() {
       .insertContent({
         type: "image",
         attrs: {
-          src: joinVaultAssetPath(
-            vaultRootRef.current,
-            vaultSettingsRef.current.assetDirectory,
-            fileName,
-          ),
+          src: joinVaultImagePath(vaultRootRef.current, fileName),
           alt: fileName,
           vaultTarget: fileName,
         },
@@ -5278,7 +5288,7 @@ function App() {
         const buffer = await file.arrayBuffer();
         const saved = await invoke<SavedAsset>("save_vault_asset", {
           root: vaultRootRef.current,
-          assetDirectory: vaultSettingsRef.current.assetDirectory,
+          assetDirectory: defaultVaultImageDirectory,
           fileName: fileNameForDroppedImage(file),
           bytes: Array.from(new Uint8Array(buffer)),
         });
@@ -5288,7 +5298,7 @@ function App() {
       }
 
       setStatus(
-        `Added ${imported} image${imported === 1 ? "" : "s"} to ${vaultSettingsRef.current.assetDirectory}`,
+        `Added ${imported} image${imported === 1 ? "" : "s"} to ${defaultVaultImageDirectory}`,
       );
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -5337,13 +5347,16 @@ function App() {
           loadPreview: (target) => loadExcalidrawPreviewRef.current(target),
         }),
         // Vault images resolve late through refs because the same editor
-        // instance can survive vault setting changes such as the asset folder.
-        createVaultImageExtension((target) =>
-          joinVaultAssetPath(
-            vaultRootRef.current,
-            vaultSettingsRef.current.assetDirectory,
-            target,
-          ),
+        // instance can survive vault changes; bare ![[image.png]] embeds are
+        // always backed by _assets_/images.
+        createVaultImageExtension(
+          (target) => joinVaultImagePath(vaultRootRef.current, target),
+          (target) =>
+            joinVaultAssetPath(
+              vaultRootRef.current,
+              vaultSettingsRef.current.assetDirectory,
+              target,
+            ),
         ),
         TableKit.configure({
           table: {
@@ -6121,7 +6134,7 @@ function App() {
   async function loadVaultSettings(root: string) {
     const settings = isTauri()
       ? await invoke<VaultSettings>("read_vault_settings", { root })
-      : {
+        : {
           assetDirectory: defaultVaultAssetDirectory,
           frontmatterPills: defaultFrontmatterPillSettings,
           files: defaultFileDisplaySettings,
@@ -6198,6 +6211,10 @@ function App() {
       await invoke("allow_vault_assets", {
         root,
         assetDirectory: settings.assetDirectory,
+      });
+      await invoke("allow_vault_assets", {
+        root,
+        assetDirectory: defaultVaultImageDirectory,
       });
     }
 
@@ -6302,6 +6319,10 @@ function App() {
       await invoke("allow_vault_assets", {
         root: vaultRoot,
         assetDirectory: settings.assetDirectory,
+      });
+      await invoke("allow_vault_assets", {
+        root: vaultRoot,
+        assetDirectory: defaultVaultImageDirectory,
       });
       await refreshCssSnippets(vaultRoot, cssSnippets);
       await refreshPlugins(vaultRoot, plugins);

@@ -16,6 +16,7 @@ import {
   defaultVaultDrawerWidth,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
+  defaultVaultImageDirectory,
   defaultTidbitGlobalShortcut,
   defaultTidbitPathPattern,
   displayVaultRelativePath,
@@ -420,6 +421,7 @@ test("default drawer and vault asset settings match the current product defaults
   assert.equal(defaultDrawerOpen, false);
   assert.equal(defaultVaultDrawerOpen, true);
   assert.equal(defaultVaultAssetDirectory, "_assets_");
+  assert.equal(defaultVaultImageDirectory, "_assets_/images");
   assert.equal(defaultVaultDrawerWidth, 320);
   assert.equal(defaultInspectorDrawerWidth, 360);
 });
@@ -946,12 +948,20 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /type FileDisplaySettings/);
   assert.match(app, /type AutosaveSettings/);
   assert.match(app, /type TidbitSettings/);
+  assert.doesNotMatch(app, /attachmentDirectory: string/);
+  assert.doesNotMatch(app, /defaultVaultAttachmentDirectory/);
+  assert.match(app, /function joinVaultImagePath/);
+  assert.match(app, /defaultVaultImageDirectory/);
+  assert.match(app, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultImageDirectory\}\/\$\{cleanReference\}`\)/);
+  assert.match(app, /createVaultImageExtension\(\s*\(target\) => joinVaultImagePath/);
+  assert.match(app, /assetDirectory: defaultVaultImageDirectory/);
   assert.match(app, /defaultFileDisplaySettings/);
   assert.match(app, /showDotfiles: false/);
   assert.match(app, /defaultAutosaveSettings/);
   assert.match(app, /enabled: true/);
   assert.match(app, /defaultTidbitSettings/);
   assert.match(app, /Tidbit path pattern/);
+  assert.doesNotMatch(app, /Attachment directory/);
   assert.match(app, /defaultTidbitPathPattern/);
   assert.match(app, /Show dotfiles and dot folders/);
   assert.match(app, /Autosave current page once per minute/);

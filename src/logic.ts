@@ -59,6 +59,7 @@ export function richLinkMarkdown(fields: RichLinkMarkdownFields) {
 }
 
 export const defaultVaultAssetDirectory = "_assets_";
+export const defaultVaultImageDirectory = "_assets_/images";
 export const defaultFrontmatterPillHeader = "tags";
 export const defaultTidbitPathPattern =
   "__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md";

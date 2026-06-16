@@ -236,7 +236,8 @@ The `CAL` drawer view shows a monthly calendar.
 
 ## Images And Assets
 
-The default asset directory is `_assets_`.
+The default asset directory is `_assets_`. Glyphary-managed image files live under
+`_assets_/images`.
 
 Local wiki-style image references are supported:
 
@@ -246,9 +247,9 @@ Local wiki-style image references are supported:
 ![[image.png|alias]]
 ```
 
-These are resolved relative to the configured asset directory inside the current vault.
+These are resolved under `_assets_/images` inside the current vault.
 
-Local standard Markdown image URLs are also resolved from the vault asset directory when they are not external URLs:
+Local standard Markdown image URLs are resolved from the vault asset directory when they are not external URLs:
 
 ```markdown
 ![Pasted image 20220413143858.png](Pasted%20image%2020220413143858.png)
@@ -256,7 +257,7 @@ Local standard Markdown image URLs are also resolved from the vault asset direct
 
 Dragging or pasting an image into the editor:
 
-- Saves it into the vault asset directory.
+- Saves it into `_assets_/images`.
 - Inserts an image reference into the page.
 - Uses names like `Pasted image 20230102173741.png`.
 - If the source file has a meaningful name, that name is sanitized and followed by the timestamp.
@@ -272,7 +273,7 @@ Settings are tied to the current vault and stored as JSON in:
 
 Currently supported setting:
 
-- `assetDirectory`: where local image assets are stored and resolved from. Defaults to `_assets_`.
+- `assetDirectory`: where general local assets are stored and resolved from. Defaults to `_assets_`.
 - `frontmatterPills.enabled`: whether to show a frontmatter list as pills above the editor. Defaults to `true`.
 - `frontmatterPills.headerName`: the frontmatter header used for pills. Defaults to `tags`.
 - `files.showDotfiles`: whether the vault file drawer shows files and directories whose names start with `.`. Defaults to `false`.
