@@ -428,21 +428,15 @@ On macOS, the in-window File and New buttons are hidden because those actions ar
 
 ## Theming
 
-Glyphary has built-in light, dark, and auto appearance modes. The current theme system exposes common Obsidian-style CSS variables such as:
+Glyphary has built-in light, dark, and auto appearance modes. The current theme system exposes stable `--glyphary-*` variables, a first-pass Obsidian-style compatibility variable surface, and a documented set of editor selectors for approved CSS snippets.
 
-- `--background-primary`
-- `--background-secondary`
-- `--text-normal`
-- `--text-muted`
-- `--interactive-accent`
-- `--code-background`
-- `--blockquote-border-color`
-
-The app maps its own internal theme tokens through those variables, and it applies `theme-light` / `theme-dark` classes based on the resolved appearance. This is a compatibility foundation for future Obsidian-theme imports, not full Obsidian theme support yet. Obsidian themes can still depend on Obsidian-specific DOM structure and selectors that Glyphary does not currently emulate.
+The supported customization surface is documented in [docs/theming.md](docs/theming.md). That file lists the public variables, Obsidian compatibility aliases, stable editor selectors, and example snippets for callouts, code blocks, columns, rich links, and editor layout.
 
 The Settings screen includes a macOS-oriented glass window effect, a dozen theme templates, approved CSS snippets, and a Theme Builder for the current vault. The glass setting previews immediately and is saved as `appearance.glassEffect` in `<vault root>/.glyphary/config.json`; unsupported platforms keep the regular opaque window. Theme templates apply complete token sets for canvas, surfaces, text, accents, borders, code, quotes, tables, and syntax colors, and the selected template id is saved with the vault settings. The Theme Builder then lets each token be refined manually. Color changes preview immediately by applying CSS variables to the running app. Saving writes the selected template and token values to `<vault root>/.glyphary/config.json`; Reset Theme clears custom token overrides, and Revert returns to the last saved vault settings.
 
 CSS snippets are read from the configured vault-relative snippets directory, defaulting to `_snippets_`. Only simple `.css` files in that directory are listed, and only files explicitly checked in Settings are injected into the app. This gives a controlled escape hatch for vault-specific styling without automatically loading every CSS file found on disk.
+
+Obsidian theme support is still a compatibility foundation, not full import support for arbitrary Obsidian themes. Obsidian themes can depend on Obsidian-specific DOM structure and selectors that Glyphary does not currently emulate.
 
 ## Plugins
 
@@ -454,62 +448,7 @@ Plugins are vault-scoped and disabled by default. Glyphary discovers plugin mani
 
 The `.glyphary` directory at the vault root is reserved for Glyphary's vault-local state. Settings are stored in `.glyphary/config.json`, while installable plugins live in `.glyphary/plugins`. Enable discovered plugins in `Settings -> Plugins`. Enabled plugins can contribute command palette commands and styles declared in their manifest. Plugin files are constrained to their own plugin directory; Glyphary does not expose shell commands, direct DOM access, arbitrary filesystem access, background daemons, or network access to plugins.
 
-Example plugin layout:
-
-```text
-.glyphary/plugins/meeting_tools/
-  plugin.json
-  styles.css
-  templates/agenda.md
-  plugin.wasm
-```
-
-Example manifest:
-
-```json
-{
-  "id": "meeting_tools",
-  "name": "Meeting Tools",
-  "runtime": "glyphary-wasm-transform@1",
-  "version": "0.1.0",
-  "permissions": ["document:write", "styles:load"],
-  "styles": ["styles.css"],
-  "commands": [
-    {
-      "id": "insert_agenda",
-      "title": "Insert Agenda",
-      "template": "templates/agenda.md"
-    },
-    {
-      "id": "uppercase_selection",
-      "title": "Uppercase Selection",
-      "wasm": {
-        "module": "plugin.wasm",
-        "input": "selection",
-        "output": "replaceSelection",
-        "timeoutMs": 200
-      }
-    }
-  ]
-}
-```
-
-The `runtime` field is required. `glyphary-wasm-transform@1` identifies the current raw WASM transform ABI. Future plugin runtimes, such as an Extism-backed runtime, should use a different value so Glyphary can reject unsupported plugins cleanly.
-
-Supported command actions:
-
-- `insertMarkdown`: inserts literal Markdown at the current cursor/selection.
-- `template`: reads a declared `.md`, `.markdown`, or `.txt` file from the plugin directory and inserts it.
-- `wasm`: runs a pure transform in a Web Worker with a timeout.
-
-WASM plugins are intentionally narrow. They run off the UI thread and receive only a document or selection snapshot. A module must export:
-
-- `memory`
-- `alloc(length) -> pointer`
-- `transform(pointer, length) -> outputPointer`
-- optional `dealloc(pointer, length)`
-
-The input is UTF-8 at `pointer,length`. The output pointer must point to a little-endian `u32` byte length followed by UTF-8 output bytes. Supported WASM inputs are `selection` and `document`; supported outputs are `replaceSelection`, `insertAtCursor`, and `replaceDocument`.
+The plugin authoring guide is documented in [docs/plugins.md](docs/plugins.md). It covers manifest fields, command actions, permissions, validation limits, the `glyphary-wasm-transform@1` ABI, plugin styles, and installation steps.
 
 A working sample lives in `examples/plugins/uppercase_selection`. It includes a `plugin.json`, a checked-in `plugin.wasm`, and a dependency-free Node generator:
 
