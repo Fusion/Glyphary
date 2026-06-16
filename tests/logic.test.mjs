@@ -983,6 +983,7 @@ test("tauri starts with the requested default window size", () => {
 });
 
 test("split editor groups find an already open file across both panes", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
   const groups = {
     primary: {
       id: "primary",
@@ -1001,6 +1002,10 @@ test("split editor groups find an already open file across both panes", () => {
     tab: { id: tabIdForFile("Notes/B.md"), dirty: false },
   });
   assert.equal(findTabAcrossSplitGroups(groups, tabIdForFile("Notes/C.md")), null);
+  assert.match(app, /function revealFileInVaultDrawer\(file: ActiveFile \| null\)/);
+  assert.match(app, /setVaultDrawerItem\("files"\)/);
+  assert.match(app, /const fileDirectory = parentDirectory\(file\.relativePath\)/);
+  assert.match(app, /void revealFileInVaultDrawer\(tab\.activeFile\)/);
 });
 
 test("split editor refuses to close a secondary group with dirty tabs", () => {

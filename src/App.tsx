@@ -4296,6 +4296,7 @@ function App() {
     setDirty(tab.dirty);
     setPageNameEditing(false);
     groupEditor.commands.setContent(tab.markdown, { contentType: "markdown" });
+    void revealFileInVaultDrawer(tab.activeFile);
     syncEditorState(groupEditor);
     window.setTimeout(() => {
       hydratingEditor.current[groupId] = false;
@@ -5034,6 +5035,29 @@ function App() {
     });
 
     setEntries(nextEntries);
+  }
+
+  async function revealFileInVaultDrawer(file: ActiveFile | null) {
+    const root = vaultRootRef.current;
+
+    if (!root || !file) {
+      return;
+    }
+
+    const fileDirectory = parentDirectory(file.relativePath);
+
+    setVaultDrawerItem("files");
+    setCurrentDir(fileDirectory);
+    persistWorkspace({
+      currentDir: fileDirectory,
+      activeFile: file,
+    });
+
+    try {
+      await loadEntries(root, fileDirectory);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function setWikiLinkIndexAndRef(files: VaultIndexedFile[]) {
