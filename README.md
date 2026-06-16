@@ -21,6 +21,7 @@ Glyphary is a Tauri desktop Markdown editor built with React, TypeScript, and Ti
 - Callout blocks using `::: callout <type> "Optional title"` containers.
 - Expand/collapse blocks using `::: collapse "Title"` containers rendered as native details blocks.
 - Rich link cards that fetch page metadata and render URL previews.
+- Excalidraw drawings stored as vault `.excalidraw` files and embedded in notes.
 - Code blocks support language selection and Markdown fences such as ```` ```python ```` or ```` ```sh ````.
 - Syntax highlighting for code blocks using `highlight.js` and `lowlight`.
 - A ```` ```toc ```` fenced block renders as an inline table of contents when not being edited.
@@ -181,6 +182,7 @@ Initial commands:
 - `Insert callout`: inserts a note callout block.
 - `Insert collapse`: inserts an expandable details block.
 - `Insert columns`: inserts a two-column container.
+- `Insert Excalidraw drawing`: creates a vault drawing file and embeds it in the current note.
 - `Insert rich link`: opens a URL dialog, fetches page metadata, and inserts a rich link card.
 
 When the cursor is inside a table, the palette lists table actions first: `Add row after`, `Delete row`, `Add column after`, `Delete column`, and `Delete table`. These contextual commands stay out of the main formatting toolbar so table-only controls do not occupy permanent space.
@@ -207,6 +209,18 @@ siteName: Example
 ```
 
 The WYSIWYG editor renders this as a rounded preview card. If metadata is missing, the URL is still inserted and shown as the title/fallback text.
+
+## Excalidraw Drawings
+
+The `Insert Excalidraw drawing` command creates a `.excalidraw` JSON file under the current vault asset directory, defaulting to `_assets_/drawings`, inserts an embed, and opens a focused drawing editor.
+
+Drawings are stored as separate vault files and referenced from Markdown:
+
+```markdown
+![[_assets_/drawings/System sketch 20230102173741.excalidraw]]
+```
+
+The editor renders the embed as a preview block. Double-clicking the block reopens the drawing editor. Saving the drawing writes the Excalidraw JSON source back to the vault file; the Markdown note keeps only the embed reference.
 
 ## Calendar Notes
 
@@ -614,6 +628,7 @@ Frontend unit tests cover helper behavior such as:
 - Markdown callout container integration.
 - Markdown collapse container integration.
 - Rich link Markdown formatting and metadata extraction.
+- Excalidraw drawing embeds and vault file creation.
 - Vault plugin manifest, command, style, and WASM host wiring.
 - Sample generated and Rust-built WASM plugin ABI behavior.
 - Frontmatter list extraction for display pills.

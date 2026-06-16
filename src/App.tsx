@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   FormEvent as ReactFormEvent,
@@ -16,6 +16,13 @@ import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-dialog";
+import type {
+  AppState,
+  BinaryFiles,
+  ExcalidrawImperativeAPI,
+} from "@excalidraw/excalidraw/types";
+import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
+import "@excalidraw/excalidraw/index.css";
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import {
   EditorContent,
@@ -49,6 +56,7 @@ import {
   clampResizableDrawerWidth,
   cleanVaultAssetReference,
   composeMarkdown,
+  defaultExcalidrawDirectory,
   defaultDrawerOpen,
   defaultFrontmatterPillHeader,
   defaultInspectorDrawerWidth,
@@ -62,6 +70,7 @@ import {
   emptyCollapseMarkdown,
   emptyColumnsMarkdown,
   emptyTableMarkdown,
+  excalidrawFileNameForTitle,
   expandDateTemplate,
   escapeMarkdownImageText,
   escapeMarkdownUrl,
@@ -361,6 +370,25 @@ type CommandPaletteCommand = {
   description: string;
   run: () => void | Promise<void>;
 };
+
+type ExcalidrawSceneData = {
+  type?: string;
+  elements?: readonly ExcalidrawElement[];
+  appState?: Partial<AppState>;
+  files?: BinaryFiles;
+};
+
+type ExcalidrawDialogState = {
+  relativePath: string;
+  name: string;
+  initialData: ExcalidrawSceneData;
+};
+
+const ExcalidrawCanvas = lazy(async () => {
+  const module = await import("@excalidraw/excalidraw");
+
+  return { default: module.Excalidraw };
+});
 
 type WasmPluginResponse =
   | {
@@ -3459,6 +3487,254 @@ function createRichLinkExtension() {
   });
 }
 
+function emptyExcalidrawScene(): ExcalidrawSceneData {
+  return {
+    type: "excalidraw",
+    elements: [],
+    appState: {},
+    files: {},
+  };
+}
+
+function parseExcalidrawScene(content: string): ExcalidrawSceneData {
+  if (!content.trim()) {
+    return emptyExcalidrawScene();
+  }
+
+  try {
+    const parsed = JSON.parse(content) as ExcalidrawSceneData;
+
+    return {
+      type: parsed.type || "excalidraw",
+      elements: Array.isArray(parsed.elements) ? parsed.elements : [],
+      appState:
+        parsed.appState && typeof parsed.appState === "object" ? parsed.appState : {},
+      files: parsed.files && typeof parsed.files === "object" ? parsed.files : {},
+    };
+  } catch {
+    return emptyExcalidrawScene();
+  }
+}
+
+async function restoredExcalidrawScene(scene: ExcalidrawSceneData) {
+  const { restore } = await import("@excalidraw/excalidraw");
+
+  return restore(
+    {
+      elements: scene.elements ?? [],
+      appState: scene.appState ?? {},
+      files: scene.files ?? {},
+    },
+    null,
+    null,
+  );
+}
+
+async function excalidrawSceneToSvgMarkup(scene: ExcalidrawSceneData) {
+  const { exportToSvg } = await import("@excalidraw/excalidraw");
+  const restored = await restoredExcalidrawScene(scene);
+  const visibleElements = restored.elements.filter((element) => !element.isDeleted);
+
+  if (visibleElements.length === 0) {
+    return "";
+  }
+
+  const svg = await exportToSvg({
+    elements: visibleElements,
+    appState: {
+      ...restored.appState,
+      exportWithDarkMode: false,
+    },
+    files: restored.files,
+    exportPadding: 18,
+  });
+
+  return new XMLSerializer().serializeToString(svg);
+}
+
+function isExcalidrawTarget(target: string) {
+  return target.toLowerCase().endsWith(".excalidraw");
+}
+
+type ExcalidrawEmbedOptions = {
+  openDrawing: (target: string) => void;
+  loadPreview: (target: string) => Promise<string>;
+};
+
+const excalidrawPreviewRefreshEvent = "glyphary-excalidraw-preview-refresh";
+
+function ExcalidrawEmbedView(props: NodeViewProps) {
+  const target = String(props.node.attrs.target ?? "");
+  const [previewSvg, setPreviewSvg] = useState("");
+  const [previewState, setPreviewState] = useState<"loading" | "ready" | "empty" | "error">(
+    "loading",
+  );
+  const options = props.extension.options as ExcalidrawEmbedOptions;
+
+  if (!isExcalidrawTarget(target)) {
+    return <NodeViewWrapper as="span" className="excalidraw-embed-invalid" />;
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadPreview = () => {
+      setPreviewState("loading");
+      setPreviewSvg("");
+      options
+        .loadPreview(target)
+        .then((markup) => {
+          if (cancelled) {
+            return;
+          }
+
+          setPreviewSvg(markup);
+          setPreviewState(markup ? "ready" : "empty");
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPreviewState("error");
+          }
+        });
+    };
+    const refreshPreview = (event: Event) => {
+      if (!(event instanceof CustomEvent) || event.detail?.target !== target) {
+        return;
+      }
+
+      loadPreview();
+    };
+
+    loadPreview();
+    window.addEventListener(excalidrawPreviewRefreshEvent, refreshPreview);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(excalidrawPreviewRefreshEvent, refreshPreview);
+    };
+  }, [options, target]);
+
+  return (
+    <NodeViewWrapper
+      as="figure"
+      className="excalidraw-embed"
+      data-excalidraw-target={target}
+      onDoubleClick={() => options.openDrawing(target)}
+    >
+      <div className="excalidraw-embed-preview">
+        {previewState === "ready" ? (
+          <div
+            className="excalidraw-embed-svg"
+            dangerouslySetInnerHTML={{ __html: previewSvg }}
+          />
+        ) : (
+          <div className="excalidraw-embed-empty">
+            {previewState === "loading"
+              ? "Loading drawing..."
+              : previewState === "error"
+                ? "Drawing preview unavailable"
+                : "No saved drawing elements"}
+          </div>
+        )}
+      </div>
+      <figcaption>
+        <span>{target.split("/").pop() ?? target}</span>
+        <small>Double-click to edit</small>
+      </figcaption>
+    </NodeViewWrapper>
+  );
+}
+
+function createExcalidrawEmbedExtension(options: ExcalidrawEmbedOptions) {
+  return Node.create({
+    name: "excalidrawEmbed",
+    priority: 1100,
+    group: "block",
+    atom: true,
+    draggable: true,
+
+    addOptions() {
+      return options;
+    },
+
+    addAttributes() {
+      return {
+        target: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-excalidraw-target") ?? "",
+        },
+      };
+    },
+
+    parseHTML() {
+      return [{ tag: "figure[data-excalidraw-target]" }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      return [
+        "figure",
+        mergeAttributes(HTMLAttributes, {
+          "data-excalidraw-target": HTMLAttributes.target,
+          class: "excalidraw-embed",
+        }),
+      ];
+    },
+
+    addNodeView() {
+      return ReactNodeViewRenderer(ExcalidrawEmbedView);
+    },
+
+    markdownTokenName: "excalidrawEmbed",
+
+    markdownTokenizer: {
+      name: "excalidrawEmbed",
+      level: "block",
+      start: (src: string) => {
+        const index = src.search(/!\[\[[^\]\n]+\.excalidraw\]\]/i);
+
+        return index >= 0 ? index : src.length;
+      },
+      tokenize: (src: string) => {
+        const match = src.match(/^!\[\[([^\]\n]+\.excalidraw)\]\][ \t]*(?:\n|$)/i);
+
+        if (!match) {
+          return undefined;
+        }
+
+        const target = cleanVaultAssetReference(match[1]);
+
+        if (!target || !isExcalidrawTarget(target)) {
+          return undefined;
+        }
+
+        return {
+          type: "excalidrawEmbed",
+          raw: match[0],
+          target,
+        };
+      },
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      const target = cleanVaultAssetReference(String(token.target ?? ""));
+
+      if (!target || !isExcalidrawTarget(target)) {
+        return [];
+      }
+
+      return helpers.createNode("excalidrawEmbed", { target });
+    },
+
+    renderMarkdown: (node: JSONContent) => {
+      const target =
+        typeof node.attrs?.target === "string"
+          ? cleanVaultAssetReference(node.attrs.target)
+          : null;
+
+      return target && isExcalidrawTarget(target) ? `![[${target}]]` : "";
+    },
+  });
+}
+
 function createVaultImageExtension(resolveVaultAssetSrc: (target: string) => string) {
   return Node.create({
     name: "image",
@@ -3681,6 +3957,9 @@ function App() {
   const [richLinkDialogOpen, setRichLinkDialogOpen] = useState(false);
   const [richLinkUrlDraft, setRichLinkUrlDraft] = useState("");
   const [richLinkSubmitting, setRichLinkSubmitting] = useState(false);
+  const [excalidrawCreateDialogOpen, setExcalidrawCreateDialogOpen] = useState(false);
+  const [excalidrawCreateNameDraft, setExcalidrawCreateNameDraft] = useState("Drawing");
+  const [excalidrawCreateSubmitting, setExcalidrawCreateSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchMode, setSearchMode] = useState<SearchMode>("filename");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
@@ -3693,6 +3972,8 @@ function App() {
   const [wikiLinkSearchSelectedIndex, setWikiLinkSearchSelectedIndex] = useState(0);
   const [wikiLinkPicker, setWikiLinkPicker] = useState<WikiLinkPickerState | null>(null);
   const [wikiLinkPickerSelectedIndex, setWikiLinkPickerSelectedIndex] = useState(0);
+  const [excalidrawDialog, setExcalidrawDialog] = useState<ExcalidrawDialogState | null>(null);
+  const [excalidrawDirty, setExcalidrawDirty] = useState(false);
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [folderActionDialog, setFolderActionDialog] = useState<FolderActionDialogState | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -3712,6 +3993,7 @@ function App() {
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
   const wikiLinkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const richLinkInputRef = useRef<HTMLInputElement | null>(null);
+  const excalidrawCreateInputRef = useRef<HTMLInputElement | null>(null);
   const pageNameRef = useRef("Untitled note");
   const metaHeaderRef = useRef("");
   const metaDelimiterRef = useRef<MarkdownParts["metaDelimiter"]>(defaultMetaDelimiter);
@@ -3732,6 +4014,18 @@ function App() {
   const openWikiLinkTargetRef = useRef<
     (target: string, event?: MouseEvent | ReactMouseEvent<HTMLElement>) => void
   >(() => undefined);
+  const openExcalidrawDrawingRef = useRef<(target: string) => void>(() => undefined);
+  const loadExcalidrawPreviewRef = useRef<(target: string) => Promise<string>>(async () => "");
+  const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
+  const excalidrawSceneRef = useRef<{
+    elements: readonly ExcalidrawElement[];
+    appState: AppState | Partial<AppState>;
+    files: BinaryFiles;
+  }>({
+    elements: [],
+    appState: {},
+    files: {},
+  });
   const vaultRootRef = useRef("");
   const vaultSettingsRef = useRef<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
@@ -4439,6 +4733,170 @@ function App() {
       .run();
   }
 
+  function excalidrawDrawingDirectory() {
+    const assetDirectory =
+      vaultSettingsRef.current.assetDirectory.trim() || defaultVaultAssetDirectory;
+
+    if (assetDirectory === defaultVaultAssetDirectory) {
+      return defaultExcalidrawDirectory;
+    }
+
+    return `${assetDirectory.replace(/\/+$/, "")}/drawings`;
+  }
+
+  async function loadExcalidrawPreview(target: string) {
+    const root = vaultRootRef.current;
+
+    if (!root || !isExcalidrawTarget(target)) {
+      return "";
+    }
+
+    const file = await invoke<OpenedFile>("read_vault_file", {
+      root,
+      relative: target,
+    });
+
+    return excalidrawSceneToSvgMarkup(parseExcalidrawScene(file.content));
+  }
+
+  async function openExcalidrawDrawing(target: string) {
+    const root = vaultRootRef.current;
+
+    if (!root || !isExcalidrawTarget(target)) {
+      setStatus("Open a vault before editing drawings");
+      return;
+    }
+
+    try {
+      const file = await invoke<OpenedFile>("read_vault_file", {
+        root,
+        relative: target,
+      });
+      const scene = parseExcalidrawScene(file.content);
+      const restored = await restoredExcalidrawScene(scene);
+
+      excalidrawApiRef.current = null;
+      excalidrawSceneRef.current = {
+        elements: restored.elements,
+        appState: restored.appState,
+        files: restored.files,
+      };
+      setExcalidrawDirty(false);
+      setExcalidrawDialog({
+        relativePath: file.relativePath,
+        name: file.name,
+        initialData: {
+          elements: restored.elements,
+          appState: restored.appState,
+          files: restored.files,
+        },
+      });
+      setStatus(`Editing drawing ${file.relativePath}`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function saveExcalidrawDrawing() {
+    if (!vaultRootRef.current || !excalidrawDialog) {
+      return;
+    }
+
+    try {
+      const { serializeAsJSON } = await import("@excalidraw/excalidraw");
+      const api = excalidrawApiRef.current;
+      const elements = api?.getSceneElementsIncludingDeleted() ?? excalidrawSceneRef.current.elements;
+      const visibleElementCount =
+        api?.getSceneElements().length ?? elements.filter((element) => !element.isDeleted).length;
+      const appState = api?.getAppState() ?? excalidrawSceneRef.current.appState;
+      const files = api?.getFiles() ?? excalidrawSceneRef.current.files;
+      const content = serializeAsJSON(elements, appState, files, "local");
+
+      await invoke("write_vault_file", {
+        root: vaultRootRef.current,
+        relative: excalidrawDialog.relativePath,
+        content,
+      });
+      window.dispatchEvent(
+        new CustomEvent(excalidrawPreviewRefreshEvent, {
+          detail: { target: excalidrawDialog.relativePath },
+        }),
+      );
+      setExcalidrawDirty(false);
+      setExcalidrawDialog((dialog) =>
+        dialog
+          ? {
+              ...dialog,
+              initialData: {
+                elements,
+                appState,
+                files,
+              },
+            }
+          : dialog,
+      );
+      setStatus(
+        `Saved drawing ${excalidrawDialog.relativePath} (${visibleElementCount} visible element${
+          visibleElementCount === 1 ? "" : "s"
+        })`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  function closeExcalidrawDialog() {
+    if (excalidrawDirty && !window.confirm("Close drawing without saving changes?")) {
+      return;
+    }
+
+    excalidrawApiRef.current = null;
+    setExcalidrawDialog(null);
+    setExcalidrawDirty(false);
+  }
+
+  function openExcalidrawCreateDialog() {
+    if (!vaultRoot || !editor) {
+      setStatus("Open a vault file before inserting a drawing");
+      return;
+    }
+
+    setExcalidrawCreateNameDraft("Drawing");
+    setExcalidrawCreateDialogOpen(true);
+  }
+
+  async function insertExcalidrawDrawing() {
+    if (!vaultRoot || !editor || excalidrawCreateSubmitting) {
+      return;
+    }
+
+    try {
+      setExcalidrawCreateSubmitting(true);
+      const relative = `${excalidrawDrawingDirectory()}/${excalidrawFileNameForTitle(
+        excalidrawCreateNameDraft,
+      )}`;
+      const file = await invoke<OpenedFile>("create_excalidraw_file", {
+        root: vaultRoot,
+        relative,
+        content: JSON.stringify(emptyExcalidrawScene(), null, 2),
+      });
+
+      insertMarkdownAtCursor(`![[${file.relativePath}]]`);
+      await loadEntries(vaultRoot, currentDir);
+      setExcalidrawCreateDialogOpen(false);
+      await openExcalidrawDrawing(file.relativePath);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExcalidrawCreateSubmitting(false);
+    }
+  }
+
+  openExcalidrawDrawingRef.current = (target: string) => {
+    void openExcalidrawDrawing(target);
+  };
+  loadExcalidrawPreviewRef.current = loadExcalidrawPreview;
+
   async function importImageFiles(files: File[]) {
     if (!vaultRootRef.current || !activeFileRef.current) {
       setStatus("Open a vault file before adding images");
@@ -4506,6 +4964,10 @@ function App() {
         createCalloutExtension(),
         createCollapseExtension(),
         createRichLinkExtension(),
+        createExcalidrawEmbedExtension({
+          openDrawing: (target) => openExcalidrawDrawingRef.current(target),
+          loadPreview: (target) => loadExcalidrawPreviewRef.current(target),
+        }),
         // Vault images resolve late through refs because the same editor
         // instance can survive vault setting changes such as the asset folder.
         createVaultImageExtension((target) =>
@@ -5711,6 +6173,15 @@ function App() {
   }, [richLinkDialogOpen]);
 
   useEffect(() => {
+    if (!excalidrawCreateDialogOpen) {
+      return;
+    }
+
+    excalidrawCreateInputRef.current?.focus();
+    excalidrawCreateInputRef.current?.select();
+  }, [excalidrawCreateDialogOpen]);
+
+  useEffect(() => {
     if (!wikiLinkPicker) {
       return;
     }
@@ -6883,6 +7354,12 @@ function App() {
       run: openRichLinkDialog,
     },
     {
+      id: "insert-excalidraw",
+      title: "Insert Excalidraw drawing",
+      description: "Create and embed an editable vault drawing",
+      run: openExcalidrawCreateDialog,
+    },
+    {
       id: "insert-columns",
       title: "Insert columns",
       description: "Add a two-column Markdown container",
@@ -6960,7 +7437,11 @@ function App() {
     await command.run();
     closeCommandPalette();
     setEditorFocused(true);
-    if (command.id !== "insert-rich-link" && command.id !== "create-tidbit") {
+    if (
+      command.id !== "insert-rich-link" &&
+      command.id !== "insert-excalidraw" &&
+      command.id !== "create-tidbit"
+    ) {
       setStatus(command.title);
     }
   }
@@ -8660,6 +9141,57 @@ function App() {
           </div>
         </div>
       ) : null}
+      {excalidrawDialog ? (
+        <div className="excalidraw-dialog-screen" role="presentation">
+          <section
+            className="excalidraw-dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Edit drawing ${excalidrawDialog.name}`}
+            onMouseDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+          >
+            <header className="excalidraw-dialog-header">
+              <div>
+                <h2>{excalidrawDialog.name}</h2>
+                <p>{excalidrawDialog.relativePath}</p>
+              </div>
+              <div className="excalidraw-dialog-actions">
+                <button
+                  className="inline-action"
+                  type="button"
+                  onClick={saveExcalidrawDrawing}
+                >
+                  Save Drawing
+                </button>
+                <button className="inline-action" type="button" onClick={closeExcalidrawDialog}>
+                  Close
+                </button>
+              </div>
+            </header>
+            <div className="excalidraw-editor-shell">
+              <Suspense fallback={<div className="excalidraw-loading">Loading drawing editor...</div>}>
+                <ExcalidrawCanvas
+                  key={excalidrawDialog.relativePath}
+                  initialData={excalidrawDialog.initialData}
+                  name={excalidrawDialog.name}
+                  excalidrawAPI={(api) => {
+                    excalidrawApiRef.current = api;
+                  }}
+                  onChange={(elements, appState, files) => {
+                  excalidrawSceneRef.current = {
+                    elements,
+                    appState,
+                    files,
+                  };
+                  setExcalidrawDirty(true);
+                }}
+                />
+              </Suspense>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {commandPaletteOpen ? (
         <div
           className="command-palette-screen"
@@ -8784,6 +9316,67 @@ function App() {
               )}
             </div>
           </div>
+        </div>
+      ) : null}
+      {excalidrawCreateDialogOpen ? (
+        <div
+          className="excalidraw-create-dialog-screen"
+          role="presentation"
+          onMouseDown={() => {
+            if (!excalidrawCreateSubmitting) {
+              setExcalidrawCreateDialogOpen(false);
+            }
+          }}
+        >
+          <form
+            className="excalidraw-create-dialog-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Insert Excalidraw drawing"
+            onMouseDown={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              void insertExcalidrawDrawing();
+            }}
+          >
+            <div className="excalidraw-create-dialog-header">
+              <h2>New Drawing</h2>
+              <span>Name the vault drawing file to embed in this note.</span>
+            </div>
+            <label>
+              <span>Name</span>
+              <input
+                ref={excalidrawCreateInputRef}
+                disabled={excalidrawCreateSubmitting}
+                spellCheck="false"
+                value={excalidrawCreateNameDraft}
+                onChange={(event) => setExcalidrawCreateNameDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape" && !excalidrawCreateSubmitting) {
+                    event.preventDefault();
+                    setExcalidrawCreateDialogOpen(false);
+                  }
+                }}
+              />
+            </label>
+            <div className="excalidraw-create-dialog-actions">
+              <button
+                className="inline-action"
+                disabled={excalidrawCreateSubmitting}
+                type="button"
+                onClick={() => setExcalidrawCreateDialogOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="inline-action"
+                disabled={excalidrawCreateSubmitting || !excalidrawCreateNameDraft.trim()}
+                type="submit"
+              >
+                {excalidrawCreateSubmitting ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </form>
         </div>
       ) : null}
       {richLinkDialogOpen ? (

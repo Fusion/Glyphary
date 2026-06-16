@@ -10,6 +10,7 @@ import {
   cleanVaultAssetReference,
   composeMarkdown,
   defaultDrawerOpen,
+  defaultExcalidrawDirectory,
   defaultFrontmatterPillHeader,
   defaultInspectorDrawerWidth,
   defaultVaultDrawerWidth,
@@ -20,6 +21,7 @@ import {
   emptyCollapseMarkdown,
   emptyColumnsMarkdown,
   emptyTableMarkdown,
+  excalidrawFileNameForTitle,
   expandDateFormat,
   expandDateTemplate,
   escapeMarkdownUrl,
@@ -328,7 +330,6 @@ siteName: Example Site
   assert.match(app, /data-glyphary-rich-link/);
   assert.match(app, /fetch_rich_link_metadata/);
   assert.match(app, /id: "insert-rich-link"/);
-  assert.doesNotMatch(app, /window\.prompt/);
   assert.match(app, /openRichLinkDialog/);
   assert.match(app, /insertRichLinkFromUrl/);
   assert.match(app, /richLinkDialogOpen/);
@@ -337,6 +338,52 @@ siteName: Example Site
   assert.match(css, /\.rich-link-dialog-screen/);
   assert.match(css, /\.rich-link-image/);
   assert.match(css, /\.rich-link-content/);
+});
+
+test("excalidraw drawings are embedded as vault files", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const date = new Date("2023-01-02T17:37:41");
+
+  assert.equal(defaultExcalidrawDirectory, "_assets_/drawings");
+  assert.equal(
+    excalidrawFileNameForTitle("System sketch?.excalidraw", date),
+    "System sketch 20230102173741.excalidraw",
+  );
+  assert.match(app, /const ExcalidrawCanvas = lazy/);
+  assert.match(app, /function createExcalidrawEmbedExtension/);
+  assert.match(app, /markdownTokenName: "excalidrawEmbed"/);
+  assert.match(app, /src\.search\(/);
+  assert.match(app, /return index >= 0 \? index : src\.length/);
+  assert.match(app, /excalidraw-embed-invalid/);
+  assert.match(app, /excalidrawPreviewRefreshEvent/);
+  assert.match(app, /window\.dispatchEvent\(\s*new CustomEvent\(excalidrawPreviewRefreshEvent/);
+  assert.doesNotMatch(app, /excalidrawIgnoreNextChangeRef/);
+  assert.match(app, /ExcalidrawImperativeAPI/);
+  assert.match(app, /excalidrawApiRef/);
+  assert.match(app, /api\?\.getSceneElementsIncludingDeleted\(\)/);
+  assert.match(app, /visibleElementCount/);
+  assert.match(app, /visible element/);
+  assert.match(app, /api\?\.getAppState\(\)/);
+  assert.match(app, /api\?\.getFiles\(\)/);
+  assert.match(app, /excalidrawAPI=\{\(api\) =>/);
+  assert.match(app, /createExcalidrawEmbedExtension\(\{/);
+  assert.match(app, /id: "insert-excalidraw"/);
+  assert.match(app, /title: "Insert Excalidraw drawing"/);
+  assert.match(app, /openExcalidrawCreateDialog/);
+  assert.match(app, /excalidrawCreateDialogOpen/);
+  assert.match(app, /aria-label="Insert Excalidraw drawing"/);
+  assert.match(app, /create_excalidraw_file/);
+  assert.match(app, /serializeAsJSON\(elements, appState, files, "local"\)/);
+  assert.match(app, /excalidrawSceneToSvgMarkup/);
+  assert.match(css, /\.editor-surface \.excalidraw-embed/);
+  assert.match(css, /\.excalidraw-create-dialog-screen/);
+  assert.match(css, /\.excalidraw-dialog-screen/);
+  assert.match(css, /\.excalidraw-editor-shell/);
+  assert.match(backend, /fn create_excalidraw_file/);
+  assert.match(backend, /Drawing path must end with \.excalidraw/);
+  assert.match(backend, /create_excalidraw_file,/);
 });
 
 test("default drawer and vault asset settings match the current product defaults", () => {

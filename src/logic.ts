@@ -30,6 +30,8 @@ export const emptyCollapseMarkdown = `::: collapse More details
 Hidden content
 :::`;
 
+export const defaultExcalidrawDirectory = "_assets_/drawings";
+
 export type RichLinkMarkdownFields = {
   url: string;
   title?: string;
@@ -230,6 +232,20 @@ export function fileNameForDroppedImage(file: ImageFileLike, date = new Date()) 
   const extension = imageExtensionForFile(file);
 
   return `${stem} ${timestampForAssetName(date)}.${extension}`;
+}
+
+export function sanitizeDrawingName(value: string) {
+  const sanitized = value
+    .replace(/\.[^.]+$/, "")
+    .replace(/[^\w\s.-]+/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/^[\s.-]+|[\s.-]+$/g, "");
+
+  return sanitized || "Drawing";
+}
+
+export function excalidrawFileNameForTitle(title: string, date = new Date()) {
+  return `${sanitizeDrawingName(title)} ${timestampForAssetName(date)}.excalidraw`;
 }
 
 export function parentDirectory(relativePath: string) {

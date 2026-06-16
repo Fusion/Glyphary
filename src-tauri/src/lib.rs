@@ -1823,6 +1823,47 @@ fn create_vault_markdown_file(root: String, relative: String) -> Result<OpenedFi
 }
 
 #[tauri::command]
+fn create_excalidraw_file(
+    root: String,
+    relative: String,
+    content: String,
+) -> Result<OpenedFile, String> {
+    let root_path = vault_root(&root)?;
+    let clean_relative = clean_relative(&relative)?;
+
+    if clean_relative.as_os_str().is_empty() {
+        return Err("Drawing path cannot be empty".into());
+    }
+
+    let file_name = clean_relative
+        .file_name()
+        .ok_or_else(|| "Drawing path must include a file name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+
+    if !file_name.to_lowercase().ends_with(".excalidraw") {
+        return Err("Drawing path must end with .excalidraw".into());
+    }
+
+    let parent = clean_relative
+        .parent()
+        .ok_or_else(|| "Drawing path has no parent".to_string())?;
+    let parent = ensure_vault_parent_dirs(&root_path, parent)?;
+    let path = parent.join(&file_name);
+
+    if path.exists() {
+        return Err("A drawing already exists at that path".into());
+    }
+
+    fs::write(&path, content).map_err(|err| format!("Could not create drawing: {err}"))?;
+
+    read_vault_file(
+        root_path.to_string_lossy().into_owned(),
+        relative_string(&root_path, &path)?,
+    )
+}
+
+#[tauri::command]
 fn rename_vault_file(
     root: String,
     relative: String,
@@ -2857,6 +2898,7 @@ pub fn run() {
             read_vault_file,
             write_vault_file,
             create_vault_markdown_file,
+            create_excalidraw_file,
             rename_vault_file,
             move_vault_file,
             delete_vault_file,
@@ -3661,6 +3703,33 @@ mod tests {
             .join("Objects")
             .join("tidbit-2026-06-15-09-04-07.md")
             .is_file());
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn creates_excalidraw_files_inside_vault() {
+        let root = test_root();
+
+        let opened = create_excalidraw_file(
+            root.to_string_lossy().into_owned(),
+            "_assets_/drawings/System.excalidraw".into(),
+            r#"{"type":"excalidraw","elements":[],"appState":{},"files":{}}"#.into(),
+        )
+        .expect("drawing file should be created");
+
+        assert_eq!(opened.name, "System.excalidraw");
+        assert_eq!(opened.relative_path, "_assets_/drawings/System.excalidraw");
+        assert!(opened.content.contains(r#""type":"excalidraw""#));
+
+        let error = create_excalidraw_file(
+            root.to_string_lossy().into_owned(),
+            "_assets_/drawings/System.md".into(),
+            String::new(),
+        )
+        .expect_err("drawing files require the excalidraw extension");
+
+        assert!(error.contains("must end with .excalidraw"));
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
