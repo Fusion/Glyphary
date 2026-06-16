@@ -562,6 +562,7 @@ h2 {
 
 .editor-groups {
   display: grid;
+  grid-auto-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -993,6 +994,7 @@ body.workspace-resizing * {
 
 .editor-pane-shell {
   display: flex;
+  height: 100%;
   min-width: 0;
   min-height: 0;
   flex-direction: column;
@@ -1001,6 +1003,7 @@ body.workspace-resizing * {
 .editor-pane {
   position: relative;
   display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 0;
   flex-direction: column;

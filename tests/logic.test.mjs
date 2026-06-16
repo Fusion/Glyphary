@@ -820,6 +820,9 @@ test("vault drawer exposes files search and recent views", () => {
   assert.match(app, /className=\{isActiveGroup \? "editor-pane-shell active-group" : "editor-pane-shell"\}/);
   assert.match(css, /\.editor-pane-shell/);
   assert.match(css, /\.editor-pane-shell\.active-group \.editor-pane/);
+  assert.match(css, /\.editor-groups \{[\s\S]*grid-auto-rows: minmax\(0, 1fr\)/);
+  assert.match(css, /\.editor-pane-shell \{[\s\S]*height: 100%/);
+  assert.match(css, /\.editor-pane \{[\s\S]*flex: 1/);
   assert.doesNotMatch(css, /\.editor-groups\s*\{[^}]*padding-top:\s*50px/s);
   assert.match(css, /\.recent-entry-text/);
   assert.match(css, /\.recent-entry em/);
