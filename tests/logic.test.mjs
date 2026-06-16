@@ -411,6 +411,44 @@ test("vault plugins are settings-gated and run commands through safe host paths"
   assert.match(worker, /WASM plugin must export transform\(pointer, length\)/);
 });
 
+test("wikilinks use the vault filename index for navigation and insertion", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+
+  assert.match(backend, /struct VaultIndexedFile/);
+  assert.match(backend, /fn list_vault_markdown_files/);
+  assert.match(backend, /fn walk_note_files/);
+  assert.match(backend, /list_vault_markdown_files,/);
+  assert.match(backend, /lists_vault_markdown_files_for_wikilink_index/);
+  assert.match(app, /type VaultIndexedFile/);
+  assert.match(app, /type WikiLinkPickerState/);
+  assert.match(app, /createWikiLinkExtension/);
+  assert.match(app, /wikiLinkTokenPattern/);
+  assert.match(app, /data-wikilink-target/);
+  assert.match(app, /resolveWikiLinkTarget/);
+  assert.match(app, /rebuildWikiLinkIndex/);
+  assert.match(app, /setStatus\("Indexing\.\.\."\)/);
+  assert.match(app, /invoke<VaultIndexedFile\[]>\("list_vault_markdown_files"/);
+  assert.match(app, /openWikiLinkSearchRef/);
+  assert.match(app, /wikiLinkSearchOpen/);
+  assert.match(app, /wikiLinkSearchSelectedIndex/);
+  assert.match(app, /handleWikiLinkSearchKeyDown/);
+  assert.match(app, /moveSelectableIndex\(index, filteredWikiLinkFiles\.length, 1\)/);
+  assert.match(app, /moveSelectableIndex\(index, filteredWikiLinkFiles\.length, -1\)/);
+  assert.match(app, /insertWikiLinkSelection/);
+  assert.match(app, /tr\.insertText\(insertion\)/);
+  assert.match(app, /setWikiLinkPicker/);
+  assert.match(app, /wikiLinkPickerSelectedIndex/);
+  assert.match(app, /openWikiLinkPickerSelection/);
+  assert.match(app, /addFileToWikiLinkIndex/);
+  assert.match(app, /replaceFileInWikiLinkIndex/);
+  assert.match(app, /removeFileFromWikiLinkIndex/);
+  assert.match(css, /\.editor-surface \.wikilink/);
+  assert.match(css, /\.wikilink-search-screen/);
+  assert.match(css, /\.wikilink-picker/);
+});
+
 test("sample uppercase WASM plugin follows the transform ABI", async () => {
   const manifest = JSON.parse(
     readFileSync("examples/plugins/uppercase_selection/plugin.json", "utf8"),
@@ -824,6 +862,9 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /role="combobox"/);
   assert.match(app, /role="listbox"/);
   assert.match(app, /runCommandPaletteCommand/);
+  assert.match(app, /handleCommandPaletteKeyDown/);
+  assert.match(app, /moveSelectableIndex\(index, filteredCommandPaletteCommands\.length, 1\)/);
+  assert.match(app, /moveSelectableIndex\(index, filteredCommandPaletteCommands\.length, -1\)/);
   assert.match(css, /\.command-palette-screen/);
   assert.match(css, /\.command-palette-card/);
   assert.match(css, /\.command-palette-results/);

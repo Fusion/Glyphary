@@ -24,6 +24,7 @@ Glyphary is a Tauri desktop Markdown editor built with React, TypeScript, and Ti
 - Code blocks support language selection and Markdown fences such as ```` ```python ```` or ```` ```sh ````.
 - Syntax highlighting for code blocks using `highlight.js` and `lowlight`.
 - A ```` ```toc ```` fenced block renders as an inline table of contents when not being edited.
+- Wikilinks such as `[[Page name]]` resolve through an in-memory vault filename index.
 - Light, dark, and auto appearance modes.
 - Vault-specific theme builder with live preview and a first-pass Obsidian CSS variable compatibility layer.
 - Vault CSS snippets loaded only after individual `.css` files are approved in Settings.
@@ -57,6 +58,20 @@ When a vault is open:
 - The vault drawer can be collapsed and resized with the drag bar.
 
 Glyphary remembers the last vault, active file, and recent file list in local storage and restores them on app restart.
+
+## Internal Links
+
+When a vault opens, Glyphary indexes Markdown filenames in memory and shows `Indexing...` in the status bar during that scan. Wikilinks such as `[[Mon, Dec 22nd 2025]]` stay stored as plain Markdown text, but the editor decorates them as clickable links.
+
+Resolution follows the Obsidian-style filename behavior:
+
+- An exact vault-relative path match wins first.
+- Otherwise, an exact note basename match is used.
+- If one note matches, clicking the wikilink opens it.
+- If multiple notes match, Glyphary shows a small chooser.
+- If no note matches, the status bar reports the missing target.
+
+Typing `[[` opens a page search dialog backed by the same in-memory index. Selecting a page inserts the page name into the wikilink.
 
 ## Search
 

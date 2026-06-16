@@ -255,6 +255,87 @@ const CodeBlockWithLanguageControl = CodeBlockLowlight.extend({
   },
 });
 
+type WikiLinkResolution = {
+  candidates: VaultIndexedFile[];
+};
+
+type WikiLinkExtensionOptions = {
+  openSearch: () => void;
+  resolveTarget: (target: string) => WikiLinkResolution;
+};
+
+const wikiLinkTokenPattern = /\[\[([^\]\n]+)\]\]/g;
+
+function createWikiLinkExtension(options: WikiLinkExtensionOptions) {
+  return Extension.create({
+    name: "glypharyWikilinks",
+
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: new PluginKey("glypharyWikilinks"),
+          props: {
+            decorations: (state) => {
+              const decorations: Decoration[] = [];
+
+              state.doc.descendants((node, position, parent) => {
+                if (!node.isText || !node.text || parent?.type.spec.code) {
+                  return true;
+                }
+
+                for (const match of node.text.matchAll(wikiLinkTokenPattern)) {
+                  const target = wikiLinkTargetFromMarkup(match[1] ?? "");
+
+                  if (!target) {
+                    continue;
+                  }
+
+                  const candidates = options.resolveTarget(target).candidates;
+                  const stateClass =
+                    candidates.length === 0
+                      ? "missing"
+                      : candidates.length === 1
+                        ? "resolved"
+                        : "ambiguous";
+
+                  decorations.push(
+                    Decoration.inline(position + match.index, position + match.index + match[0].length, {
+                      class: `wikilink wikilink-${stateClass}`,
+                      "data-wikilink-target": target,
+                      title:
+                        candidates.length === 0
+                          ? "No matching note"
+                          : candidates.length === 1
+                            ? candidates[0].relativePath
+                            : `${candidates.length} matching notes`,
+                    }),
+                  );
+                }
+
+                return true;
+              });
+
+              return DecorationSet.create(state.doc, decorations);
+            },
+            handleTextInput: (view, from, _to, text) => {
+              if (text !== "[") {
+                return false;
+              }
+
+              if (view.state.doc.textBetween(Math.max(0, from - 1), from) !== "[") {
+                return false;
+              }
+
+              window.setTimeout(options.openSearch, 0);
+              return false;
+            },
+          },
+        }),
+      ];
+    },
+  });
+}
+
 type ToolbarAction = {
   label: string;
   icon?: ToolbarIconName;
@@ -1138,6 +1219,11 @@ type OpenedFile = {
   content: string;
 };
 
+type VaultIndexedFile = {
+  name: string;
+  relativePath: string;
+};
+
 type RenamedDirectory = {
   name: string;
   relativePath: string;
@@ -1303,6 +1389,13 @@ type SearchResult = {
   lineNumber?: number;
   lineText?: string;
   isContentMatch: boolean;
+};
+
+type WikiLinkPickerState = {
+  target: string;
+  candidates: VaultIndexedFile[];
+  x: number;
+  y: number;
 };
 
 type SearchMode = "filename" | "content";
@@ -2620,6 +2713,61 @@ function cleanPluginId(id: string) {
   return /^[A-Za-z0-9_-]{1,80}$/.test(cleanId) ? cleanId : null;
 }
 
+function wikiLinkDisplayName(file: VaultIndexedFile) {
+  return fileNameWithoutMarkdownExtension(file.name);
+}
+
+function normalizeWikiLinkText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function wikiLinkTargetFromMarkup(value: string) {
+  return value.split("|")[0]?.split("#")[0]?.trim() ?? "";
+}
+
+function indexedFileKey(file: VaultIndexedFile) {
+  return file.relativePath;
+}
+
+function moveSelectableIndex(currentIndex: number, itemCount: number, delta: -1 | 1) {
+  if (itemCount <= 0) {
+    return 0;
+  }
+
+  return (currentIndex + delta + itemCount) % itemCount;
+}
+
+function addIndexedFile(files: VaultIndexedFile[], file: ActiveFile | OpenedFile) {
+  if (!file.name.toLowerCase().endsWith(".md")) {
+    return files;
+  }
+
+  const indexed = {
+    name: file.name,
+    relativePath: file.relativePath,
+  };
+  const withoutExisting = files.filter((candidate) => candidate.relativePath !== indexed.relativePath);
+
+  return [...withoutExisting, indexed].sort((left, right) =>
+    wikiLinkDisplayName(left)
+      .toLowerCase()
+      .localeCompare(wikiLinkDisplayName(right).toLowerCase()) ||
+    left.relativePath.localeCompare(right.relativePath),
+  );
+}
+
+function removeIndexedFile(files: VaultIndexedFile[], relativePath: string) {
+  return files.filter((file) => file.relativePath !== relativePath);
+}
+
+function replaceIndexedFile(
+  files: VaultIndexedFile[],
+  oldRelativePath: string,
+  nextFile: ActiveFile | OpenedFile,
+) {
+  return addIndexedFile(removeIndexedFile(files, oldRelativePath), nextFile);
+}
+
 function normalizePluginSettings(settings: PluginSettings | undefined | null) {
   const enabled = Array.from(
     new Set(
@@ -3538,6 +3686,13 @@ function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [recentFiles, setRecentFiles] = useState<ActiveFile[]>([]);
+  const [wikiLinkIndex, setWikiLinkIndex] = useState<VaultIndexedFile[]>([]);
+  const [wikiLinkIndexVersion, setWikiLinkIndexVersion] = useState(0);
+  const [wikiLinkSearchOpen, setWikiLinkSearchOpen] = useState(false);
+  const [wikiLinkSearchQuery, setWikiLinkSearchQuery] = useState("");
+  const [wikiLinkSearchSelectedIndex, setWikiLinkSearchSelectedIndex] = useState(0);
+  const [wikiLinkPicker, setWikiLinkPicker] = useState<WikiLinkPickerState | null>(null);
+  const [wikiLinkPickerSelectedIndex, setWikiLinkPickerSelectedIndex] = useState(0);
   const [folderContextMenu, setFolderContextMenu] = useState<FolderContextMenuState | null>(null);
   const [folderActionDialog, setFolderActionDialog] = useState<FolderActionDialogState | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -3549,11 +3704,13 @@ function App() {
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeFileRef = useRef<ActiveFile | null>(null);
   const recentFilesRef = useRef<ActiveFile[]>([]);
+  const wikiLinkIndexRef = useRef<VaultIndexedFile[]>([]);
   const suppressDirectoryClickRef = useRef(false);
   const editorGroupsRef = useRef<Record<EditorGroupId, EditorGroupState>>(editorGroups);
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
   const workspaceRef = useRef<HTMLElement | null>(null);
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  const wikiLinkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const richLinkInputRef = useRef<HTMLInputElement | null>(null);
   const pageNameRef = useRef("Untitled note");
   const metaHeaderRef = useRef("");
@@ -3568,6 +3725,13 @@ function App() {
   const openVaultRef = useRef<() => void | Promise<void>>(() => undefined);
   const saveCurrentFileRef = useRef<() => void | Promise<void>>(() => undefined);
   const resetDocumentRef = useRef<() => void>(() => undefined);
+  const openWikiLinkSearchRef = useRef<() => void>(() => undefined);
+  const resolveWikiLinkTargetRef = useRef<(target: string) => WikiLinkResolution>(() => ({
+    candidates: [],
+  }));
+  const openWikiLinkTargetRef = useRef<
+    (target: string, event?: MouseEvent | ReactMouseEvent<HTMLElement>) => void
+  >(() => undefined);
   const vaultRootRef = useRef("");
   const vaultSettingsRef = useRef<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
@@ -4331,6 +4495,10 @@ function App() {
           lowlight,
         }),
         TocCodeBlockRenderer,
+        createWikiLinkExtension({
+          openSearch: () => openWikiLinkSearchRef.current(),
+          resolveTarget: (target) => resolveWikiLinkTargetRef.current(target),
+        }),
         ...(editorBehavior.vimMode ? [createGlypharyVimMode(setStatus)] : []),
         createColumnExtension(),
         createColumnsExtension(),
@@ -4437,6 +4605,16 @@ function App() {
   const editor = isEditorReady(activeEditor) ? activeEditor : null;
 
   useEffect(() => {
+    [primaryEditor, secondaryEditor].forEach((targetEditor) => {
+      if (isEditorReady(targetEditor)) {
+        targetEditor.view.dispatch(
+          targetEditor.state.tr.setMeta("glypharyWikilinkIndexVersion", wikiLinkIndexVersion),
+        );
+      }
+    });
+  }, [primaryEditor, secondaryEditor, wikiLinkIndexVersion]);
+
+  useEffect(() => {
     const editors = [primaryEditor, secondaryEditor].filter((value): value is Editor =>
       isEditorReady(value),
     );
@@ -4446,6 +4624,15 @@ function App() {
         const target = event.target;
 
         if (!(target instanceof HTMLElement)) {
+          return;
+        }
+
+        const wikiLink = target.closest<HTMLElement>("[data-wikilink-target]");
+
+        if (wikiLink && root.contains(wikiLink)) {
+          event.preventDefault();
+          event.stopPropagation();
+          openWikiLinkTargetRef.current(wikiLink.dataset.wikilinkTarget ?? "", event);
           return;
         }
 
@@ -4551,6 +4738,7 @@ function App() {
         setSearchQuery("");
         setSearchResults([]);
         await loadEntries(workspace.vaultRoot, workspace.currentDir);
+        await rebuildWikiLinkIndex(workspace.vaultRoot);
 
         if (workspace.activeFile) {
           const file = await invoke<OpenedFile>("read_vault_file", {
@@ -4848,6 +5036,184 @@ function App() {
     setEntries(nextEntries);
   }
 
+  function setWikiLinkIndexAndRef(files: VaultIndexedFile[]) {
+    wikiLinkIndexRef.current = files;
+    setWikiLinkIndex(files);
+    setWikiLinkIndexVersion((version) => version + 1);
+  }
+
+  function addFileToWikiLinkIndex(file: ActiveFile | OpenedFile) {
+    setWikiLinkIndexAndRef(addIndexedFile(wikiLinkIndexRef.current, file));
+  }
+
+  function removeFileFromWikiLinkIndex(relativePath: string) {
+    setWikiLinkIndexAndRef(removeIndexedFile(wikiLinkIndexRef.current, relativePath));
+  }
+
+  function replaceFileInWikiLinkIndex(oldRelativePath: string, file: ActiveFile | OpenedFile) {
+    setWikiLinkIndexAndRef(
+      replaceIndexedFile(wikiLinkIndexRef.current, oldRelativePath, file),
+    );
+  }
+
+  function resolveWikiLinkTarget(target: string): WikiLinkResolution {
+    const cleanTarget = wikiLinkTargetFromMarkup(target);
+    const normalizedTarget = normalizeWikiLinkText(cleanTarget);
+
+    if (!normalizedTarget) {
+      return { candidates: [] };
+    }
+
+    const files = wikiLinkIndexRef.current;
+    const pathMatches = files.filter((file) => {
+      const pathWithoutExtension = fileNameWithoutMarkdownExtension(file.relativePath);
+      const normalizedPath = normalizeWikiLinkText(file.relativePath);
+
+      return (
+        normalizedPath === normalizedTarget ||
+        normalizeWikiLinkText(pathWithoutExtension) === normalizedTarget
+      );
+    });
+
+    if (pathMatches.length > 0) {
+      return { candidates: pathMatches };
+    }
+
+    return {
+      candidates: files.filter(
+        (file) => normalizeWikiLinkText(wikiLinkDisplayName(file)) === normalizedTarget,
+      ),
+    };
+  }
+
+  async function rebuildWikiLinkIndex(root: string) {
+    if (!isTauri()) {
+      setWikiLinkIndexAndRef([]);
+      return;
+    }
+
+    setStatus("Indexing...");
+    const files = await invoke<VaultIndexedFile[]>("list_vault_markdown_files", { root });
+
+    setWikiLinkIndexAndRef(files);
+  }
+
+  function openWikiLinkSearch() {
+    if (!vaultRootRef.current) {
+      return;
+    }
+
+    setWikiLinkSearchQuery("");
+    setWikiLinkSearchSelectedIndex(0);
+    setWikiLinkSearchOpen(true);
+  }
+
+  function closeWikiLinkSearch() {
+    setWikiLinkSearchOpen(false);
+    setWikiLinkSearchQuery("");
+    setWikiLinkSearchSelectedIndex(0);
+  }
+
+  function handleWikiLinkSearchKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeWikiLinkSearch();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setWikiLinkSearchSelectedIndex((index) =>
+        moveSelectableIndex(index, filteredWikiLinkFiles.length, 1),
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setWikiLinkSearchSelectedIndex((index) =>
+        moveSelectableIndex(index, filteredWikiLinkFiles.length, -1),
+      );
+      return;
+    }
+
+    if (event.key === "Enter" && selectedWikiLinkFile) {
+      event.preventDefault();
+      insertWikiLinkSelection(selectedWikiLinkFile);
+    }
+  }
+
+  function insertWikiLinkSelection(file: VaultIndexedFile) {
+    if (!editor) {
+      return;
+    }
+
+    const label = wikiLinkDisplayName(file);
+    const { state } = editor;
+    const beforeCursor = state.doc.textBetween(
+      Math.max(0, state.selection.from - 2),
+      state.selection.from,
+    );
+    const insertion = beforeCursor === "[[" ? `${label}]]` : `[[${label}]]`;
+
+    // Completing a wikilink is plain text editing. Running the fragment through
+    // Markdown insertion can split the link across paragraphs.
+    editor
+      .chain()
+      .focus()
+      .command(({ tr, dispatch }) => {
+        dispatch?.(tr.insertText(insertion));
+        return true;
+      })
+      .run();
+    closeWikiLinkSearch();
+  }
+
+  function openWikiLinkTarget(
+    target: string,
+    event?: MouseEvent | ReactMouseEvent<HTMLElement>,
+  ) {
+    const resolution = resolveWikiLinkTarget(target);
+
+    if (resolution.candidates.length === 0) {
+      setStatus(`No note found for [[${target}]]`);
+      return;
+    }
+
+    if (resolution.candidates.length === 1) {
+      void openFile(resolution.candidates[0].relativePath);
+      return;
+    }
+
+    const x =
+      "clientX" in (event ?? {})
+        ? (event as MouseEvent | ReactMouseEvent<HTMLElement>).clientX
+        : window.innerWidth / 2;
+    const y =
+      "clientY" in (event ?? {})
+        ? (event as MouseEvent | ReactMouseEvent<HTMLElement>).clientY
+        : window.innerHeight / 2;
+
+    setWikiLinkPicker({
+      target,
+      candidates: resolution.candidates,
+      x,
+      y,
+    });
+    setWikiLinkPickerSelectedIndex(0);
+    setStatus(`Choose one of ${resolution.candidates.length} notes for [[${target}]]`);
+  }
+
+  function openWikiLinkPickerSelection(file: VaultIndexedFile) {
+    setWikiLinkPicker(null);
+    setWikiLinkPickerSelectedIndex(0);
+    void openFile(file.relativePath);
+  }
+
+  resolveWikiLinkTargetRef.current = resolveWikiLinkTarget;
+  openWikiLinkSearchRef.current = openWikiLinkSearch;
+  openWikiLinkTargetRef.current = openWikiLinkTarget;
+
   async function refreshCssSnippets(
     root = vaultRoot,
     settings = cssSnippetDraft,
@@ -5098,6 +5464,7 @@ function App() {
       // lets the subsequent write target the new path and keeps tab IDs stable
       // with the file-relative-path convention.
       const previousTabId = editorGroupsRef.current[groupId].activeTabId;
+      const previousRelativePath = file.relativePath;
       const renamed = await invoke<OpenedFile>("rename_vault_file", {
         root: vaultRoot,
         relative: file.relativePath,
@@ -5134,6 +5501,7 @@ function App() {
 
       setEditorGroupsAndRef(nextGroups);
       persistActiveFile(file);
+      replaceFileInWikiLinkIndex(previousRelativePath, file);
       await loadEntries(vaultRoot, currentDir);
     }
 
@@ -5223,6 +5591,8 @@ function App() {
       setSearchQuery("");
       setSearchResults([]);
       await loadEntries(selected, "");
+      setWikiLinkIndexAndRef([]);
+      await rebuildWikiLinkIndex(selected);
       persistWorkspace({
         vaultRoot: selected,
         currentDir: "",
@@ -5301,12 +5671,76 @@ function App() {
   }, [commandPaletteOpen]);
 
   useEffect(() => {
+    if (!wikiLinkSearchOpen) {
+      return;
+    }
+
+    wikiLinkSearchInputRef.current?.focus();
+  }, [wikiLinkSearchOpen]);
+
+  useEffect(() => {
     if (!richLinkDialogOpen) {
       return;
     }
 
     richLinkInputRef.current?.focus();
   }, [richLinkDialogOpen]);
+
+  useEffect(() => {
+    if (!wikiLinkPicker) {
+      return;
+    }
+
+    const closePicker = () => {
+      setWikiLinkPicker(null);
+      setWikiLinkPickerSelectedIndex(0);
+    };
+    const handlePickerKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePicker();
+        return;
+      }
+
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setWikiLinkPickerSelectedIndex((index) =>
+          moveSelectableIndex(index, wikiLinkPicker.candidates.length, 1),
+        );
+        return;
+      }
+
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setWikiLinkPickerSelectedIndex((index) =>
+          moveSelectableIndex(index, wikiLinkPicker.candidates.length, -1),
+        );
+        return;
+      }
+
+      if (event.key === "Enter") {
+        const selectedFile =
+          wikiLinkPicker.candidates[
+            Math.min(wikiLinkPickerSelectedIndex, wikiLinkPicker.candidates.length - 1)
+          ] ?? null;
+
+        if (!selectedFile) {
+          return;
+        }
+
+        event.preventDefault();
+        openWikiLinkPickerSelection(selectedFile);
+      }
+    };
+
+    window.addEventListener("pointerdown", closePicker);
+    window.addEventListener("keydown", handlePickerKeyDown);
+
+    return () => {
+      window.removeEventListener("pointerdown", closePicker);
+      window.removeEventListener("keydown", handlePickerKeyDown);
+    };
+  }, [wikiLinkPicker, wikiLinkPickerSelectedIndex]);
 
   useEffect(() => {
     if (!isTauri()) {
@@ -5443,6 +5877,7 @@ function App() {
       addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistActiveFile(tab.activeFile);
+      addFileToWikiLinkIndex(file);
       await loadEntries(vaultRoot, currentDir);
       setCalendarNoteDateKeys((dateKeys) =>
         dateKeys.includes(calendarDateKey(date)) ? dateKeys : [...dateKeys, calendarDateKey(date)],
@@ -5482,6 +5917,7 @@ function App() {
       addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistActiveFile(tab.activeFile);
+      addFileToWikiLinkIndex(file);
       setStatus(`Opened directory note ${file.relativePath}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -5834,6 +6270,7 @@ function App() {
       addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistActiveFile(tab.activeFile);
+      addFileToWikiLinkIndex(file);
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Created note ${file.relativePath}`);
     } catch (error) {
@@ -5885,6 +6322,7 @@ function App() {
         vaultRoot,
         rebasePathAfterDirectoryRename(currentDir, entry, renamed),
       );
+      await rebuildWikiLinkIndex(vaultRoot);
       setStatus(`Renamed folder ${entry.name} to ${renamed.name}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -5911,6 +6349,7 @@ function App() {
 
       applyRenamedDirectoryToOpenState(entry, moved);
       await loadEntries(vaultRoot, nextCurrentDir);
+      await rebuildWikiLinkIndex(vaultRoot);
       setStatus(`Moved folder ${entry.name} to ${moved.relativePath}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -5935,6 +6374,7 @@ function App() {
       };
 
       replaceOpenFilePath(entry.relativePath, movedFile);
+      replaceFileInWikiLinkIndex(entry.relativePath, movedFile);
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Moved ${entry.name} to ${moved.relativePath}`);
     } catch (error) {
@@ -5955,6 +6395,7 @@ function App() {
       });
 
       removeDeletedFileFromOpenState(entry.relativePath);
+      removeFileFromWikiLinkIndex(entry.relativePath);
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Deleted ${entry.relativePath}`);
     } catch (error) {
@@ -6272,6 +6713,7 @@ function App() {
       addTabToGroup(tab);
       hydrateDocumentTab(tab);
       persistActiveFile(tab.activeFile);
+      addFileToWikiLinkIndex(file);
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Created tidbit ${file.relativePath}`);
     } catch (error) {
@@ -6381,6 +6823,25 @@ function App() {
         run: () => runPluginCommand(plugin, command),
       })),
     );
+  const filteredWikiLinkFiles = wikiLinkIndex
+    .filter((file) => {
+      const query = wikiLinkSearchQuery.trim().toLowerCase();
+
+      return (
+        !query ||
+        wikiLinkDisplayName(file).toLowerCase().includes(query) ||
+        file.relativePath.toLowerCase().includes(query)
+      );
+    })
+    .slice(0, 20);
+  const selectedWikiLinkSearchIndex =
+    filteredWikiLinkFiles.length > 0
+      ? Math.min(wikiLinkSearchSelectedIndex, filteredWikiLinkFiles.length - 1)
+      : -1;
+  const selectedWikiLinkFile =
+    selectedWikiLinkSearchIndex >= 0
+      ? (filteredWikiLinkFiles[selectedWikiLinkSearchIndex] ?? null)
+      : null;
   const commandPaletteCommands: CommandPaletteCommand[] = [
     // Table editing is contextual enough that the palette keeps it close to
     // the cursor state instead of permanently crowding the formatting toolbar.
@@ -6440,6 +6901,35 @@ function App() {
     setCommandPaletteOpen(false);
     setCommandPaletteQuery("");
     setCommandPaletteSelectedIndex(0);
+  }
+
+  function handleCommandPaletteKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeCommandPalette();
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setCommandPaletteSelectedIndex((index) =>
+        moveSelectableIndex(index, filteredCommandPaletteCommands.length, 1),
+      );
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setCommandPaletteSelectedIndex((index) =>
+        moveSelectableIndex(index, filteredCommandPaletteCommands.length, -1),
+      );
+      return;
+    }
+
+    if (event.key === "Enter" && selectedCommandPaletteCommand) {
+      event.preventDefault();
+      runCommandPaletteCommand(selectedCommandPaletteCommand);
+    }
   }
 
   async function runCommandPaletteCommand(command: CommandPaletteCommand) {
@@ -6925,7 +7415,7 @@ function App() {
       </datalist>
       <header className="titlebar">
         <div className="file-context">
-          <span>{activeFile ? "Editing" : "No file open"}</span>
+          {!activeFile ? <span>No file open</span> : null}
           <p>{activeFile ? activeFile.relativePath : "Open a vault file to begin"}</p>
         </div>
         <div className="app-actions">
@@ -8157,6 +8647,7 @@ function App() {
             role="dialog"
             aria-modal="true"
             aria-label="Quick command"
+            onKeyDown={handleCommandPaletteKeyDown}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <input
@@ -8177,34 +8668,6 @@ function App() {
               onChange={(event) => {
                 setCommandPaletteQuery(event.currentTarget.value);
                 setCommandPaletteSelectedIndex(0);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  closeCommandPalette();
-                  return;
-                }
-
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setCommandPaletteSelectedIndex((index) =>
-                    filteredCommandPaletteCommands.length > 0
-                      ? Math.min(index + 1, filteredCommandPaletteCommands.length - 1)
-                      : 0,
-                  );
-                  return;
-                }
-
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setCommandPaletteSelectedIndex((index) => Math.max(index - 1, 0));
-                  return;
-                }
-
-                if (event.key === "Enter" && selectedCommandPaletteCommand) {
-                  event.preventDefault();
-                  runCommandPaletteCommand(selectedCommandPaletteCommand);
-                }
               }}
             />
             <div
@@ -8231,6 +8694,69 @@ function App() {
                 ))
               ) : (
                 <p>No commands found</p>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {wikiLinkSearchOpen ? (
+        <div
+          className="wikilink-search-screen"
+          role="presentation"
+          onMouseDown={closeWikiLinkSearch}
+        >
+          <div
+            className="wikilink-search-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Find page"
+            onKeyDown={handleWikiLinkSearchKeyDown}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <input
+              ref={wikiLinkSearchInputRef}
+              aria-activedescendant={
+                selectedWikiLinkFile
+                  ? `wikilink-search-${selectedWikiLinkSearchIndex}`
+                  : undefined
+              }
+              aria-autocomplete="list"
+              aria-controls="wikilink-search-results"
+              aria-label="Find page"
+              autoComplete="off"
+              placeholder="Find page..."
+              role="combobox"
+              spellCheck="false"
+              value={wikiLinkSearchQuery}
+              onChange={(event) => {
+                setWikiLinkSearchQuery(event.currentTarget.value);
+                setWikiLinkSearchSelectedIndex(0);
+              }}
+            />
+            <div
+              className="wikilink-search-results"
+              id="wikilink-search-results"
+              role="listbox"
+              aria-label="Matching pages"
+            >
+              {filteredWikiLinkFiles.length > 0 ? (
+                filteredWikiLinkFiles.map((file, index) => (
+                  <button
+                    className={index === selectedWikiLinkSearchIndex ? "active" : ""}
+                    id={`wikilink-search-${index}`}
+                    key={indexedFileKey(file)}
+                    type="button"
+                    role="option"
+                    aria-selected={index === selectedWikiLinkSearchIndex}
+                    onClick={() => insertWikiLinkSelection(file)}
+                    onMouseEnter={() => setWikiLinkSearchSelectedIndex(index)}
+                  >
+                    <span>{wikiLinkDisplayName(file)}</span>
+                    <small>{file.relativePath}</small>
+                  </button>
+                ))
+              ) : (
+                <p>No matching pages</p>
               )}
             </div>
           </div>
@@ -8298,6 +8824,31 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+      {wikiLinkPicker ? (
+        <div
+          className="wikilink-picker"
+          style={{ left: wikiLinkPicker.x, top: wikiLinkPicker.y }}
+          role="menu"
+          aria-label={`Choose target for ${wikiLinkPicker.target}`}
+          onClick={(event) => event.stopPropagation()}
+          onContextMenu={(event) => event.preventDefault()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          {wikiLinkPicker.candidates.map((file, index) => (
+            <button
+              className={index === wikiLinkPickerSelectedIndex ? "active" : ""}
+              key={indexedFileKey(file)}
+              type="button"
+              role="menuitem"
+              onClick={() => openWikiLinkPickerSelection(file)}
+              onMouseEnter={() => setWikiLinkPickerSelectedIndex(index)}
+            >
+              <span>{wikiLinkDisplayName(file)}</span>
+              <small>{file.relativePath}</small>
+            </button>
+          ))}
         </div>
       ) : null}
       {folderContextMenu ? (

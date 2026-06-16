@@ -346,13 +346,17 @@ button {
 
 .titlebar p {
   max-width: min(58vw, 720px);
-  margin: 3px 0 0;
+  margin: 0;
   overflow: hidden;
   color: var(--heading);
   font-size: 0.9rem;
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.file-context span + p {
+  margin-top: 3px;
 }
 
 .app-actions {
@@ -1380,6 +1384,29 @@ body.workspace-resizing * {
 
 .editor-surface p {
   margin: 0;
+}
+
+.editor-surface .wikilink {
+  border-radius: 4px;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 800;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+
+.editor-surface .wikilink-ambiguous {
+  color: var(--syntax-orange);
+}
+
+.editor-surface .wikilink-missing {
+  color: var(--muted);
+  text-decoration-style: dashed;
+}
+
+.editor-surface .wikilink:hover {
+  background: var(--hover);
 }
 
 .editor-surface ul,
@@ -2749,6 +2776,112 @@ body.workspace-resizing * {
   font-size: 0.82rem;
   font-weight: 800;
   padding: 14px 10px;
+}
+
+.wikilink-search-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 71;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  background: color-mix(in srgb, var(--app-bg) 58%, transparent);
+  padding: 14vh 20px 20px;
+  animation: glyphary-fade-in var(--motion-duration-fast) var(--motion-ease);
+}
+
+.wikilink-search-card {
+  width: min(520px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 22px 60px var(--shadow-strong);
+  animation: glyphary-pop-in var(--motion-duration-base) var(--motion-ease);
+}
+
+.wikilink-search-card input {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--surface);
+  color: var(--heading);
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 800;
+  outline: none;
+  padding: 14px 16px;
+}
+
+.wikilink-search-results,
+.wikilink-picker {
+  display: grid;
+  gap: 2px;
+}
+
+.wikilink-search-results {
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  padding: 6px;
+}
+
+.wikilink-search-results button,
+.wikilink-picker button {
+  display: grid;
+  gap: 3px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--heading);
+  cursor: pointer;
+  font: inherit;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.wikilink-search-results button:hover,
+.wikilink-search-results button.active,
+.wikilink-picker button:hover,
+.wikilink-picker button.active {
+  background: var(--hover);
+}
+
+.wikilink-search-results button.active,
+.wikilink-picker button.active {
+  box-shadow: inset 0 0 0 1px var(--focus);
+}
+
+.wikilink-search-results span,
+.wikilink-picker span {
+  font-size: 0.84rem;
+  font-weight: 900;
+}
+
+.wikilink-search-results small,
+.wikilink-picker small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.wikilink-search-results p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+  padding: 14px 10px;
+}
+
+.wikilink-picker {
+  position: fixed;
+  z-index: 82;
+  min-width: 240px;
+  max-width: min(420px, calc(100vw - 24px));
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px var(--shadow-strong);
+  padding: 5px;
 }
 
 .rich-link-dialog-screen {

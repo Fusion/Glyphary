@@ -189,6 +189,13 @@ struct SearchResult {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+struct VaultIndexedFile {
+    name: String,
+    relative_path: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct CssSnippetFile {
     name: String,
     relative_path: String,
@@ -1259,6 +1266,34 @@ fn walk_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), S
     Ok(())
 }
 
+fn walk_note_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|err| format!("Could not list directory: {err}"))? {
+        let entry = entry.map_err(|err| format!("Could not read directory entry: {err}"))?;
+        let file_type = entry
+            .file_type()
+            .map_err(|err| format!("Could not read file type: {err}"))?;
+        let path = entry.path();
+
+        if path.file_name().and_then(|name| name.to_str()) == Some(SETTINGS_DIRECTORY_NAME) {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            walk_note_files(root, &path, files)?;
+        } else if file_type.is_file()
+            && path.starts_with(root)
+            && path
+                .extension()
+                .map(|extension| extension.to_string_lossy().eq_ignore_ascii_case("md"))
+                .unwrap_or(false)
+        {
+            files.push(path);
+        }
+    }
+
+    Ok(())
+}
+
 fn filename_matches(
     root: &Path,
     files: Vec<PathBuf>,
@@ -1679,6 +1714,38 @@ fn list_vault_dir(root: String, relative: String) -> Result<Vec<VaultEntry>, Str
     });
 
     Ok(entries)
+}
+
+#[tauri::command]
+fn list_vault_markdown_files(root: String) -> Result<Vec<VaultIndexedFile>, String> {
+    let root = vault_root(&root)?;
+    let mut files = Vec::new();
+
+    walk_note_files(&root, &root, &mut files)?;
+
+    let mut indexed = files
+        .into_iter()
+        .map(|path| {
+            let name = path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.to_string_lossy().into_owned());
+
+            Ok(VaultIndexedFile {
+                name,
+                relative_path: relative_string(&root, &path)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    indexed.sort_by(|left, right| {
+        left.name
+            .to_lowercase()
+            .cmp(&right.name.to_lowercase())
+            .then_with(|| left.relative_path.cmp(&right.relative_path))
+    });
+
+    Ok(indexed)
 }
 
 #[tauri::command]
@@ -2786,6 +2853,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             list_vault_dir,
+            list_vault_markdown_files,
             read_vault_file,
             write_vault_file,
             create_vault_markdown_file,
@@ -3718,6 +3786,36 @@ mod tests {
         .expect_err("calendar path outside Calendar should fail");
 
         assert!(error.contains("must live under Calendar"));
+
+        fs::remove_dir_all(root).expect("test root should be removed");
+    }
+
+    #[test]
+    fn lists_vault_markdown_files_for_wikilink_index() {
+        let root = test_root();
+        fs::create_dir_all(root.join("Calendar")).expect("calendar directory should be created");
+        fs::create_dir_all(root.join(SETTINGS_DIRECTORY_NAME).join("plugins"))
+            .expect("glyphary directory should be created");
+        fs::write(root.join("Root.md"), "# Root\n").expect("root note should be created");
+        fs::write(root.join("Calendar").join("Mon, Dec 22nd 2025.md"), "")
+            .expect("calendar note should be created");
+        fs::write(root.join("notes.txt"), "not markdown").expect("text file should be created");
+        fs::write(
+            root.join(SETTINGS_DIRECTORY_NAME)
+                .join("plugins")
+                .join("Plugin.md"),
+            "not a note",
+        )
+        .expect("plugin markdown should be created");
+
+        let files = list_vault_markdown_files(root.to_string_lossy().into_owned())
+            .expect("markdown files should list");
+        let paths = files
+            .into_iter()
+            .map(|file| file.relative_path)
+            .collect::<Vec<_>>();
+
+        assert_eq!(paths, vec!["Calendar/Mon, Dec 22nd 2025.md", "Root.md"]);
 
         fs::remove_dir_all(root).expect("test root should be removed");
     }
