@@ -24,6 +24,7 @@
   --glyphary-editor-max-width: none;
   --glyphary-editor-padding-y: 38px;
   --glyphary-editor-padding-x: min(6vw, 72px);
+  /* Keep empty editors readable even when chrome margins are configured down. */
   --glyphary-editor-effective-padding-x: max(18px, var(--glyphary-editor-padding-x));
   --glyphary-block-gap: 0.85em;
   --glyphary-motion-duration-fast: 120ms;
@@ -562,6 +563,7 @@ h2 {
 
 .editor-groups {
   display: grid;
+  /* Without an explicit row track, short documents let the pane shrink above the drawers. */
   grid-auto-rows: minmax(0, 1fr);
   min-width: 0;
   min-height: 0;
@@ -994,6 +996,7 @@ body.workspace-resizing * {
 
 .editor-pane-shell {
   display: flex;
+  /* The tab bar and pane are separate siblings; the shell must fill the grid row. */
   height: 100%;
   min-width: 0;
   min-height: 0;
@@ -1332,6 +1335,7 @@ body.workspace-resizing * {
 }
 
 .editor-surface-frame {
+  /* The placeholder is layered behind the editable surface; isolate keeps that local. */
   isolation: isolate;
   position: relative;
   flex: 1;
@@ -1346,6 +1350,7 @@ body.workspace-resizing * {
 }
 
 .editor-surface .ProseMirror {
+  /* WebKit can fail to repaint the inherited caret after placeholder changes. */
   caret-color: var(--editor-text);
   min-height: 100%;
   max-width: var(--glyphary-editor-max-width);
@@ -1742,6 +1747,7 @@ body.workspace-resizing * {
   width: 100%;
   height: 100%;
   max-height: 240px;
+  /* Gallery tiles crop for scanability; double-click opens the uncropped preview. */
   object-fit: cover;
   border: var(--border-width) solid var(--border-soft);
   border-radius: var(--radius-md);
@@ -2359,6 +2365,7 @@ body.workspace-resizing * {
   width: auto;
   height: auto;
   max-width: calc(100vw - 64px);
+  /* Reserve vertical room for the close affordance and optional caption. */
   max-height: calc(100vh - 128px);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

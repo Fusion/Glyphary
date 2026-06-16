@@ -3371,6 +3371,9 @@ function createGalleryExtension() {
   return Node.create({
     name: "gallery",
     group: "block",
+    // Galleries accept block content rather than image-only content because
+    // Markdown image tokens can arrive wrapped in paragraphs, and this leaves
+    // room for future captions without changing the persisted container syntax.
     content: "block+",
     defining: true,
 
@@ -4129,6 +4132,9 @@ function createVaultImageExtension(
 }
 
 function imageNodeMarkdown(node: ProseMirrorNode) {
+  // Gallery layout operates on selected ProseMirror image nodes. Reconstruct
+  // the same markdown form that the image extension would emit so local vault
+  // embeds remain ![[...]] instead of being rewritten to resolved webview URLs.
   const attrs = node.attrs ?? {};
   const vaultTarget =
     typeof attrs.vaultTarget === "string"
@@ -8186,6 +8192,9 @@ function App() {
       return;
     }
 
+    // Use the rendered image URL as the source of truth; vault images, normal
+    // markdown images, and gallery images have already been resolved by the
+    // image node renderer by the time the user double-clicks.
     event.preventDefault();
     event.stopPropagation();
     setImagePreview({
