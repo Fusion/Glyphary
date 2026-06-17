@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 import {
   calendarDateKey,
@@ -406,6 +406,7 @@ test("excalidraw drawings are embedded as vault files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
   const date = new Date("2023-01-02T17:37:41");
 
   assert.equal(defaultExcalidrawDirectory, "_assets_/drawings");
@@ -449,8 +450,8 @@ test("excalidraw drawings are embedded as vault files", () => {
   assert.match(css, /\.excalidraw-create-dialog-screen/);
   assert.match(css, /\.excalidraw-dialog-screen/);
   assert.match(css, /\.excalidraw-editor-shell/);
-  assert.match(backend, /fn create_excalidraw_file/);
-  assert.match(backend, /Drawing path must end with \.excalidraw/);
+  assert.match(vaultBackend, /pub\(crate\) fn create_excalidraw_file/);
+  assert.match(vaultBackend, /Drawing path must end with \.excalidraw/);
   assert.match(backend, /create_excalidraw_file,/);
 });
 
@@ -461,6 +462,151 @@ test("default drawer and vault asset settings match the current product defaults
   assert.equal(defaultVaultImageDirectory, "_assets_/images");
   assert.equal(defaultVaultDrawerWidth, 320);
   assert.equal(defaultInspectorDrawerWidth, 360);
+});
+
+test("tauri backend modules document their responsibilities and contracts", () => {
+  function rustFilesUnder(directory) {
+    return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = `${directory}/${entry.name}`;
+
+      if (entry.isDirectory()) {
+        return rustFilesUnder(path);
+      }
+
+      return entry.name.endsWith(".rs") ? [path] : [];
+    });
+  }
+
+  const rustFiles = rustFilesUnder("src-tauri/src");
+  const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+
+  for (const file of rustFiles) {
+    const source = readFileSync(file, "utf8");
+
+    assert.match(source, /^\/\/! /, `${file} should start with module docs`);
+    assert.match(source, /\/\/! Responsibilities:/, `${file} should document responsibilities`);
+    assert.match(source, /\/\/! Contracts:/, `${file} should document contracts`);
+  }
+
+  assert.match(backend, /mod defaults;/);
+  assert.match(backend, /mod models;/);
+  assert.match(backend, /#\[cfg\(test\)\]\nmod tests;/);
+  assert.doesNotMatch(backend, /mod tests \{/);
+  assert.doesNotMatch(rustFiles.join("\n"), /src-tauri\/src\/tests\.rs/);
+  assert.ok(rustFiles.includes("src-tauri/src/tests/mod.rs"));
+});
+
+test("frontend pure logic is split into documented helper modules", () => {
+  const helperFiles = readdirSync("src/lib")
+    .filter((file) => file.endsWith(".ts"))
+    .map((file) => `src/lib/${file}`);
+  const barrel = readFileSync("src/logic.ts", "utf8");
+
+  assert.ok(helperFiles.length >= 8);
+
+  for (const file of helperFiles) {
+    const source = readFileSync(file, "utf8");
+
+    assert.match(source, /^\/\*\*/, `${file} should start with a module header`);
+    assert.match(source, /Responsibilities:/, `${file} should document responsibilities`);
+    assert.match(source, /Contracts:/, `${file} should document contracts`);
+  }
+
+  assert.match(barrel, /Compatibility barrel for pure frontend logic/);
+  assert.match(barrel, /export \* from "\.\/lib\/markdown\.js"/);
+  assert.match(barrel, /export \* from "\.\/lib\/tabs\.js"/);
+  assert.doesNotMatch(barrel, /function splitMetaHeader/);
+});
+
+test("documentation website introduces core Glyphary workflows", () => {
+  const html = readFileSync("docs-site/glyphary.html", "utf8");
+  const redirect = readFileSync("docs-site/index.html", "utf8");
+  const manualHtml = readFileSync("docs-manual/index.html", "utf8");
+  const manualTheming = readFileSync("docs-manual/theming.html", "utf8");
+  const manualPlugins = readFileSync("docs-manual/plugins.html", "utf8");
+  const manualCss = readFileSync("docs-manual/styles.css", "utf8");
+  const manualScript = readFileSync("docs-manual/script.js", "utf8");
+  const css = readFileSync("docs-site/styles.css", "utf8");
+  const script = readFileSync("docs-site/script.js", "utf8");
+  const screenshots = readFileSync("docs-site/screenshots.md", "utf8");
+  const makefile = readFileSync("Makefile", "utf8");
+
+  assert.match(html, /Glyphary \| VoilaWeb/);
+  assert.match(html, /Your vault, made visible/);
+  assert.match(html, /VoilaWeb/);
+  assert.match(html, /Three steps from folder to workspace/);
+  assert.match(html, /Rich editing without giving up Markdown/);
+  assert.match(html, /⌘P/);
+  assert.match(html, /assets\/screenshots\/main-workspace\.png/);
+  assert.match(html, /assets\/screenshots\/split-editing\.png/);
+  assert.match(css, /\.navbar/);
+  assert.match(css, /\.glass-card/);
+  assert.match(css, /\.masonry/);
+  assert.match(css, /@media \(max-width: 960px\)/);
+  assert.match(script, /screenshotImages/);
+  assert.match(redirect, /url=\.\/glyphary\.html/);
+  assert.match(manualHtml, /Glyphary User Manual/);
+  assert.match(manualHtml, /href="https:\/\/github\.com\/glyphary\/glyphary"/);
+  assert.match(manualHtml, /href="\.\/theming\.html"/);
+  assert.match(manualHtml, /href="\.\/plugins\.html"/);
+  assert.doesNotMatch(manualHtml, /href="\.\.\/docs-site\/glyphary\.html"/);
+  assert.doesNotMatch(manualHtml, /href="\.\.\/docs\/theming\.md"/);
+  assert.doesNotMatch(manualHtml, /href="\.\.\/docs\/plugins\.md"/);
+  assert.match(manualHtml, /Open A Vault/);
+  assert.match(manualHtml, /File And Folder Actions/);
+  assert.match(manualHtml, /Command Palette/);
+  assert.match(manualHtml, /Metadata And Frontmatter/);
+  assert.match(manualHtml, /Markdown Features/);
+  assert.match(manualHtml, /Excalidraw drawings/);
+  assert.match(manualHtml, /Tidbits/);
+  assert.match(manualHtml, /Global tidbit capture/);
+  assert.match(manualHtml, /Theme Builder groups/);
+  assert.match(manualHtml, /CSS snippets/);
+  assert.match(manualHtml, /Minimal manifest/);
+  assert.match(manualHtml, /glyphary-wasm-transform@1/);
+  assert.match(manualHtml, /About And Debug/);
+  assert.match(manualHtml, /Vim Mode/);
+  assert.match(manualHtml, /Troubleshooting/);
+  assert.match(manualHtml, /\.\/assets\/screenshots\/main-workspace\.png/);
+  assert.match(manualHtml, /\.\/assets\/screenshots\/columns\.png/);
+  assert.match(manualHtml, /\.\/assets\/screenshots\/callouts\.png/);
+  assert.match(manualHtml, /\.\/assets\/screenshots\/collapse\.png/);
+  assert.match(manualHtml, /\.\/assets\/screenshots\/rich-links\.png/);
+  assert.match(manualHtml, /Plain text, Python, Shell, JavaScript, TypeScript/);
+  assert.match(manualHtml, /Insert table of contents/);
+  assert.match(manualHtml, /_assets_\/drawings/);
+  assert.match(manualHtml, /_assets_\/images/);
+  assert.match(manualHtml, /_snippets_/);
+  assert.match(manualHtml, /not for rendering live embedded HTML inside the note/);
+  assert.doesNotMatch(manualHtml, /\.\.\/docs-site\/assets/);
+  assert.match(manualTheming, /Glyphary Theming Reference/);
+  assert.match(manualTheming, /Loading Snippets/);
+  assert.match(manualTheming, /Stable Glyphary Variables/);
+  assert.match(manualTheming, /Obsidian Compatibility Variables/);
+  assert.match(manualTheming, /Supported Editor Selectors/);
+  assert.match(manualTheming, /--glyphary-editor-max-width/);
+  assert.match(manualTheming, /href="https:\/\/github\.com\/glyphary\/glyphary"/);
+  assert.match(manualTheming, /href="\.\/plugins\.html"/);
+  assert.match(manualTheming, /href="\.\/index\.html"/);
+  assert.match(manualPlugins, /Glyphary Plugin Authoring/);
+  assert.match(manualPlugins, /Plugin Location/);
+  assert.match(manualPlugins, /Manifest/);
+  assert.match(manualPlugins, /WASM Transform ABI/);
+  assert.match(manualPlugins, /glyphary-wasm-transform@1/);
+  assert.match(manualPlugins, /examples\/plugins\/uppercase_selection_rust/);
+  assert.match(manualPlugins, /href="https:\/\/github\.com\/glyphary\/glyphary"/);
+  assert.match(manualPlugins, /href="\.\/theming\.html"/);
+  assert.match(manualPlugins, /href="\.\/index\.html"/);
+  assert.match(manualCss, /\.manual-sidebar/);
+  assert.match(manualCss, /\.feature-table/);
+  assert.match(manualCss, /\.manual-toplinks a\.current/);
+  assert.match(manualScript, /filterManualSections/);
+  assert.match(screenshots, /Main workspace/);
+  assert.match(screenshots, /docs-site\/assets\/screenshots\/main-workspace\.png/);
+  assert.match(makefile, /^docs:/m);
+  assert.match(makefile, /^docs-open:/m);
+  assert.match(makefile, /^manual:/m);
+  assert.match(makefile, /^manual-open:/m);
 });
 
 test("motion layer keeps interface animations short and reduced-motion aware", () => {
@@ -486,6 +632,11 @@ test("vault plugins are settings-gated and run commands through safe host paths"
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const defaultsBackend = readFileSync("src-tauri/src/defaults.rs", "utf8");
+  const modelsBackend = readFileSync("src-tauri/src/models.rs", "utf8");
+  const pathsBackend = readFileSync("src-tauri/src/paths.rs", "utf8");
+  const pluginsBackend = readFileSync("src-tauri/src/plugins.rs", "utf8");
+  const pluginTestsBackend = readFileSync("src-tauri/src/tests/plugins.rs", "utf8");
   const worker = readFileSync("src/pluginWorker.ts", "utf8");
 
   assert.match(app, /type PluginManifest/);
@@ -520,20 +671,20 @@ test("vault plugins are settings-gated and run commands through safe host paths"
   assert.match(app, /data-glyphary-plugin-style/);
   assert.match(css, /\.plugin-list/);
   assert.match(css, /\.plugin-errors/);
-  assert.match(backend, /struct PluginManifest/);
-  assert.match(backend, /PLUGIN_RUNTIME_WASM_TRANSFORM_V1: &str = "glyphary-wasm-transform@1"/);
-  assert.match(backend, /Unsupported plugin runtime/);
-  assert.match(backend, /struct PluginWasmCommand/);
-  assert.match(backend, /fn list_vault_plugins/);
-  assert.match(backend, /fn read_plugin_styles/);
-  assert.match(backend, /fn read_plugin_template/);
-  assert.match(backend, /fn read_plugin_wasm/);
-  assert.match(backend, /PLUGIN_DIRECTORY: &str = "\.glyphary\/plugins"/);
-  assert.match(backend, /SETTINGS_DIRECTORY_NAME: &str = "\.glyphary"/);
-  assert.match(backend, /SETTINGS_CONFIG_FILE_NAME: &str = "config\.json"/);
-  assert.match(backend, /fn vault_settings_path/);
-  assert.match(backend, /Unsupported plugin permission/);
-  assert.match(backend, /lists_plugins_and_reads_only_declared_plugin_assets/);
+  assert.match(modelsBackend, /pub\(crate\) struct PluginManifest/);
+  assert.match(defaultsBackend, /PLUGIN_RUNTIME_WASM_TRANSFORM_V1: &str = "glyphary-wasm-transform@1"/);
+  assert.match(pluginsBackend, /Unsupported plugin runtime/);
+  assert.match(modelsBackend, /pub\(crate\) struct PluginWasmCommand/);
+  assert.match(pluginsBackend, /pub\(crate\) fn list_vault_plugins/);
+  assert.match(pluginsBackend, /pub\(crate\) fn read_plugin_styles/);
+  assert.match(pluginsBackend, /pub\(crate\) fn read_plugin_template/);
+  assert.match(pluginsBackend, /pub\(crate\) fn read_plugin_wasm/);
+  assert.match(defaultsBackend, /PLUGIN_DIRECTORY: &str = "\.glyphary\/plugins"/);
+  assert.match(defaultsBackend, /SETTINGS_DIRECTORY_NAME: &str = "\.glyphary"/);
+  assert.match(defaultsBackend, /SETTINGS_CONFIG_FILE_NAME: &str = "config\.json"/);
+  assert.match(pathsBackend, /pub\(crate\) fn vault_settings_path/);
+  assert.match(pluginsBackend, /Unsupported plugin permission/);
+  assert.match(pluginTestsBackend, /lists_plugins_and_reads_only_declared_plugin_assets/);
   assert.match(worker, /WASM plugin must export memory/);
   assert.match(worker, /WASM plugin must export alloc\(length\)/);
   assert.match(worker, /WASM plugin must export transform\(pointer, length\)/);
@@ -543,12 +694,15 @@ test("wikilinks use the vault filename index for navigation and insertion", () =
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const modelsBackend = readFileSync("src-tauri/src/models.rs", "utf8");
+  const vaultTestsBackend = readFileSync("src-tauri/src/tests/vault.rs", "utf8");
+  const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
 
-  assert.match(backend, /struct VaultIndexedFile/);
-  assert.match(backend, /fn list_vault_markdown_files/);
-  assert.match(backend, /fn walk_note_files/);
+  assert.match(modelsBackend, /pub\(crate\) struct VaultIndexedFile/);
+  assert.match(vaultBackend, /pub\(crate\) fn list_vault_markdown_files/);
+  assert.match(vaultBackend, /pub\(crate\) fn walk_note_files/);
   assert.match(backend, /list_vault_markdown_files,/);
-  assert.match(backend, /lists_vault_markdown_files_for_wikilink_index/);
+  assert.match(vaultTestsBackend, /lists_vault_markdown_files_for_wikilink_index/);
   assert.match(app, /type VaultIndexedFile/);
   assert.match(app, /type WikiLinkPickerState/);
   assert.match(app, /createWikiLinkExtension/);
@@ -660,6 +814,9 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
   const main = readFileSync("src/main.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const defaultsBackend = readFileSync("src-tauri/src/defaults.rs", "utf8");
+  const modelsBackend = readFileSync("src-tauri/src/models.rs", "utf8");
+  const shortcutsBackend = readFileSync("src-tauri/src/shortcuts.rs", "utf8");
   const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
   const capabilities = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
   const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
@@ -673,17 +830,17 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
   assert.ok(capabilities.permissions.includes("macos-permissions:default"));
   assert.ok(capabilities.permissions.includes("core:window:allow-close"));
   assert.ok(capabilities.permissions.includes("core:webview:allow-create-webview-window"));
-  assert.match(backend, /global_shortcut_enabled: false/);
-  assert.match(backend, /default_tidbit_global_shortcut/);
+  assert.match(defaultsBackend, /global_shortcut_enabled: false/);
+  assert.match(defaultsBackend, /default_tidbit_global_shortcut/);
   assert.match(backend, /tauri_plugin_global_shortcut::Builder::new\(\)\.build\(\)/);
   assert.match(backend, /tauri_plugin_macos_permissions::init\(\)/);
-  assert.match(backend, /struct TidbitShortcutState/);
-  assert.match(backend, /fn register_tidbit_global_shortcut/);
-  assert.match(backend, /fn unregister_tidbit_global_shortcut/);
-  assert.match(backend, /fn tidbit_global_shortcut_status/);
-  assert.match(backend, /fn test_tidbit_global_shortcut_event/);
-  assert.match(backend, /app\.global_shortcut\(\)\s*\.on_shortcut/);
-  assert.match(backend, /app\.emit\("tidbit-global-shortcut"/);
+  assert.match(modelsBackend, /pub\(crate\) struct TidbitShortcutState/);
+  assert.match(shortcutsBackend, /pub\(crate\) fn register_tidbit_global_shortcut/);
+  assert.match(shortcutsBackend, /pub\(crate\) fn unregister_tidbit_global_shortcut/);
+  assert.match(shortcutsBackend, /pub\(crate\) fn tidbit_global_shortcut_status/);
+  assert.match(shortcutsBackend, /pub\(crate\) fn test_tidbit_global_shortcut_event/);
+  assert.match(shortcutsBackend, /app\.global_shortcut\(\)\s*\.on_shortcut/);
+  assert.match(shortcutsBackend, /app\.emit\("tidbit-global-shortcut"/);
   assert.match(backend, /register_tidbit_global_shortcut,/);
   assert.match(backend, /unregister_tidbit_global_shortcut,/);
   assert.match(backend, /tidbit_global_shortcut_status,/);
@@ -832,6 +989,7 @@ test("vault rows expose context menu actions for folders and files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
 
   assert.match(app, /onContextMenu=\{\(event\) => handleFolderContextMenu\(entry, event\)\}/);
@@ -875,12 +1033,12 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(css, /\.folder-action-dialog-warning/);
   assert.match(css, /\.vault-folder-tree/);
   assert.match(css, /\.folder-tree-select/);
-  assert.match(backend, /fn create_note_in_directory/);
-  assert.match(backend, /fn create_directory_in_directory/);
-  assert.match(backend, /fn rename_vault_directory/);
-  assert.match(backend, /fn move_vault_directory/);
-  assert.match(backend, /fn move_vault_file/);
-  assert.match(backend, /fn delete_vault_file/);
+  assert.match(vaultBackend, /pub\(crate\) fn create_note_in_directory/);
+  assert.match(vaultBackend, /pub\(crate\) fn create_directory_in_directory/);
+  assert.match(vaultBackend, /pub\(crate\) fn rename_vault_directory/);
+  assert.match(vaultBackend, /pub\(crate\) fn move_vault_directory/);
+  assert.match(vaultBackend, /pub\(crate\) fn move_vault_file/);
+  assert.match(vaultBackend, /pub\(crate\) fn delete_vault_file/);
   assert.notEqual(config.app.windows[0].hiddenTitle, true);
 });
 
@@ -898,6 +1056,12 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const defaultsBackend = readFileSync("src-tauri/src/defaults.rs", "utf8");
+  const modelsBackend = readFileSync("src-tauri/src/models.rs", "utf8");
+  const snippetsBackend = readFileSync("src-tauri/src/snippets.rs", "utf8");
+  const settingsTestsBackend = readFileSync("src-tauri/src/tests/settings.rs", "utf8");
+  const themesBackend = readFileSync("src-tauri/src/themes.rs", "utf8");
+  const windowingBackend = readFileSync("src-tauri/src/windowing.rs", "utf8");
   const cargo = readFileSync("src-tauri/Cargo.toml", "utf8");
 
   assert.match(css, /--background-primary:/);
@@ -1048,8 +1212,8 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(css, /data-window-glass="enabled"/);
   assert.match(css, /\.settings-header\.dragging/);
   assert.match(css, /cursor: grab/);
-  assert.match(backend, /Could not keep titlebar contrast material/);
-  assert.doesNotMatch(backend, /set_effects\(None/);
+  assert.match(windowingBackend, /Could not keep titlebar contrast material/);
+  assert.doesNotMatch(windowingBackend, /set_effects\(None/);
   assert.match(css, /\.theme-preset-grid/);
   assert.match(css, /\.theme-preset-card/);
   assert.match(css, /\.app-shell\.theme-colorful-headings/);
@@ -1066,21 +1230,22 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.doesNotMatch(css, /data-glyphary-heading-underlines="enabled"/);
   assert.doesNotMatch(css, /data-glyphary-heading-anchors="enabled"/);
   assert.doesNotMatch(css, /data-glyphary-rich-callouts="enabled"/);
-  assert.match(backend, /"--glyphary-font-editor"/);
-  assert.match(backend, /"--glyphary-callout-padding"/);
-  assert.match(backend, /"--glyphary-callout-warning-color"/);
-  assert.match(backend, /"--glyphary-editor-max-width"/);
-  assert.match(backend, /"--glyphary-radius-md"/);
-  assert.match(backend, /"--syntax-purple"/);
-  assert.match(backend, /struct VaultThemeOptions/);
-  assert.match(backend, /struct VaultThemeCallouts/);
-  assert.match(backend, /struct CssSnippetSettings/);
-  assert.match(backend, /fn list_css_snippets/);
-  assert.match(backend, /fn read_css_snippets/);
-  assert.match(backend, /fn clean_css_snippet_name/);
-  assert.match(backend, /THEME_CALLOUT_STYLE_ALLOWLIST/);
-  assert.match(backend, /THEME_CALLOUT_ICON_ALLOWLIST/);
-  assert.match(backend, /writes_vault_theme_options_without_tokens/);
+  assert.match(defaultsBackend, /"--glyphary-font-editor"/);
+  assert.match(defaultsBackend, /"--glyphary-callout-padding"/);
+  assert.match(defaultsBackend, /"--glyphary-callout-warning-color"/);
+  assert.match(defaultsBackend, /"--glyphary-editor-max-width"/);
+  assert.match(defaultsBackend, /"--glyphary-radius-md"/);
+  assert.match(defaultsBackend, /"--syntax-purple"/);
+  assert.match(modelsBackend, /pub\(crate\) struct VaultThemeOptions/);
+  assert.match(modelsBackend, /pub\(crate\) struct VaultThemeCallouts/);
+  assert.match(modelsBackend, /pub\(crate\) struct CssSnippetSettings/);
+  assert.match(snippetsBackend, /pub\(crate\) fn list_css_snippets/);
+  assert.match(snippetsBackend, /pub\(crate\) fn read_css_snippets/);
+  assert.match(snippetsBackend, /pub\(crate\) fn clean_css_snippet_name/);
+  assert.match(defaultsBackend, /THEME_CALLOUT_STYLE_ALLOWLIST/);
+  assert.match(defaultsBackend, /THEME_CALLOUT_ICON_ALLOWLIST/);
+  assert.match(themesBackend, /clean_theme_callouts/);
+  assert.match(settingsTestsBackend, /writes_vault_theme_options_without_tokens/);
   assert.equal(config.app.macOSPrivateApi, true);
   assert.equal(config.app.windows[0].transparent, true);
   assert.equal(config.bundle.publisher, "Glyphary contributors");
@@ -1089,11 +1254,11 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(backend, /name: Some\("Glyphary"\.into\(\)\)/);
   assert.match(backend, /A local-first Markdown workspace/);
   assert.match(backend, /Built with Tauri, React, Tiptap/);
-  assert.match(backend, /struct AppearanceSettings/);
-  assert.match(backend, /glass_effect/);
-  assert.match(backend, /preset_id/);
-  assert.match(backend, /Effect::UnderWindowBackground/);
-  assert.match(backend, /set_background_color\(Some\(Color\(0, 0, 0, 0\)\)\)/);
+  assert.match(modelsBackend, /pub\(crate\) struct AppearanceSettings/);
+  assert.match(modelsBackend, /glass_effect/);
+  assert.match(modelsBackend, /preset_id/);
+  assert.match(windowingBackend, /Effect::UnderWindowBackground/);
+  assert.match(windowingBackend, /set_background_color\(Some\(Color\(0, 0, 0, 0\)\)\)/);
 });
 
 test("vim-style editing is wired behind a settings option", () => {
@@ -1160,6 +1325,7 @@ test("quick command palette exposes initial editor commands", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
 
   assert.match(app, /type CommandPaletteCommand/);
   assert.match(app, /commandPaletteCommands/);
@@ -1190,7 +1356,7 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(css, /\.command-palette-screen/);
   assert.match(css, /\.command-palette-card/);
   assert.match(css, /\.command-palette-results/);
-  assert.match(backend, /fn create_vault_markdown_file/);
+  assert.match(vaultBackend, /pub\(crate\) fn create_vault_markdown_file/);
   assert.match(backend, /create_vault_markdown_file,/);
 });
 

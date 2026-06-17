@@ -509,6 +509,39 @@ Run the Vite web preview:
 make web
 ```
 
+Serve the Voilà-style product page:
+
+```sh
+make docs
+```
+
+Then open `http://127.0.0.1:4174/docs-site/glyphary.html`.
+
+Open the product page directly from disk:
+
+```sh
+make docs-open
+```
+
+The Voilà-style Glyphary product page lives at `docs-site/glyphary.html`. Its
+screenshot capture checklist is in `docs-site/screenshots.md`.
+
+Serve the user manual:
+
+```sh
+make manual
+```
+
+Then open `http://127.0.0.1:4174/docs-manual/`.
+
+Open the user manual directly from disk:
+
+```sh
+make manual-open
+```
+
+The task-oriented onboarding manual lives in `docs-manual/`.
+
 Build the frontend:
 
 ```sh
@@ -618,6 +651,8 @@ Important files:
 - `src/App.css`: app styling, drawers, editor surface, themes.
 - `src/logic.ts`: pure frontend helper logic used by app and tests.
 - `tests/logic.test.mjs`: frontend unit tests.
+- `docs-site/`: Voilà-style static product page for Glyphary.
+- `docs-manual/`: task-oriented user manual and onboarding documentation.
 - `src-tauri/src/lib.rs`: Tauri commands, menus, vault filesystem behavior, Rust tests.
 - `src-tauri/tauri.conf.json`: Tauri app configuration.
 - `Makefile`: development, build, test, and release targets.

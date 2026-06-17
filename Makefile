@@ -2,13 +2,17 @@ APP_NAME := Glyphary
 APP_BUNDLE := src-tauri/target/release/bundle/macos/$(APP_NAME).app
 DMG := src-tauri/target/release/bundle/dmg/$(APP_NAME)_0.1.0_aarch64.dmg
 
-.PHONY: help install dev web build check test audit prod-app release run-app open-app open-dmg clean
+.PHONY: help install dev web docs docs-open manual manual-open build check test audit prod-app release run-app open-app open-dmg clean
 
 help:
 	@echo "Targets:"
 	@echo "  make install   Install npm dependencies"
 	@echo "  make dev       Run the Tauri desktop app in development mode"
 	@echo "  make web       Run the Vite browser preview at http://127.0.0.1:1420"
+	@echo "  make docs      Serve the Voilà-style product page at http://127.0.0.1:4174/docs-site/glyphary.html"
+	@echo "  make docs-open Open the Voilà-style product page file directly"
+	@echo "  make manual    Serve the user manual at http://127.0.0.1:4174/docs-manual/"
+	@echo "  make manual-open Open the user manual file directly"
 	@echo "  make build     Build the frontend"
 	@echo "  make check     Typecheck/build frontend and check the Rust shell"
 	@echo "  make test      Run frontend and Rust unit tests"
@@ -27,6 +31,18 @@ dev:
 
 web:
 	npm run dev -- --host 127.0.0.1
+
+docs:
+	python3 -m http.server 4174 --bind 127.0.0.1
+
+docs-open:
+	open docs-site/glyphary.html
+
+manual:
+	python3 -m http.server 4174 --bind 127.0.0.1
+
+manual-open:
+	open docs-manual/index.html
 
 build:
 	npm run build
