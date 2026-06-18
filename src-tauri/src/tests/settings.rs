@@ -92,6 +92,7 @@ fn reads_default_vault_settings_when_missing() {
     assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
     assert!(!settings.editor.vim_mode);
     assert!(!settings.appearance.glass_effect);
+    assert_eq!(settings.appearance.glass_opacity, DEFAULT_GLASS_OPACITY);
     assert!(!settings.debug.enabled);
     assert_eq!(
         settings.css_snippets.directory,
@@ -126,7 +127,10 @@ fn writes_vault_settings_file() {
                 global_shortcut: "CommandOrControl+Shift+Space".into(),
             },
             editor: EditorSettings { vim_mode: true },
-            appearance: AppearanceSettings { glass_effect: true },
+            appearance: AppearanceSettings {
+                glass_effect: true,
+                glass_opacity: 0.42,
+            },
             debug: DebugSettings { enabled: true },
             css_snippets: CssSnippetSettings {
                 directory: "themes/css".into(),
@@ -149,6 +153,7 @@ fn writes_vault_settings_file() {
     );
     assert!(settings.editor.vim_mode);
     assert!(settings.appearance.glass_effect);
+    assert_eq!(settings.appearance.glass_opacity, 0.42);
     assert!(settings.debug.enabled);
     assert_eq!(settings.css_snippets.directory, "themes/css");
     assert_eq!(settings.css_snippets.enabled, vec!["quiet.css", "wide.css"]);
@@ -156,6 +161,36 @@ fn writes_vault_settings_file() {
     assert!(fs::read_to_string(vault_settings_path(&root))
         .expect("settings should be readable")
         .contains("media/images"));
+
+    fs::remove_dir_all(root).expect("test root should be removed");
+}
+
+#[test]
+fn clamps_glass_opacity_settings() {
+    let root = test_root();
+
+    let settings = write_vault_settings(
+        root.to_string_lossy().into_owned(),
+        VaultSettings {
+            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
+            frontmatter_pills: FrontmatterPillSettings::default(),
+            files: FileDisplaySettings::default(),
+            autosave: AutosaveSettings::default(),
+            tidbits: TidbitSettings::default(),
+            editor: EditorSettings::default(),
+            appearance: AppearanceSettings {
+                glass_effect: true,
+                glass_opacity: 10.0,
+            },
+            debug: DebugSettings::default(),
+            css_snippets: CssSnippetSettings::default(),
+            plugins: PluginSettings::default(),
+            theme: None,
+        },
+    )
+    .expect("settings should write");
+
+    assert_eq!(settings.appearance.glass_opacity, MAX_GLASS_OPACITY);
 
     fs::remove_dir_all(root).expect("test root should be removed");
 }

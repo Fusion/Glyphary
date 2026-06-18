@@ -40,6 +40,9 @@ export const appearanceStorageKey = "glyphary.appearance";
 export const closedDrawerWidth = 48;
 export const workspaceResizeHandleWidth = 10;
 export const defaultCssSnippetDirectory = "_snippets_";
+export const defaultGlassOpacity = 0.58;
+export const minimumGlassOpacity = 0.24;
+export const maximumGlassOpacity = 0.9;
 
 export const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
   enabled: true,
@@ -70,6 +73,7 @@ export const defaultTidbitSettings: TidbitSettings = {
 
 export const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
   glassEffect: false,
+  glassOpacity: defaultGlassOpacity,
   statusBarVisible: true,
   sectionCorners: "rounded",
   workspaceMargin: "comfortable",
@@ -352,6 +356,10 @@ export function isRunningOnMacOs() {
 export function normalizeVaultAppearanceSettings(
   settings: VaultAppearanceSettings | undefined | null,
 ) {
+  const glassOpacity =
+    typeof settings?.glassOpacity === "number" && Number.isFinite(settings.glassOpacity)
+      ? Math.min(maximumGlassOpacity, Math.max(minimumGlassOpacity, settings.glassOpacity))
+      : defaultVaultAppearanceSettings.glassOpacity;
   const sectionCorners =
     settings?.sectionCorners === "square" || settings?.sectionCorners === "rounded"
       ? settings.sectionCorners
@@ -365,6 +373,7 @@ export function normalizeVaultAppearanceSettings(
 
   return {
     glassEffect: settings?.glassEffect ?? defaultVaultAppearanceSettings.glassEffect,
+    glassOpacity,
     statusBarVisible:
       settings?.statusBarVisible ?? defaultVaultAppearanceSettings.statusBarVisible,
     sectionCorners,
@@ -381,6 +390,7 @@ export function sameVaultAppearanceSettings(
 
   return (
     normalizedLeft.glassEffect === normalizedRight.glassEffect &&
+    normalizedLeft.glassOpacity === normalizedRight.glassOpacity &&
     normalizedLeft.statusBarVisible === normalizedRight.statusBarVisible &&
     normalizedLeft.sectionCorners === normalizedRight.sectionCorners &&
     normalizedLeft.workspaceMargin === normalizedRight.workspaceMargin

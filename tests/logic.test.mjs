@@ -1182,7 +1182,13 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(settings, /statusBarVisible: true/);
   assert.match(settings, /sectionCorners: "rounded"/);
   assert.match(settings, /workspaceMargin: "comfortable"/);
+  assert.match(settings, /defaultGlassOpacity = 0\.58/);
+  assert.match(settings, /minimumGlassOpacity = 0\.24/);
+  assert.match(settings, /maximumGlassOpacity = 0\.9/);
   assert.match(app, /Use glass window effect/);
+  assert.match(app, /Glass opacity/);
+  assert.match(app, /type="range"/);
+  assert.match(app, /--glyphary-glass-opacity/);
   assert.match(app, /Show status bar/);
   assert.match(app, /Use rounded section corners/);
   assert.match(app, /Workspace margins/);
@@ -1217,6 +1223,8 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /closeSettingsOnEscape/);
   assert.match(app, /event\.key === "Escape"/);
   assert.match(css, /data-window-glass="enabled"/);
+  assert.match(css, /--glass-inner-overlay/);
+  assert.match(css, /\.editor-surface-frame/);
   assert.match(css, /\.settings-header\.dragging/);
   assert.match(css, /cursor: grab/);
   assert.match(windowingBackend, /Could not keep titlebar contrast material/);
@@ -1263,6 +1271,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(backend, /Built with Tauri, React, Tiptap/);
   assert.match(modelsBackend, /pub\(crate\) struct AppearanceSettings/);
   assert.match(modelsBackend, /glass_effect/);
+  assert.match(modelsBackend, /glass_opacity/);
   assert.match(modelsBackend, /preset_id/);
   assert.match(windowingBackend, /Effect::UnderWindowBackground/);
   assert.match(windowingBackend, /set_background_color\(Some\(Color\(0, 0, 0, 0\)\)\)/);

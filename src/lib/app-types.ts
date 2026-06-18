@@ -158,6 +158,7 @@ export type TidbitShortcutStatus = {
 
 export type VaultAppearanceSettings = {
   glassEffect: boolean;
+  glassOpacity: number;
   statusBarVisible: boolean;
   sectionCorners: "rounded" | "square";
   workspaceMargin: "compact" | "comfortable" | "spacious";

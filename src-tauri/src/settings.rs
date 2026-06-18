@@ -28,6 +28,7 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
     let theme = clean_theme(settings.theme)?;
     let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
     let tidbits = clean_tidbit_settings(settings.tidbits);
+    let appearance = clean_appearance_settings(settings.appearance);
     let css_snippets = clean_css_snippet_settings(settings.css_snippets)?;
     let plugins = clean_plugin_settings(settings.plugins)?;
 
@@ -41,12 +42,26 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
             autosave: settings.autosave,
             tidbits,
             editor: settings.editor,
-            appearance: settings.appearance,
+            appearance,
             debug: settings.debug,
             css_snippets,
             plugins,
             theme,
         })
+    }
+}
+pub(crate) fn clean_appearance_settings(settings: AppearanceSettings) -> AppearanceSettings {
+    let glass_opacity = if settings.glass_opacity.is_finite() {
+        settings
+            .glass_opacity
+            .clamp(MIN_GLASS_OPACITY, MAX_GLASS_OPACITY)
+    } else {
+        DEFAULT_GLASS_OPACITY
+    };
+
+    AppearanceSettings {
+        glass_effect: settings.glass_effect,
+        glass_opacity,
     }
 }
 pub(crate) fn clean_tidbit_settings(settings: TidbitSettings) -> TidbitSettings {

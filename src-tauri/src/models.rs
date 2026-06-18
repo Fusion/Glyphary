@@ -117,10 +117,12 @@ pub(crate) struct TidbitShortcutStatus {
     pub(crate) registered: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct AppearanceSettings {
     pub(crate) glass_effect: bool,
+    #[serde(default = "crate::defaults::default_glass_opacity")]
+    pub(crate) glass_opacity: f64,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

@@ -245,17 +245,21 @@ body {
 }
 
 :root[data-window-glass="enabled"] {
-  --glass-app-overlay: rgba(243, 241, 235, 0.18);
-  --glass-surface-overlay: rgba(255, 253, 250, 0.58);
-  --glass-muted-overlay: rgba(250, 248, 242, 0.36);
-  --glass-border-overlay: rgba(222, 217, 206, 0.48);
+  --glass-app-overlay: rgba(243, 241, 235, calc(var(--glyphary-glass-opacity, 0.58) * 0.18));
+  --glass-surface-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.55));
+  --glass-muted-overlay: rgba(250, 248, 242, calc(var(--glyphary-glass-opacity, 0.58) * 0.38));
+  --glass-inner-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.26));
+  --glass-control-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.34));
+  --glass-border-overlay: rgba(222, 217, 206, calc(var(--glyphary-glass-opacity, 0.58) * 0.83));
 }
 
 :root[data-window-glass="enabled"][data-resolved-theme="dark"] {
-  --glass-app-overlay: rgba(21, 24, 21, 0.24);
-  --glass-surface-overlay: rgba(28, 33, 29, 0.62);
-  --glass-muted-overlay: rgba(32, 39, 32, 0.42);
-  --glass-border-overlay: rgba(52, 59, 53, 0.52);
+  --glass-app-overlay: rgba(21, 24, 21, calc(var(--glyphary-glass-opacity, 0.58) * 0.24));
+  --glass-surface-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.64));
+  --glass-muted-overlay: rgba(32, 39, 32, calc(var(--glyphary-glass-opacity, 0.58) * 0.44));
+  --glass-inner-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.32));
+  --glass-control-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.42));
+  --glass-border-overlay: rgba(52, 59, 53, calc(var(--glyphary-glass-opacity, 0.58) * 0.9));
 }
 
 :root[data-window-glass="enabled"],
@@ -267,6 +271,15 @@ body {
 :root[data-window-glass="enabled"] .app-shell {
   background: var(--glass-app-overlay);
   backdrop-filter: blur(34px) saturate(1.26);
+}
+
+:root[data-window-glass="enabled"] .workspace,
+:root[data-window-glass="enabled"] .editor-groups,
+:root[data-window-glass="enabled"] .editor-pane-shell,
+:root[data-window-glass="enabled"] .drawer-panel,
+:root[data-window-glass="enabled"] .editor-surface,
+:root[data-window-glass="enabled"] .editor-surface .ProseMirror {
+  background: transparent;
 }
 
 :root[data-window-glass="enabled"] .editor-pane,
@@ -286,7 +299,57 @@ body {
 :root[data-window-glass="enabled"] .vault-content,
 :root[data-window-glass="enabled"] .drawer-content,
 :root[data-window-glass="enabled"] .drawer-header,
+:root[data-window-glass="enabled"] .vault-path,
+:root[data-window-glass="enabled"] .vault-search,
+:root[data-window-glass="enabled"] .metadata-shell,
+:root[data-window-glass="enabled"] .toolbar,
+:root[data-window-glass="enabled"] .pane-header,
+:root[data-window-glass="enabled"] .calendar-toolbar,
 :root[data-window-glass="enabled"] .settings-tabs {
+  background: var(--glass-muted-overlay);
+}
+
+:root[data-window-glass="enabled"] .editor-surface-frame,
+:root[data-window-glass="enabled"] .markdown-import textarea,
+:root[data-window-glass="enabled"] .drawer-pane pre,
+:root[data-window-glass="enabled"] .calendar-day,
+:root[data-window-glass="enabled"] .empty-toc,
+:root[data-window-glass="enabled"] .settings-panel input,
+:root[data-window-glass="enabled"] .settings-panel select,
+:root[data-window-glass="enabled"] .metadata-shell input,
+:root[data-window-glass="enabled"] .metadata-shell textarea,
+:root[data-window-glass="enabled"] .vault-search input {
+  background: var(--glass-inner-overlay);
+}
+
+:root[data-window-glass="enabled"] .secondary-action,
+:root[data-window-glass="enabled"] .inline-action,
+:root[data-window-glass="enabled"] .tool-button,
+:root[data-window-glass="enabled"] .appearance-control,
+:root[data-window-glass="enabled"] .document-tab,
+:root[data-window-glass="enabled"] .file-menu-popover,
+:root[data-window-glass="enabled"] .search-options button,
+:root[data-window-glass="enabled"] .shortcut-capture-control button,
+:root[data-window-glass="enabled"] .settings-inline-action {
+  border-color: var(--glass-border-overlay);
+  background: var(--glass-control-overlay);
+}
+
+:root[data-window-glass="enabled"] .document-tab.active,
+:root[data-window-glass="enabled"] .search-options button.active,
+:root[data-window-glass="enabled"] .tool-button.active,
+:root[data-window-glass="enabled"] .appearance-button.active {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--glass-border-overlay));
+  background: color-mix(in srgb, var(--accent) 24%, var(--glass-control-overlay));
+  color: var(--accent);
+}
+
+:root[data-window-glass="enabled"] .appearance-button:hover,
+:root[data-window-glass="enabled"] .appearance-button:focus-visible,
+:root[data-window-glass="enabled"] .file-menu-popover button:not(:disabled):hover,
+:root[data-window-glass="enabled"] .search-options button:hover,
+:root[data-window-glass="enabled"] .toc-entry:hover,
+:root[data-window-glass="enabled"] .vault-entry:hover {
   background: var(--glass-muted-overlay);
 }
 
@@ -2976,6 +3039,42 @@ body.workspace-resizing * {
   color: var(--heading);
   font-size: 0.8rem;
   text-transform: none;
+}
+
+.settings-panel .settings-range-control {
+  display: grid;
+  width: min(100%, 420px);
+  gap: 7px;
+}
+
+.settings-panel .settings-range-control > span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--heading);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: none;
+}
+
+.settings-panel .settings-range-control strong {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.settings-panel .settings-range-control input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.settings-panel .settings-range-control input[type="range"]:disabled {
+  opacity: 0.44;
+}
+
+.settings-panel .settings-range-control small {
+  line-height: 1.35;
 }
 
 .callout-icon-grid {

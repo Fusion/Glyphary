@@ -84,6 +84,8 @@ import {
   defaultTidbitPathPattern,
   defaultTidbitSettings,
   defaultVaultAppearanceSettings,
+  maximumGlassOpacity,
+  minimumGlassOpacity,
   closedDrawerWidth,
   cssColorToHex,
   emptyCalloutMarkdown,
@@ -3969,7 +3971,13 @@ function App() {
     document.documentElement.dataset.windowGlass = vaultAppearanceDraft.glassEffect
       ? "enabled"
       : "disabled";
+    document.documentElement.style.setProperty(
+      "--glyphary-glass-opacity",
+      String(normalizeVaultAppearanceSettings(vaultAppearanceDraft).glassOpacity),
+    );
+  }, [vaultAppearanceDraft.glassEffect, vaultAppearanceDraft.glassOpacity]);
 
+  useEffect(() => {
     const shouldReportPreview = windowGlassPreviewAppliedRef.current;
     windowGlassPreviewAppliedRef.current = true;
 
@@ -9052,6 +9060,34 @@ function App() {
                         }}
                       />
                       <span>Use glass window effect</span>
+                    </label>
+                    <label className="settings-range-control">
+                      <span>
+                        Glass opacity
+                        <strong>
+                          {Math.round(normalizedVaultAppearanceDraft.glassOpacity * 100)}%
+                        </strong>
+                      </span>
+                      <input
+                        aria-label="Glass opacity"
+                        disabled={!vaultRoot || !normalizedVaultAppearanceDraft.glassEffect}
+                        max={maximumGlassOpacity}
+                        min={minimumGlassOpacity}
+                        step="0.01"
+                        type="range"
+                        value={normalizedVaultAppearanceDraft.glassOpacity}
+                        onChange={(event) => {
+                          const glassOpacity = Number(event.currentTarget.value);
+                          setVaultAppearanceDraft((settings) => ({
+                            ...normalizeVaultAppearanceSettings(settings),
+                            glassOpacity,
+                          }));
+                        }}
+                      />
+                      <small>
+                        Lower values reveal more of the native window material through every
+                        drawer and editor layer.
+                      </small>
                     </label>
                   </section>
                   <section className="settings-section" aria-label="Layout appearance">

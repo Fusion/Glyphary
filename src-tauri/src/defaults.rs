@@ -21,6 +21,9 @@ pub(crate) const DEFAULT_FRONTMATTER_PILL_HEADER: &str = "tags";
 pub(crate) const DEFAULT_TIDBIT_PATH_PATTERN: &str =
     "__transit__/Objects/tidbit-{{date:YYYY-mm-DD-hh-mm-ss}}.md";
 pub(crate) const DEFAULT_CSS_SNIPPET_DIRECTORY: &str = "_snippets_";
+pub(crate) const DEFAULT_GLASS_OPACITY: f64 = 0.58;
+pub(crate) const MIN_GLASS_OPACITY: f64 = 0.24;
+pub(crate) const MAX_GLASS_OPACITY: f64 = 0.9;
 pub(crate) const PLUGIN_DIRECTORY: &str = ".glyphary/plugins";
 pub(crate) const PLUGIN_MANIFEST_FILE: &str = "plugin.json";
 // Current v1 plugin runtime: a pure WASM transform loaded by the frontend worker.
@@ -128,6 +131,10 @@ pub(crate) fn default_callout_style() -> String {
     "plain".into()
 }
 
+pub(crate) fn default_glass_opacity() -> f64 {
+    DEFAULT_GLASS_OPACITY
+}
+
 pub(crate) fn default_callout_icons() -> HashMap<String, String> {
     HashMap::from([
         ("note".into(), "info".into()),
@@ -182,6 +189,15 @@ impl Default for TidbitSettings {
             path_pattern: DEFAULT_TIDBIT_PATH_PATTERN.into(),
             global_shortcut_enabled: false,
             global_shortcut: default_tidbit_global_shortcut(),
+        }
+    }
+}
+
+impl Default for AppearanceSettings {
+    fn default() -> Self {
+        Self {
+            glass_effect: false,
+            glass_opacity: DEFAULT_GLASS_OPACITY,
         }
     }
 }
