@@ -63,17 +63,29 @@ import {
   composeMarkdown,
   defaultExcalidrawDirectory,
   defaultDrawerOpen,
-  defaultFrontmatterPillHeader,
   defaultInspectorDrawerWidth,
   defaultMetaDelimiter,
-  defaultTidbitGlobalShortcut,
   defaultVaultDrawerOpen,
   defaultVaultAssetDirectory,
   defaultVaultImageDirectory,
   defaultVaultDrawerWidth,
   displayPath,
   displayVaultRelativePath,
+  defaultAutosaveSettings,
+  defaultCssSnippetDirectory,
+  defaultCssSnippetSettings,
+  defaultDebugSettings,
+  defaultEditorBehaviorSettings,
+  defaultFileDisplaySettings,
+  defaultFrontmatterPillHeader,
+  defaultFrontmatterPillSettings,
+  defaultPluginSettings,
+  defaultTidbitGlobalShortcut,
   defaultTidbitPathPattern,
+  defaultTidbitSettings,
+  defaultVaultAppearanceSettings,
+  closedDrawerWidth,
+  cssColorToHex,
   emptyCalloutMarkdown,
   emptyCollapseMarkdown,
   emptyColumnsMarkdown,
@@ -88,24 +100,103 @@ import {
   frontmatterListValues,
   initialMarkdown,
   isMacOsPlatform,
+  isRunningOnMacOs,
   isSupportedImageFile,
+  keyboardEventMatchesShortcut,
   markdownHeadings,
   minEditorWorkspaceWidth,
   minResizableDrawerWidth,
   monthTitle,
+  normalizeAutosaveSettings,
+  normalizeCssSnippetSettings,
+  normalizeDebugSettings,
+  normalizeEditorBehaviorSettings,
+  normalizeFileDisplaySettings,
+  normalizeFrontmatterPillSettings,
+  normalizePluginSettings,
+  normalizeTidbitSettings,
+  normalizeVaultAppearanceSettings,
   parentDirectory,
+  readPersistedAppearance,
+  readPersistedWorkspace,
   recentFilesWithOpenedFile,
   remainingGroupAfterSplitPaneClose,
+  resolveAppearance,
   richLinkMarkdown,
   sameCalendarDate,
+  sameAutosaveSettings,
+  sameCssSnippetSettings,
+  sameDebugSettings,
+  sameEditorBehaviorSettings,
+  sameFileDisplaySettings,
+  sameFrontmatterPillSettings,
+  samePluginSettings,
+  sameTidbitSettings,
+  sameVaultAppearanceSettings,
+  shortcutFromKeyboardEvent,
   splitMetaHeader,
   splitHasDirtyTabs,
   tabIdForFile,
   tabsAfterClose,
   weekdayLabels,
+  workspaceResizeHandleWidth,
+  writePersistedAppearance,
+  writePersistedWorkspace,
 } from "./logic";
-import type { MarkdownParts, SplitGroupId } from "./logic";
-import type { TocEntry } from "./logic";
+import type {
+  ActiveFile,
+  AppearanceMode,
+  AutosaveSettings,
+  CalloutIconName,
+  CalloutKind,
+  CalloutStyle,
+  CssSnippetContent,
+  CssSnippetFile,
+  CssSnippetSettings,
+  DebugSettings,
+  DocumentTab,
+  DrawerItem,
+  EditorBehaviorSettings,
+  EditorGroupId,
+  EditorGroupState,
+  FileDisplaySettings,
+  FolderActionDialogState,
+  FolderActionKind,
+  FolderContextMenuState,
+  FrontmatterPillSettings,
+  MarkdownParts,
+  OpenedFile,
+  PersistedWorkspace,
+  PluginCatalog,
+  PluginCommandManifest,
+  PluginManifest,
+  PluginSettings,
+  PluginStyleContent,
+  PluginWasmCommand,
+  RenamedDirectory,
+  ResizeSide,
+  SavedAsset,
+  SearchMode,
+  SearchResult,
+  SettingsDragState,
+  SettingsTab,
+  ThemePreset,
+  ThemeTokenControl,
+  ThemeTokenGroup,
+  TidbitSettings,
+  TidbitShortcutStatus,
+  TocEntry,
+  VaultAppearanceSettings,
+  VaultDrawerItem,
+  VaultEntry,
+  VaultFolderTreeNodeState,
+  VaultFolderTreeProps,
+  VaultIndexedFile,
+  VaultSettings,
+  VaultThemeCalloutSettings,
+  VaultThemeOptions,
+  WikiLinkPickerState,
+} from "./logic";
 import "./App.css";
 
 const codeLanguages = [
@@ -1249,280 +1340,6 @@ function createGlypharyVimMode(reportStatus: (message: string) => void) {
   });
 }
 
-type VaultEntry = {
-  name: string;
-  relativePath: string;
-  isDir: boolean;
-};
-
-type OpenedFile = {
-  name: string;
-  relativePath: string;
-  content: string;
-};
-
-type VaultIndexedFile = {
-  name: string;
-  relativePath: string;
-};
-
-type RenamedDirectory = {
-  name: string;
-  relativePath: string;
-};
-
-type SavedAsset = {
-  fileName: string;
-  relativePath: string;
-};
-
-type CssSnippetFile = {
-  name: string;
-  relativePath: string;
-};
-
-type CssSnippetContent = {
-  name: string;
-  content: string;
-};
-
-type CssSnippetSettings = {
-  directory: string;
-  enabled: string[];
-};
-
-type PluginSettings = {
-  enabled: string[];
-};
-
-type PluginWasmCommand = {
-  module: string;
-  input: "selection" | "document";
-  output: "replaceSelection" | "insertAtCursor" | "replaceDocument";
-  timeoutMs: number;
-};
-
-type PluginCommandManifest = {
-  id: string;
-  title: string;
-  description?: string;
-  insertMarkdown?: string | null;
-  template?: string | null;
-  wasm?: PluginWasmCommand | null;
-};
-
-type PluginManifest = {
-  id: string;
-  name: string;
-  runtime: "glyphary-wasm-transform@1";
-  version?: string;
-  description?: string;
-  permissions: string[];
-  commands: PluginCommandManifest[];
-  styles: string[];
-};
-
-type PluginCatalog = {
-  plugins: PluginManifest[];
-  errors: string[];
-};
-
-type PluginStyleContent = {
-  pluginId: string;
-  name: string;
-  content: string;
-};
-
-type VaultThemeSettings = {
-  presetId?: string | null;
-  callouts?: VaultThemeCalloutSettings | null;
-  tokens: Record<string, string>;
-  options?: VaultThemeOptions | null;
-};
-
-type CalloutKind = "note" | "info" | "tip" | "warning";
-type CalloutStyle = "plain" | "striped" | "card" | "compact" | "obsidian";
-type CalloutIconName = "info" | "sparkles" | "alert" | "check" | "quote" | "none";
-
-type VaultThemeCalloutSettings = {
-  style: CalloutStyle;
-  icons: Record<CalloutKind, CalloutIconName>;
-};
-
-type VaultThemeOptions = {
-  colorfulHeadings: boolean;
-  headingUnderlines: boolean;
-  headingAnchors: boolean;
-  richCallouts: boolean;
-};
-
-type FrontmatterPillSettings = {
-  enabled: boolean;
-  headerName: string;
-};
-
-type EditorBehaviorSettings = {
-  vimMode: boolean;
-};
-
-type FileDisplaySettings = {
-  showDotfiles: boolean;
-};
-
-type AutosaveSettings = {
-  enabled: boolean;
-};
-
-type DebugSettings = {
-  enabled: boolean;
-};
-
-type TidbitSettings = {
-  pathPattern: string;
-  globalShortcutEnabled: boolean;
-  globalShortcut: string;
-};
-
-type TidbitShortcutStatus = {
-  shortcut: string | null;
-  registered: boolean;
-};
-
-type VaultAppearanceSettings = {
-  glassEffect: boolean;
-  statusBarVisible: boolean;
-  sectionCorners: "rounded" | "square";
-  workspaceMargin: "compact" | "comfortable" | "spacious";
-};
-
-type SettingsDragState = {
-  pointerId: number;
-  startX: number;
-  startY: number;
-  originX: number;
-  originY: number;
-};
-
-type VaultSettings = {
-  assetDirectory: string;
-  frontmatterPills?: FrontmatterPillSettings | null;
-  files?: FileDisplaySettings | null;
-  autosave?: AutosaveSettings | null;
-  tidbits?: TidbitSettings | null;
-  editor?: EditorBehaviorSettings | null;
-  appearance?: VaultAppearanceSettings | null;
-  debug?: DebugSettings | null;
-  cssSnippets?: CssSnippetSettings | null;
-  plugins?: PluginSettings | null;
-  theme?: VaultThemeSettings | null;
-};
-
-type ActiveFile = {
-  name: string;
-  relativePath: string;
-};
-
-type DocumentTab = {
-  id: string;
-  activeFile: ActiveFile | null;
-  pageName: string;
-  metaHeader: string;
-  metaDelimiter: MarkdownParts["metaDelimiter"];
-  markdown: string;
-  markdownDraft: string;
-  dirty: boolean;
-};
-
-type EditorGroupId = SplitGroupId;
-
-type EditorGroupState = {
-  id: EditorGroupId;
-  tabs: DocumentTab[];
-  activeTabId: string;
-};
-
-type SearchResult = {
-  relativePath: string;
-  lineNumber?: number;
-  lineText?: string;
-  isContentMatch: boolean;
-};
-
-type WikiLinkPickerState = {
-  target: string;
-  candidates: VaultIndexedFile[];
-  x: number;
-  y: number;
-};
-
-type SearchMode = "filename" | "content";
-type AppearanceMode = "auto" | "light" | "dark";
-type SettingsTab = "main" | "appearance" | "plugins" | "debug";
-type DrawerItem = "source" | "toc" | "calendar";
-type VaultDrawerItem = "files" | "search" | "recent";
-type ResizeSide = "vault" | "drawer";
-
-type FolderContextMenuState = {
-  entry: VaultEntry;
-  x: number;
-  y: number;
-};
-
-type FolderActionKind =
-  | "create-note"
-  | "create-folder"
-  | "rename"
-  | "move-folder"
-  | "move-file"
-  | "delete-file";
-
-type FolderActionDialogState = {
-  action: FolderActionKind;
-  entry: VaultEntry;
-  value: string;
-};
-
-type VaultFolderTreeNodeState = {
-  children: VaultEntry[];
-  error: string | null;
-  loaded: boolean;
-  loading: boolean;
-};
-
-type VaultFolderTreeProps = {
-  root: string;
-  selectedPath: string;
-  movingEntry?: VaultEntry | null;
-  onSelect: (relativePath: string) => void;
-  onStatus: (message: string) => void;
-};
-
-type PersistedWorkspace = {
-  vaultRoot: string;
-  currentDir: string;
-  activeFile: ActiveFile | null;
-  recentFiles: ActiveFile[];
-};
-
-type ThemeTokenControl = {
-  label: string;
-  token: string;
-  kind?: "color" | "value";
-  placeholder?: string;
-};
-
-type ThemeTokenGroup = {
-  title: string;
-  controls: ThemeTokenControl[];
-};
-
-type ThemePreset = {
-  id: string;
-  name: string;
-  description: string;
-  tokens: Record<string, string>;
-};
-
 function FolderIcon({ className = "vault-entry-icon folder-icon" }: { className?: string }) {
   return (
     <svg aria-hidden="true" className={className} viewBox="0 0 32 32">
@@ -1691,45 +1508,6 @@ function VaultFolderTree({
   );
 }
 
-const workspaceStorageKey = "glyphary.workspace";
-const appearanceStorageKey = "glyphary.appearance";
-const closedDrawerWidth = 48;
-const workspaceResizeHandleWidth = 10;
-const defaultCssSnippetDirectory = "_snippets_";
-const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
-  enabled: true,
-  headerName: defaultFrontmatterPillHeader,
-};
-const defaultEditorBehaviorSettings: EditorBehaviorSettings = {
-  vimMode: false,
-};
-const defaultFileDisplaySettings: FileDisplaySettings = {
-  showDotfiles: false,
-};
-const defaultAutosaveSettings: AutosaveSettings = {
-  enabled: true,
-};
-const defaultDebugSettings: DebugSettings = {
-  enabled: false,
-};
-const defaultTidbitSettings: TidbitSettings = {
-  pathPattern: defaultTidbitPathPattern,
-  globalShortcutEnabled: false,
-  globalShortcut: defaultTidbitGlobalShortcut,
-};
-const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
-  glassEffect: false,
-  statusBarVisible: true,
-  sectionCorners: "rounded",
-  workspaceMargin: "comfortable",
-};
-const defaultCssSnippetSettings: CssSnippetSettings = {
-  directory: defaultCssSnippetDirectory,
-  enabled: [],
-};
-const defaultPluginSettings: PluginSettings = {
-  enabled: [],
-};
 const defaultThemeOptions: VaultThemeOptions = {
   colorfulHeadings: false,
   headingUnderlines: false,
@@ -2468,64 +2246,6 @@ for (const preset of themePresets) {
   };
 }
 
-function readPersistedWorkspace() {
-  try {
-    const raw = window.localStorage.getItem(workspaceStorageKey);
-
-    if (!raw) {
-      return null;
-    }
-
-    const parsed = JSON.parse(raw) as Partial<PersistedWorkspace>;
-
-    if (typeof parsed.vaultRoot !== "string" || !parsed.vaultRoot) {
-      return null;
-    }
-
-    return {
-      vaultRoot: parsed.vaultRoot,
-      currentDir: typeof parsed.currentDir === "string" ? parsed.currentDir : "",
-      activeFile:
-        parsed.activeFile &&
-        typeof parsed.activeFile.name === "string" &&
-        typeof parsed.activeFile.relativePath === "string"
-          ? {
-              name: parsed.activeFile.name,
-              relativePath: parsed.activeFile.relativePath,
-            }
-          : null,
-      recentFiles: Array.isArray(parsed.recentFiles)
-        ? parsed.recentFiles
-            .filter(
-              (file): file is ActiveFile =>
-                file &&
-                typeof file.name === "string" &&
-                typeof file.relativePath === "string",
-            )
-            .slice(0, 20)
-        : [],
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writePersistedWorkspace(workspace: PersistedWorkspace) {
-  window.localStorage.setItem(workspaceStorageKey, JSON.stringify(workspace));
-}
-
-function readPersistedAppearance(): AppearanceMode {
-  const stored = window.localStorage.getItem(appearanceStorageKey);
-
-  return stored === "light" || stored === "dark" || stored === "auto"
-    ? stored
-    : "auto";
-}
-
-function writePersistedAppearance(appearance: AppearanceMode) {
-  window.localStorage.setItem(appearanceStorageKey, appearance);
-}
-
 function normalizeThemeTokens(tokens: Record<string, string> | undefined | null) {
   const normalized: Record<string, string> = {};
 
@@ -2634,295 +2354,6 @@ function sameThemeTokens(
   );
 }
 
-function normalizeFrontmatterPillSettings(
-  settings: FrontmatterPillSettings | undefined | null,
-) {
-  return {
-    enabled: settings?.enabled ?? defaultFrontmatterPillSettings.enabled,
-    headerName:
-      settings?.headerName?.trim() || defaultFrontmatterPillSettings.headerName,
-  };
-}
-
-function sameFrontmatterPillSettings(
-  left: FrontmatterPillSettings | undefined | null,
-  right: FrontmatterPillSettings | undefined | null,
-) {
-  const normalizedLeft = normalizeFrontmatterPillSettings(left);
-  const normalizedRight = normalizeFrontmatterPillSettings(right);
-
-  return (
-    normalizedLeft.enabled === normalizedRight.enabled &&
-    normalizedLeft.headerName === normalizedRight.headerName
-  );
-}
-
-function normalizeEditorBehaviorSettings(
-  settings: EditorBehaviorSettings | undefined | null,
-) {
-  return {
-    vimMode: settings?.vimMode ?? defaultEditorBehaviorSettings.vimMode,
-  };
-}
-
-function sameEditorBehaviorSettings(
-  left: EditorBehaviorSettings | undefined | null,
-  right: EditorBehaviorSettings | undefined | null,
-) {
-  return (
-    normalizeEditorBehaviorSettings(left).vimMode ===
-    normalizeEditorBehaviorSettings(right).vimMode
-  );
-}
-
-function normalizeFileDisplaySettings(settings: FileDisplaySettings | undefined | null) {
-  return {
-    showDotfiles: settings?.showDotfiles ?? defaultFileDisplaySettings.showDotfiles,
-  };
-}
-
-function sameFileDisplaySettings(
-  left: FileDisplaySettings | undefined | null,
-  right: FileDisplaySettings | undefined | null,
-) {
-  return (
-    normalizeFileDisplaySettings(left).showDotfiles ===
-    normalizeFileDisplaySettings(right).showDotfiles
-  );
-}
-
-function normalizeAutosaveSettings(settings: AutosaveSettings | undefined | null) {
-  return {
-    enabled: settings?.enabled ?? defaultAutosaveSettings.enabled,
-  };
-}
-
-function sameAutosaveSettings(
-  left: AutosaveSettings | undefined | null,
-  right: AutosaveSettings | undefined | null,
-) {
-  return normalizeAutosaveSettings(left).enabled === normalizeAutosaveSettings(right).enabled;
-}
-
-function normalizeDebugSettings(settings: DebugSettings | undefined | null) {
-  return {
-    enabled: settings?.enabled ?? defaultDebugSettings.enabled,
-  };
-}
-
-function sameDebugSettings(
-  left: DebugSettings | undefined | null,
-  right: DebugSettings | undefined | null,
-) {
-  return normalizeDebugSettings(left).enabled === normalizeDebugSettings(right).enabled;
-}
-
-function normalizeTidbitSettings(settings: TidbitSettings | undefined | null) {
-  return {
-    pathPattern: settings?.pathPattern?.trim() || defaultTidbitSettings.pathPattern,
-    globalShortcutEnabled:
-      settings?.globalShortcutEnabled ?? defaultTidbitSettings.globalShortcutEnabled,
-    globalShortcut: settings?.globalShortcut?.trim() || defaultTidbitSettings.globalShortcut,
-  };
-}
-
-function sameTidbitSettings(
-  left: TidbitSettings | undefined | null,
-  right: TidbitSettings | undefined | null,
-) {
-  const normalizedLeft = normalizeTidbitSettings(left);
-  const normalizedRight = normalizeTidbitSettings(right);
-
-  return (
-    normalizedLeft.pathPattern === normalizedRight.pathPattern &&
-    normalizedLeft.globalShortcutEnabled === normalizedRight.globalShortcutEnabled &&
-    normalizedLeft.globalShortcut === normalizedRight.globalShortcut
-  );
-}
-
-type ShortcutKeyboardEvent = Pick<
-  KeyboardEvent | ReactKeyboardEvent<HTMLInputElement>,
-  "altKey" | "code" | "ctrlKey" | "key" | "metaKey" | "shiftKey"
->;
-
-function shortcutKeyFromEvent(event: ShortcutKeyboardEvent) {
-  if (["Shift", "Control", "Alt", "Meta", "CapsLock", "Tab", "Escape"].includes(event.key)) {
-    return "";
-  }
-
-  if (event.code.startsWith("Key")) {
-    return event.code.replace("Key", "").toUpperCase();
-  }
-
-  if (event.code.startsWith("Digit")) {
-    return event.code.replace("Digit", "");
-  }
-
-  if (event.code.startsWith("F") && /^F\d{1,2}$/.test(event.code)) {
-    return event.code;
-  }
-
-  const specialKeys: Record<string, string> = {
-    Backspace: "Backspace",
-    Delete: "Delete",
-    Enter: "Enter",
-    Equal: "Equal",
-    Minus: "Minus",
-    Period: "Period",
-    Slash: "Slash",
-    Space: "Space",
-  };
-
-  return specialKeys[event.code] ?? "";
-}
-
-function shortcutFromKeyboardEvent(event: ShortcutKeyboardEvent) {
-  const key = shortcutKeyFromEvent(event);
-
-  if (!key) {
-    return "";
-  }
-
-  const modifiers = isRunningOnMacOs()
-    ? [
-        event.metaKey ? "Command" : "",
-        event.ctrlKey ? "Control" : "",
-        event.altKey ? "Alt" : "",
-        event.shiftKey ? "Shift" : "",
-      ].filter(Boolean)
-    : [
-        event.metaKey || event.ctrlKey ? "CommandOrControl" : "",
-        event.altKey ? "Alt" : "",
-        event.shiftKey ? "Shift" : "",
-      ].filter(Boolean);
-
-  return [...modifiers, key].join("+");
-}
-
-function keyboardEventMatchesShortcut(event: ShortcutKeyboardEvent, shortcut: string) {
-  const parts = shortcut
-    .split("+")
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const key = parts.at(-1);
-
-  if (!key || shortcutKeyFromEvent(event).toUpperCase() !== key.toUpperCase()) {
-    return false;
-  }
-
-  const modifiers = new Set(parts.slice(0, -1).map((part) => part.toUpperCase()));
-  const expectsCommandOrControl = [
-    "COMMANDORCONTROL",
-    "COMMANDORCTRL",
-    "CMDORCONTROL",
-    "CMDORCTRL",
-  ].some((modifier) => modifiers.has(modifier));
-  const expectsCommand = ["COMMAND", "CMD", "SUPER"].some((modifier) => modifiers.has(modifier));
-  const expectsControl = ["CONTROL", "CTRL"].some((modifier) => modifiers.has(modifier));
-  const expectsAlt = modifiers.has("ALT") || modifiers.has("OPTION");
-  const expectsShift = modifiers.has("SHIFT");
-
-  if (expectsCommandOrControl) {
-    if (isRunningOnMacOs()) {
-      if (!event.metaKey || event.ctrlKey) {
-        return false;
-      }
-    } else if (!event.metaKey && !event.ctrlKey) {
-      return false;
-    }
-  } else if (event.metaKey !== expectsCommand || event.ctrlKey !== expectsControl) {
-    return false;
-  }
-
-  return event.altKey === expectsAlt && event.shiftKey === expectsShift;
-}
-
-function isRunningOnMacOs() {
-  return isMacOsPlatform(window.navigator.platform, window.navigator.userAgent);
-}
-
-function normalizeVaultAppearanceSettings(
-  settings: VaultAppearanceSettings | undefined | null,
-) {
-  const sectionCorners =
-    settings?.sectionCorners === "square" || settings?.sectionCorners === "rounded"
-      ? settings.sectionCorners
-      : defaultVaultAppearanceSettings.sectionCorners;
-  const workspaceMargin =
-    settings?.workspaceMargin === "compact" ||
-    settings?.workspaceMargin === "comfortable" ||
-    settings?.workspaceMargin === "spacious"
-      ? settings.workspaceMargin
-      : defaultVaultAppearanceSettings.workspaceMargin;
-
-  return {
-    glassEffect: settings?.glassEffect ?? defaultVaultAppearanceSettings.glassEffect,
-    statusBarVisible:
-      settings?.statusBarVisible ?? defaultVaultAppearanceSettings.statusBarVisible,
-    sectionCorners,
-    workspaceMargin,
-  };
-}
-
-function sameVaultAppearanceSettings(
-  left: VaultAppearanceSettings | undefined | null,
-  right: VaultAppearanceSettings | undefined | null,
-) {
-  return (
-    normalizeVaultAppearanceSettings(left).glassEffect ===
-      normalizeVaultAppearanceSettings(right).glassEffect &&
-    normalizeVaultAppearanceSettings(left).statusBarVisible ===
-      normalizeVaultAppearanceSettings(right).statusBarVisible &&
-    normalizeVaultAppearanceSettings(left).sectionCorners ===
-      normalizeVaultAppearanceSettings(right).sectionCorners &&
-    normalizeVaultAppearanceSettings(left).workspaceMargin ===
-      normalizeVaultAppearanceSettings(right).workspaceMargin
-  );
-}
-
-function cleanCssSnippetFileName(name: string) {
-  const cleanName = name.trim();
-
-  return /^[A-Za-z0-9_. -]+\.css$/.test(cleanName) && !cleanName.includes("..")
-    ? cleanName
-    : null;
-}
-
-function normalizeCssSnippetSettings(settings: CssSnippetSettings | undefined | null) {
-  const enabled = Array.from(
-    new Set(
-      (settings?.enabled ?? [])
-        .map((name) => cleanCssSnippetFileName(name))
-        .filter((name): name is string => Boolean(name)),
-    ),
-  ).sort();
-
-  return {
-    directory: settings?.directory?.trim() || defaultCssSnippetSettings.directory,
-    enabled,
-  };
-}
-
-function sameCssSnippetSettings(
-  left: CssSnippetSettings | undefined | null,
-  right: CssSnippetSettings | undefined | null,
-) {
-  const normalizedLeft = normalizeCssSnippetSettings(left);
-  const normalizedRight = normalizeCssSnippetSettings(right);
-
-  return (
-    normalizedLeft.directory === normalizedRight.directory &&
-    normalizedLeft.enabled.length === normalizedRight.enabled.length &&
-    normalizedLeft.enabled.every((name, index) => name === normalizedRight.enabled[index])
-  );
-}
-
-function cleanPluginId(id: string) {
-  const cleanId = id.trim();
-
-  return /^[A-Za-z0-9_-]{1,80}$/.test(cleanId) ? cleanId : null;
-}
-
 function wikiLinkDisplayName(file: VaultIndexedFile) {
   return fileNameWithoutMarkdownExtension(file.name);
 }
@@ -2976,61 +2407,6 @@ function replaceIndexedFile(
   nextFile: ActiveFile | OpenedFile,
 ) {
   return addIndexedFile(removeIndexedFile(files, oldRelativePath), nextFile);
-}
-
-function normalizePluginSettings(settings: PluginSettings | undefined | null) {
-  const enabled = Array.from(
-    new Set(
-      (settings?.enabled ?? [])
-        .map((id) => cleanPluginId(id))
-        .filter((id): id is string => Boolean(id)),
-    ),
-  ).sort();
-
-  return { enabled };
-}
-
-function samePluginSettings(
-  left: PluginSettings | undefined | null,
-  right: PluginSettings | undefined | null,
-) {
-  const normalizedLeft = normalizePluginSettings(left);
-  const normalizedRight = normalizePluginSettings(right);
-
-  return (
-    normalizedLeft.enabled.length === normalizedRight.enabled.length &&
-    normalizedLeft.enabled.every((id, index) => id === normalizedRight.enabled[index])
-  );
-}
-
-function resolveAppearance(appearance: AppearanceMode): Exclude<AppearanceMode, "auto"> {
-  if (appearance === "light" || appearance === "dark") {
-    return appearance;
-  }
-
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-}
-
-function cssColorToHex(value: string, fallback = "#000000") {
-  const trimmed = value.trim();
-
-  if (/^#[0-9a-f]{6}$/i.test(trimmed)) {
-    return trimmed;
-  }
-
-  if (/^#[0-9a-f]{3}$/i.test(trimmed)) {
-    return `#${trimmed[1]}${trimmed[1]}${trimmed[2]}${trimmed[2]}${trimmed[3]}${trimmed[3]}`;
-  }
-
-  const match = trimmed.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-
-  if (!match) {
-    return fallback;
-  }
-
-  return `#${[match[1], match[2], match[3]]
-    .map((channel) => Math.max(0, Math.min(255, Number(channel))).toString(16).padStart(2, "0"))
-    .join("")}`;
 }
 
 function tabTitle(tab: DocumentTab) {

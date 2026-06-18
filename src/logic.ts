@@ -11,6 +11,7 @@
  */
 
 export * from "./lib/assets.js";
+export * from "./lib/app-types.js";
 export * from "./lib/calendar.js";
 export * from "./lib/dates.js";
 export * from "./lib/defaults.js";
@@ -18,4 +19,5 @@ export * from "./lib/markdown.js";
 export * from "./lib/paths.js";
 export * from "./lib/platform.js";
 export * from "./lib/rich-links.js";
+export * from "./lib/settings.js";
 export * from "./lib/tabs.js";

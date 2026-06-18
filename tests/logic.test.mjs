@@ -630,6 +630,8 @@ test("motion layer keeps interface animations short and reduced-motion aware", (
 
 test("vault plugins are settings-gated and run commands through safe host paths", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
+  const settings = readFileSync("src/lib/settings.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const defaultsBackend = readFileSync("src-tauri/src/defaults.rs", "utf8");
@@ -639,18 +641,18 @@ test("vault plugins are settings-gated and run commands through safe host paths"
   const pluginTestsBackend = readFileSync("src-tauri/src/tests/plugins.rs", "utf8");
   const worker = readFileSync("src/pluginWorker.ts", "utf8");
 
-  assert.match(app, /type PluginManifest/);
-  assert.match(app, /runtime: "glyphary-wasm-transform@1"/);
-  assert.match(app, /type PluginWasmCommand/);
-  assert.match(app, /type SettingsTab = "main" \| "appearance" \| "plugins" \| "debug"/);
-  assert.match(app, /type DebugSettings/);
-  assert.match(app, /debug\?: DebugSettings \| null/);
-  assert.match(app, /const defaultDebugSettings: DebugSettings = \{\s*enabled: false,/);
-  assert.match(app, /function normalizeDebugSettings/);
-  assert.match(app, /function sameDebugSettings/);
+  assert.match(appTypes, /export type PluginManifest/);
+  assert.match(appTypes, /runtime: "glyphary-wasm-transform@1"/);
+  assert.match(appTypes, /export type PluginWasmCommand/);
+  assert.match(appTypes, /export type SettingsTab = "main" \| "appearance" \| "plugins" \| "debug"/);
+  assert.match(appTypes, /export type DebugSettings/);
+  assert.match(appTypes, /debug\?: DebugSettings \| null/);
+  assert.match(settings, /defaultDebugSettings: DebugSettings = \{\s*enabled: false,/);
+  assert.match(settings, /function normalizeDebugSettings/);
+  assert.match(settings, /function sameDebugSettings/);
   assert.match(app, /defaultPluginSettings/);
-  assert.match(app, /plugins\?: PluginSettings \| null/);
-  assert.match(app, /normalizePluginSettings/);
+  assert.match(appTypes, /plugins\?: PluginSettings \| null/);
+  assert.match(settings, /normalizePluginSettings/);
   assert.match(app, /refreshPlugins/);
   assert.match(app, /list_vault_plugins/);
   assert.match(app, /read_plugin_styles/);
@@ -692,6 +694,7 @@ test("vault plugins are settings-gated and run commands through safe host paths"
 
 test("wikilinks use the vault filename index for navigation and insertion", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const modelsBackend = readFileSync("src-tauri/src/models.rs", "utf8");
@@ -703,8 +706,8 @@ test("wikilinks use the vault filename index for navigation and insertion", () =
   assert.match(vaultBackend, /pub\(crate\) fn walk_note_files/);
   assert.match(backend, /list_vault_markdown_files,/);
   assert.match(vaultTestsBackend, /lists_vault_markdown_files_for_wikilink_index/);
-  assert.match(app, /type VaultIndexedFile/);
-  assert.match(app, /type WikiLinkPickerState/);
+  assert.match(appTypes, /export type VaultIndexedFile/);
+  assert.match(appTypes, /export type WikiLinkPickerState/);
   assert.match(app, /createWikiLinkExtension/);
   assert.match(app, /wikiLinkTokenPattern/);
   assert.match(app, /data-wikilink-target/);
@@ -810,6 +813,7 @@ test("recent files are newest-first unique and capped", () => {
 
 test("global tidbit capture is vault-gated and opens a lightweight editor window", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const settings = readFileSync("src/lib/settings.ts", "utf8");
   const capture = readFileSync("src/TidbitCapture.tsx", "utf8");
   const main = readFileSync("src/main.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
@@ -845,12 +849,12 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
   assert.match(backend, /unregister_tidbit_global_shortcut,/);
   assert.match(backend, /tidbit_global_shortcut_status,/);
   assert.match(backend, /test_tidbit_global_shortcut_event,/);
-  assert.match(app, /globalShortcutEnabled: false/);
-  assert.match(app, /globalShortcut: defaultTidbitGlobalShortcut/);
+  assert.match(settings, /globalShortcutEnabled: false/);
+  assert.match(settings, /globalShortcut: defaultTidbitGlobalShortcut/);
   assert.match(app, /checkAccessibilityPermission/);
   assert.match(app, /requestAccessibilityPermission/);
   assert.match(app, /function requestTidbitShortcutAccessibilityPermission/);
-  assert.match(app, /function keyboardEventMatchesShortcut/);
+  assert.match(settings, /function keyboardEventMatchesShortcut/);
   assert.match(app, /void requestTidbitShortcutAccessibilityPermission\(\);/);
   assert.match(app, /if \(!isTauri\(\) \|\| !vaultRoot \|\| !settings\.globalShortcutEnabled\)/);
   assert.match(app, /if \(!isTauri\(\) \|\| !isRunningOnMacOs\(\)\)/);
@@ -882,11 +886,11 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
   assert.match(app, /Save Settings to activate it/);
   assert.match(app, /const pathPattern = event\.currentTarget\.value;/);
   assert.match(app, /const globalShortcutEnabled = event\.currentTarget\.checked;/);
-  assert.match(app, /function shortcutFromKeyboardEvent/);
-  assert.match(app, /function shortcutKeyFromEvent/);
-  assert.match(app, /event\.metaKey \? "Command" : ""/);
-  assert.match(app, /event\.ctrlKey \? "Control" : ""/);
-  assert.match(app, /if \(!event\.metaKey \|\| event\.ctrlKey\)/);
+  assert.match(settings, /function shortcutFromKeyboardEvent/);
+  assert.match(settings, /function shortcutKeyFromEvent/);
+  assert.match(settings, /event\.metaKey \? "Command" : ""/);
+  assert.match(settings, /event\.ctrlKey \? "Control" : ""/);
+  assert.match(settings, /if \(!event\.metaKey \|\| event\.ctrlKey\)/);
   assert.match(app, /readOnly/);
   assert.match(app, /onKeyDown=\{\(event\) => \{/);
   assert.match(app, /const globalShortcut = shortcutFromKeyboardEvent\(event\);/);
@@ -963,11 +967,12 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
 
 test("vault drawer exposes files search and recent views", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /type VaultDrawerItem = "files" \| "search" \| "recent"/);
+  assert.match(appTypes, /export type VaultDrawerItem = "files" \| "search" \| "recent"/);
   assert.match(app, /recentFilesWithOpenedFile/);
-  assert.match(app, /recentFiles: ActiveFile\[\]/);
+  assert.match(appTypes, /recentFiles: ActiveFile\[\]/);
   assert.match(app, /Recently opened files/);
   assert.match(app, /toggleVaultDrawerItem\("recent"\)/);
   assert.doesNotMatch(app, /className="file-context"/);
@@ -1054,6 +1059,8 @@ test("native webview context menu is suppressed so chrome does not show refresh"
 test("app css exposes the Obsidian theme compatibility surface", () => {
   const css = readFileSync("src/App.css", "utf8");
   const app = readFileSync("src/App.tsx", "utf8");
+  const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
+  const settings = readFileSync("src/lib/settings.ts", "utf8");
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const defaultsBackend = readFileSync("src-tauri/src/defaults.rs", "utf8");
@@ -1080,19 +1087,19 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /theme-light/);
   assert.match(app, /markdown-preview-view/);
   assert.match(app, /Theme Builder/);
-  assert.match(app, /kind\?: "color" \| "value"/);
+  assert.match(appTypes, /kind\?: "color" \| "value"/);
   assert.match(app, /defaultThemeLevelOneTokens/);
-  assert.match(app, /type ThemePreset/);
+  assert.match(appTypes, /export type ThemePreset/);
   assert.match(app, /const themePresets: ThemePreset\[\]/);
   const presetBlock = app.match(/const themePresets: ThemePreset\[\] = \[([\s\S]*?)\];/)?.[1] ?? "";
   assert.equal((presetBlock.match(/id: "[a-z-]+"/g) ?? []).length, 12);
   assert.match(app, /for \(const preset of themePresets\)/);
   assert.match(app, /Theme Templates/);
   assert.match(app, /Theme Options/);
-  assert.match(app, /type VaultThemeOptions/);
-  assert.match(app, /type VaultThemeCalloutSettings/);
-  assert.match(app, /type CssSnippetSettings/);
-  assert.match(app, /type CalloutStyle = "plain" \| "striped" \| "card" \| "compact" \| "obsidian"/);
+  assert.match(appTypes, /export type VaultThemeOptions/);
+  assert.match(appTypes, /export type VaultThemeCalloutSettings/);
+  assert.match(appTypes, /export type CssSnippetSettings/);
+  assert.match(appTypes, /export type CalloutStyle = "plain" \| "striped" \| "card" \| "compact" \| "obsidian"/);
   assert.match(app, /defaultThemeOptions/);
   assert.match(app, /defaultThemeCalloutSettings/);
   assert.match(app, /normalizeThemeCalloutSettings/);
@@ -1107,7 +1114,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /data-glyphary-css-snippet/);
   assert.match(app, /list_css_snippets/);
   assert.match(app, /read_css_snippets/);
-  assert.match(app, /normalizeCssSnippetSettings/);
+  assert.match(settings, /normalizeCssSnippetSettings/);
   assert.match(app, /Apply optional editor treatments on top of the selected theme/);
   assert.match(app, /Callout Rendering/);
   assert.match(app, /Choose a structured callout layout and icons for this vault theme/);
@@ -1134,7 +1141,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /const calloutKinds/);
   assert.match(app, /\{kind\.label\} icon/);
   assert.match(app, /applyThemePreset/);
-  assert.match(app, /presetId\?: string \| null/);
+  assert.match(appTypes, /presetId\?: string \| null/);
   assert.match(app, /selectedThemePresetIdDraft/);
   assert.match(app, /normalizeThemePresetId/);
   assert.match(app, /--glyphary-accent/);
@@ -1148,10 +1155,10 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /rawThemeTokenValue/);
   assert.match(app, /type="text"/);
   assert.match(app, /Reset Theme/);
-  assert.match(app, /type VaultAppearanceSettings/);
-  assert.match(app, /type FileDisplaySettings/);
-  assert.match(app, /type AutosaveSettings/);
-  assert.match(app, /type TidbitSettings/);
+  assert.match(appTypes, /export type VaultAppearanceSettings/);
+  assert.match(appTypes, /export type FileDisplaySettings/);
+  assert.match(appTypes, /export type AutosaveSettings/);
+  assert.match(appTypes, /export type TidbitSettings/);
   assert.doesNotMatch(app, /attachmentDirectory: string/);
   assert.doesNotMatch(app, /defaultVaultAttachmentDirectory/);
   assert.match(app, /function joinVaultImagePath/);
@@ -1159,11 +1166,11 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultImageDirectory\}\/\$\{cleanReference\}`\)/);
   assert.match(app, /createVaultImageExtension\(\s*\(target\) => joinVaultImagePath/);
   assert.match(app, /assetDirectory: defaultVaultImageDirectory/);
-  assert.match(app, /defaultFileDisplaySettings/);
-  assert.match(app, /showDotfiles: false/);
-  assert.match(app, /defaultAutosaveSettings/);
-  assert.match(app, /enabled: true/);
-  assert.match(app, /defaultTidbitSettings/);
+  assert.match(settings, /defaultFileDisplaySettings/);
+  assert.match(settings, /showDotfiles: false/);
+  assert.match(settings, /defaultAutosaveSettings/);
+  assert.match(settings, /enabled: true/);
+  assert.match(settings, /defaultTidbitSettings/);
   assert.match(app, /Tidbit path pattern/);
   assert.doesNotMatch(app, /Attachment directory/);
   assert.match(app, /defaultTidbitPathPattern/);
@@ -1172,9 +1179,9 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /window\.setInterval/);
   assert.match(app, /60_000/);
   assert.match(app, /glassEffect/);
-  assert.match(app, /statusBarVisible: true/);
-  assert.match(app, /sectionCorners: "rounded"/);
-  assert.match(app, /workspaceMargin: "comfortable"/);
+  assert.match(settings, /statusBarVisible: true/);
+  assert.match(settings, /sectionCorners: "rounded"/);
+  assert.match(settings, /workspaceMargin: "comfortable"/);
   assert.match(app, /Use glass window effect/);
   assert.match(app, /Show status bar/);
   assert.match(app, /Use rounded section corners/);
@@ -1197,7 +1204,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(css, /\.workspace-margin-compact \{[\s\S]*--glyphary-shell-padding-inline: 0px/);
   assert.match(css, /\.workspace-margin-spacious \{[\s\S]*--glyphary-shell-padding-top: 14px/);
   assert.match(app, /set_window_glass_effect/);
-  assert.match(app, /type SettingsDragState/);
+  assert.match(appTypes, /export type SettingsDragState/);
   assert.match(app, /function openSettings/);
   assert.match(app, /setSettingsOffset\(\{ x: 0, y: 0 \}\)/);
   assert.match(app, /function closeSettings/);
