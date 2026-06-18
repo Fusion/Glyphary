@@ -42,6 +42,10 @@ export const emptyCollapseMarkdown = `::: collapse More details
 Hidden content
 :::`;
 
+export const emptyHtmlBlockMarkdown = `<div>
+  HTML content
+</div>`;
+
 export const defaultVaultAssetDirectory = "_assets_";
 export const defaultVaultImageDirectory = "_assets_/images";
 export const defaultExcalidrawDirectory = "_assets_/drawings";

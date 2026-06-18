@@ -23,6 +23,7 @@ import {
   emptyCalloutMarkdown,
   emptyCollapseMarkdown,
   emptyColumnsMarkdown,
+  emptyHtmlBlockMarkdown,
   emptyTableMarkdown,
   excalidrawFileNameForTitle,
   expandDateFormat,
@@ -266,6 +267,72 @@ test("table insertion seed keeps markdown table support available", () => {
   assert.match(emptyTableMarkdown, /\| --- \| --- \| --- \|/);
 });
 
+test("block-widget boundaries expose an editable insertion point", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /import \{ GapCursor \} from "@tiptap\/pm\/gapcursor"/);
+  assert.match(app, /function createBlockBoundaryInsertionExtension\(\)/);
+  assert.match(app, /name: "glypharyBlockBoundaryInsertion"/);
+  assert.match(app, /priority: 10000/);
+  assert.match(app, /addKeyboardShortcuts\(\)/);
+  assert.match(app, /function moveGapCursorTo/);
+  assert.match(app, /RuntimeGapCursor\.valid\(resolvedPosition\)/);
+  assert.match(app, /new GapCursor\(resolvedPosition\)/);
+  assert.match(app, /function insertParagraphAtGapCursor/);
+  assert.match(app, /selection instanceof GapCursor/);
+  assert.match(app, /view\.state\.tr\.insert\(selection\.from, paragraph\)/);
+  assert.match(app, /TextSelection\.create\(transaction\.doc, selection\.from \+ 1\)/);
+  assert.match(app, /function insertParagraphAtPosition/);
+  assert.match(app, /const blockBoundaryInsertNodeNames = new Set/);
+  assert.match(app, /"table"/);
+  assert.match(app, /"htmlBlock"/);
+  assert.match(app, /"richLink"/);
+  assert.match(app, /"excalidrawEmbed"/);
+  assert.match(app, /"gallery"/);
+  assert.match(app, /function supportsBlockBoundaryInsert/);
+  assert.match(app, /function selectedTopLevelWidgetBlock/);
+  assert.match(app, /selection instanceof NodeSelection && supportsBlockBoundaryInsert\(selection\.node\)/);
+  assert.match(app, /selection\.\$from\.node\(1\)/);
+  assert.match(app, /selection\.\$from\.before\(1\)/);
+  assert.match(app, /selection\.\$from\.after\(1\)/);
+  assert.match(app, /function blockBoundaryInsertWidget/);
+  assert.match(app, /function blockBoundaryInsertDecorations/);
+  assert.match(app, /const selectedBlock = selectedTopLevelWidgetBlock\(view\)/);
+  assert.match(app, /DecorationSet\.empty/);
+  assert.match(app, /blockBoundaryInsertWidget\(selectedBlock\.from, -1\)/);
+  assert.match(app, /blockBoundaryInsertWidget\(selectedBlock\.to, 1\)/);
+  assert.doesNotMatch(app, /isBlockBoundaryWidgetCandidate\(previousNode\)/);
+  assert.doesNotMatch(app, /node\.isBlock && !node\.isTextblock/);
+  assert.match(app, /Decoration\.widget\(/);
+  assert.match(app, /className = "block-boundary-insert"/);
+  assert.match(app, /aria-label", "Insert paragraph between blocks"/);
+  assert.match(app, /button\.title = "Insert paragraph"/);
+  assert.match(app, /insertParagraphAtPosition\(targetView, currentPosition\)/);
+  assert.match(app, /glypharyBlockBoundaryInsertAffordance/);
+  assert.match(app, /function moveGapCursorAfterTableBoundary/);
+  assert.match(app, /view\.endOfTextblock\("down"\)/);
+  assert.match(app, /nodeAfterTable\.isTextblock/);
+  assert.match(app, /moveGapCursorTo\(view, afterTable\)/);
+  assert.match(app, /function moveGapCursorBeforeSelectedBlock/);
+  assert.match(app, /function moveGapCursorAfterSelectedBlock/);
+  assert.match(app, /nodeAfterSelectedBlock\.isTextblock/);
+  assert.match(app, /selection instanceof NodeSelection/);
+  assert.match(app, /Enter: \(\) =>/);
+  assert.match(app, /ArrowDown: \(\) =>/);
+  assert.match(app, /ArrowUp: \(\) =>/);
+  assert.match(app, /insertParagraphAtGapCursor\(this\.editor\.view\) \|\|/);
+  assert.doesNotMatch(app, /insertEmptyParagraphAt/);
+  assert.match(app, /createBlockBoundaryInsertionExtension\(\),\s*TableKit\.configure/);
+  assert.match(css, /\.block-boundary-insert/);
+  assert.match(css, /\.block-boundary-insert-button/);
+  assert.match(css, /width: 0;/);
+  assert.match(css, /transform: translate\(-28px, -1px\)/);
+  assert.match(css, /width: 16px;/);
+  assert.match(css, /border: 1px solid transparent/);
+  assert.match(css, /display: none;/);
+});
+
 test("columns markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
@@ -365,6 +432,42 @@ test("collapse markdown containers render as expandable details blocks", () => {
   assert.match(css, /\.markdown-collapse\.open/);
   assert.match(css, /\.markdown-collapse-summary/);
   assert.match(css, /\.markdown-collapse-body/);
+});
+
+test("html blocks are preserved as sanitized editable source blocks", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /const htmlBlockTags = new Set/);
+  assert.match(app, /function htmlBlockMarkdownToken/);
+  assert.match(app, /function sanitizeHtmlBlock/);
+  assert.match(app, /blockedHtmlPreviewSelector/);
+  assert.match(app, /safeHtmlAttributeValue/);
+  assert.match(app, /function HtmlBlockNodeView/);
+  assert.match(emptyHtmlBlockMarkdown, /^<div>/);
+  assert.match(app, /selected, updateAttributes/);
+  assert.match(app, /name: "htmlBlock"/);
+  assert.match(app, /markdownTokenName: "htmlBlock"/);
+  assert.match(app, /data-glyphary-html-block/);
+  assert.match(app, /data-raw-html/);
+  assert.match(app, /rawHtml/);
+  assert.match(app, /dangerouslySetInnerHTML=\{\{ __html: sanitizeHtmlBlock\(rawHtml\) \}\}/);
+  assert.match(app, /selected \? \(/);
+  assert.match(app, /aria-label="HTML block source"/);
+  assert.match(app, /ReactNodeViewRenderer\(HtmlBlockNodeView\)/);
+  assert.match(app, /createHtmlBlockExtension\(\)/);
+  assert.match(app, /function insertHtmlBlock\(\)/);
+  assert.match(app, /insertContent\(emptyHtmlBlockMarkdown, \{ contentType: "markdown" \}\)/);
+  assert.match(app, /createCollapseExtension\(\),\s*createHtmlBlockExtension\(\),\s*createRichLinkExtension\(\)/);
+  assert.match(app, /"script"/);
+  assert.match(app, /"style"/);
+  assert.match(app, /"pre"/);
+  assert.match(app, /"iframe"/);
+  assert.match(app, /javascript\|data\|vbscript/);
+  assert.match(app, /\^on\/i/);
+  assert.match(css, /\.markdown-html-block/);
+  assert.match(css, /\.markdown-html-preview/);
+  assert.match(css, /\.markdown-html-source textarea/);
 });
 
 test("rich link markdown containers are wired into the editor", () => {
@@ -1413,6 +1516,8 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /title: "Insert callout"/);
   assert.match(app, /id: "insert-collapse"/);
   assert.match(app, /title: "Insert collapse"/);
+  assert.match(app, /id: "insert-html-block"/);
+  assert.match(app, /title: "Insert HTML block"/);
   assert.match(app, /id: "insert-table-of-contents"/);
   assert.match(app, /title: "Insert table of contents"/);
   assert.match(app, /id: "insert-menu"/);
@@ -1615,6 +1720,7 @@ test("list task quote code table columns and callout toolbar actions render as i
   assert.match(app, /icon: "task-list"/);
   assert.match(app, /icon: "quote"/);
   assert.match(app, /icon: "code"/);
+  assert.match(app, /icon: "html"/);
   assert.match(app, /icon: "table"/);
   assert.match(app, /icon: "columns"/);
   assert.match(app, /icon: "callout"/);
@@ -1721,6 +1827,9 @@ test("split editor groups find an already open file across both panes", () => {
   assert.match(css, /\.empty-document-placeholder/);
   assert.match(css, /isolation: isolate/);
   assert.match(css, /caret-color: var\(--editor-text\)/);
+  assert.match(css, /\.ProseMirror-gapcursor/);
+  assert.match(css, /\.ProseMirror-focused \.ProseMirror-gapcursor/);
+  assert.match(css, /@keyframes glyphary-caret-blink/);
   assert.match(css, /z-index: 0/);
   assert.match(css, /--glyphary-editor-effective-padding-x: max\(18px, var\(--glyphary-editor-padding-x\)\)/);
   assert.match(css, /left: var\(--glyphary-editor-effective-padding-x\)/);

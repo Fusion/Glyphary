@@ -1646,6 +1646,89 @@ body.workspace-resizing * {
   line-height: var(--glyphary-editor-line-height);
 }
 
+/* Tables and other block widgets can place the selection between document
+   blocks. ProseMirror calls that a gap cursor; without an explicit paint rule
+   the insertion point is valid but effectively invisible on WebKit. */
+.editor-surface .ProseMirror-gapcursor {
+  position: absolute;
+  display: none;
+  pointer-events: none;
+}
+
+.editor-surface .ProseMirror-gapcursor::after {
+  position: absolute;
+  top: -2px;
+  left: 0;
+  display: block;
+  width: 2.6rem;
+  border-top: 2px solid var(--editor-text);
+  content: "";
+  animation: glyphary-caret-blink 1.1s steps(2, start) infinite;
+}
+
+.editor-surface .ProseMirror-focused .ProseMirror-gapcursor {
+  display: block;
+}
+
+.editor-surface .block-boundary-insert {
+  /* Keep the insertion affordance out of the document flow. It solves awkward
+     widget-to-widget insertion, but should read as chrome in the margin, not as
+     another editable block between the user's notes. */
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  height: 0;
+  width: 0;
+  margin: calc(var(--glyphary-block-gap) * -0.35) 0;
+  opacity: 0.52;
+  pointer-events: none;
+  transition:
+    opacity var(--motion-fast) var(--motion-ease),
+    transform var(--motion-fast) var(--motion-ease);
+  transform: translate(-28px, -1px);
+}
+
+.editor-surface .block-boundary-insert::before,
+.editor-surface .block-boundary-insert::after {
+  /* Earlier versions drew a full-width rule. That competed with document
+     content, so the current design is just a tiny margin +. */
+  display: none;
+}
+
+.editor-surface .block-boundary-insert-button {
+  display: inline-grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: 800 13px/1 var(--font-ui);
+  pointer-events: auto;
+}
+
+.editor-surface .block-boundary-insert:hover,
+.editor-surface .block-boundary-insert:focus-within,
+.editor-surface .ProseMirror-focused .block-boundary-insert {
+  transform: translate(-28px, 0);
+}
+
+.editor-surface .block-boundary-insert-button:hover,
+.editor-surface .block-boundary-insert-button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--accent);
+  outline: none;
+}
+
+@keyframes glyphary-caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
 .editor-surface .ProseMirror > * + * {
   margin-top: var(--glyphary-block-gap);
 }
@@ -2212,6 +2295,71 @@ body.workspace-resizing * {
 
 .editor-surface .markdown-collapse-body > :last-child {
   margin-bottom: 0;
+}
+
+.editor-surface .markdown-html-block {
+  display: grid;
+  gap: 0.7rem;
+  margin: 1.2rem 0;
+  border: var(--border-width) solid var(--border-soft);
+  border-radius: var(--radius-md);
+  background: transparent;
+  padding: 0.7rem;
+}
+
+.editor-surface .markdown-html-block.ProseMirror-selectednode {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--selection);
+}
+
+.editor-surface .markdown-html-block:not(.ProseMirror-selectednode):hover {
+  border-color: var(--border);
+}
+
+.editor-surface .markdown-html-preview {
+  min-height: 2.5rem;
+  border-radius: calc(var(--radius-md) - 2px);
+  background: color-mix(in srgb, var(--surface-muted) 42%, transparent);
+  padding: 0.75rem;
+}
+
+.editor-surface .markdown-html-preview:empty::before {
+  color: var(--muted);
+  content: "HTML preview is empty";
+  font-family: var(--font-ui);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.editor-surface .markdown-html-source {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.editor-surface .markdown-html-source span {
+  color: var(--muted);
+  font-family: var(--font-ui);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.editor-surface .markdown-html-source textarea {
+  min-height: 7rem;
+  resize: vertical;
+  border: var(--border-width) solid var(--border);
+  border-radius: calc(var(--radius-md) - 2px);
+  background: var(--surface);
+  color: var(--editor-text);
+  font: 0.82rem/1.5 var(--font-mono);
+  outline: none;
+  padding: 0.65rem;
+}
+
+.editor-surface .markdown-html-source textarea:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--selection);
 }
 
 .editor-surface .rich-link-card {

@@ -8,10 +8,11 @@ import type {
 } from "react";
 import { Extension, mergeAttributes, Node } from "@tiptap/core";
 import type { Editor, JSONContent, MarkdownToken, NodeViewProps } from "@tiptap/core";
-import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
+import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
 import { redo, undo } from "@tiptap/pm/history";
-import { Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
+import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import type { EditorView } from "@tiptap/pm/view";
 import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -37,6 +38,7 @@ import {
   useEditor,
 } from "@tiptap/react";
 import { TableKit } from "@tiptap/extension-table";
+import { GapCursor } from "@tiptap/pm/gapcursor";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
 import bash from "highlight.js/lib/languages/bash";
@@ -93,6 +95,7 @@ import {
   emptyCalloutMarkdown,
   emptyCollapseMarkdown,
   emptyColumnsMarkdown,
+  emptyHtmlBlockMarkdown,
   emptyTableMarkdown,
   excalidrawFileNameForTitle,
   expandDateTemplate,
@@ -251,11 +254,267 @@ lowlight.register("md", markdownLanguage);
 // as plain text so the block remains editable and round-trips as ```toc.
 lowlight.register("toc", plaintext);
 
+const RuntimeGapCursor = GapCursor as typeof GapCursor & {
+  valid: (position: ResolvedPos) => boolean;
+};
+
 function codeBlockContainsSelection(selection: Selection, position: number, nodeSize: number) {
   const contentStart = position + 1;
   const contentEnd = position + nodeSize - 1;
 
   return selection.from >= contentStart && selection.to <= contentEnd;
+}
+
+function ancestorDepthByName($position: ResolvedPos, nodeName: string) {
+  for (let depth = $position.depth; depth > 0; depth -= 1) {
+    if ($position.node(depth).type.name === nodeName) {
+      return depth;
+    }
+  }
+
+  return null;
+}
+
+function moveGapCursorTo(view: EditorView, position: number) {
+  const resolvedPosition = view.state.doc.resolve(position);
+
+  if (!RuntimeGapCursor.valid(resolvedPosition)) {
+    return false;
+  }
+
+  view.dispatch(
+    view.state.tr.setSelection(new GapCursor(resolvedPosition)).scrollIntoView(),
+  );
+
+  return true;
+}
+
+function insertParagraphAtGapCursor(view: EditorView) {
+  const { selection, schema } = view.state;
+
+  if (!(selection instanceof GapCursor)) {
+    return false;
+  }
+
+  const paragraph = schema.nodes.paragraph?.createAndFill();
+
+  if (!paragraph) {
+    return false;
+  }
+
+  const transaction = view.state.tr.insert(selection.from, paragraph);
+  transaction.setSelection(TextSelection.create(transaction.doc, selection.from + 1));
+  view.dispatch(transaction.scrollIntoView());
+
+  return true;
+}
+
+function insertParagraphAtPosition(view: EditorView, position: number) {
+  const paragraph = view.state.schema.nodes.paragraph?.createAndFill();
+
+  if (!paragraph) {
+    return false;
+  }
+
+  const transaction = view.state.tr.insert(position, paragraph);
+  transaction.setSelection(TextSelection.create(transaction.doc, position + 1));
+  view.dispatch(transaction.scrollIntoView());
+  view.focus();
+
+  return true;
+}
+
+const blockBoundaryInsertNodeNames = new Set([
+  "table",
+  "htmlBlock",
+  "richLink",
+  "excalidrawEmbed",
+  "gallery",
+]);
+
+function supportsBlockBoundaryInsert(node: ProseMirrorNode) {
+  return blockBoundaryInsertNodeNames.has(node.type.name);
+}
+
+function selectedTopLevelWidgetBlock(view: EditorView) {
+  const { selection } = view.state;
+
+  // The insertion affordance is intentionally limited to special, widget-like
+  // blocks. Plain Markdown text already has natural caret positions; showing a
+  // structural + there would add visual noise without solving an editing gap.
+  if (selection instanceof NodeSelection && supportsBlockBoundaryInsert(selection.node)) {
+    return {
+      from: selection.from,
+      to: selection.to,
+      node: selection.node,
+    };
+  }
+
+  if (selection.$from.depth === 0) {
+    return null;
+  }
+
+  const node = selection.$from.node(1);
+
+  // Table cells and custom node views can hold an inner text selection while
+  // still behaving like one top-level widget for surrounding block insertion.
+  // Scope controls to that containing block so only the active block gets them.
+  if (!supportsBlockBoundaryInsert(node)) {
+    return null;
+  }
+
+  return {
+    from: selection.$from.before(1),
+    to: selection.$from.after(1),
+    node,
+  };
+}
+
+function blockBoundaryInsertWidget(position: number, side: -1 | 1) {
+  // Use a decoration instead of permanent document content. The + is a small
+  // hit target for a precise boundary insertion, not a Markdown node.
+  return Decoration.widget(
+    position,
+    (targetView, getPosition) => {
+      const wrapper = document.createElement("div");
+      wrapper.className = "block-boundary-insert";
+      wrapper.contentEditable = "false";
+
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "block-boundary-insert-button";
+      button.setAttribute("aria-label", "Insert paragraph between blocks");
+      button.title = "Insert paragraph";
+      button.textContent = "+";
+      button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+      });
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const currentPosition = getPosition();
+
+        if (typeof currentPosition === "number") {
+          insertParagraphAtPosition(targetView, currentPosition);
+        }
+      });
+
+      wrapper.append(button);
+
+      return wrapper;
+    },
+    {
+      key: `block-boundary-insert-${position}-${side}`,
+      side,
+      stopEvent: () => true,
+    },
+  );
+}
+
+function blockBoundaryInsertDecorations(view: EditorView) {
+  const selectedBlock = selectedTopLevelWidgetBlock(view);
+
+  if (!selectedBlock) {
+    return DecorationSet.empty;
+  }
+
+  return DecorationSet.create(view.state.doc, [
+    blockBoundaryInsertWidget(selectedBlock.from, -1),
+    blockBoundaryInsertWidget(selectedBlock.to, 1),
+  ]);
+}
+
+function moveGapCursorAfterTableBoundary(view: EditorView) {
+  const { state } = view;
+
+  if (!state.selection.empty || !view.endOfTextblock("down")) {
+    return false;
+  }
+
+  const { $head } = state.selection;
+  const tableDepth = ancestorDepthByName($head, "table");
+  const rowDepth = ancestorDepthByName($head, "tableRow");
+
+  if (tableDepth === null || rowDepth === null) {
+    return false;
+  }
+
+  const tableNode = $head.node(tableDepth);
+  const rowIndex = $head.index(tableDepth);
+
+  if (rowIndex !== tableNode.childCount - 1) {
+    return false;
+  }
+
+  const afterTable = $head.after(tableDepth);
+  const nodeAfterTable = state.doc.resolve(afterTable).nodeAfter;
+
+  // If a normal paragraph already follows the table, native navigation has a
+  // real caret destination. For adjacent block widgets, move to a gap cursor so
+  // the insertion point is visible without mutating the Markdown source.
+  if (!nodeAfterTable || nodeAfterTable.isTextblock) {
+    return false;
+  }
+
+  return moveGapCursorTo(view, afterTable);
+}
+
+function moveGapCursorBeforeSelectedBlock(view: EditorView) {
+  const { selection } = view.state;
+
+  if (!(selection instanceof NodeSelection) || selection.node.isTextblock) {
+    return false;
+  }
+
+  return moveGapCursorTo(view, selection.from);
+}
+
+function moveGapCursorAfterSelectedBlock(view: EditorView) {
+  const { selection } = view.state;
+
+  if (!(selection instanceof NodeSelection) || selection.node.isTextblock) {
+    return false;
+  }
+
+  const afterSelectedBlock = selection.to;
+  const nodeAfterSelectedBlock = view.state.doc.resolve(afterSelectedBlock).nodeAfter;
+
+  if (!nodeAfterSelectedBlock || nodeAfterSelectedBlock.isTextblock) {
+    return false;
+  }
+
+  return moveGapCursorTo(view, afterSelectedBlock);
+}
+
+function createBlockBoundaryInsertionExtension() {
+  return Extension.create({
+    name: "glypharyBlockBoundaryInsertion",
+    priority: 10000,
+
+    addKeyboardShortcuts() {
+      return {
+        Enter: () =>
+          insertParagraphAtGapCursor(this.editor.view) ||
+          moveGapCursorBeforeSelectedBlock(this.editor.view),
+        ArrowDown: () =>
+          moveGapCursorAfterTableBoundary(this.editor.view) ||
+          moveGapCursorAfterSelectedBlock(this.editor.view),
+        ArrowUp: () => moveGapCursorBeforeSelectedBlock(this.editor.view),
+      };
+    },
+
+    addProseMirrorPlugins() {
+      return [
+        new Plugin({
+          key: new PluginKey("glypharyBlockBoundaryInsertAffordance"),
+          props: {
+            decorations: (_state) => blockBoundaryInsertDecorations(this.editor.view),
+          },
+        }),
+      ];
+    },
+  });
 }
 
 function codeBlockDecorationsContainLanguageControl(
@@ -472,6 +731,7 @@ type ToolbarIconName =
   | "task-list"
   | "quote"
   | "code"
+  | "html"
   | "table"
   | "columns"
   | "callout"
@@ -581,6 +841,17 @@ function renderToolbarIcon(icon: ToolbarIconName) {
           <path d="m9 8-4 4 4 4" />
           <path d="m15 8 4 4-4 4" />
           <path d="m13 6-2 12" />
+        </svg>
+      );
+    case "html":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M6 4.5h8.2L18 8.3v11.2H6z" />
+          <path d="M14 4.5V8h4" />
+          <path d="M8.2 12.1h1.1v4.1H8.2z" />
+          <path d="M10.4 12.1h3" />
+          <path d="M11.4 12.1v4.1" />
+          <path d="M14.1 16.2v-4.1l1.2 2 1.2-2v4.1" />
         </svg>
       );
     case "table":
@@ -2644,6 +2915,316 @@ function collapseContainerOpening(src: string) {
       defaultOpen: Boolean(openFlag) || plainTitleIncludesOpenFlag,
     },
   };
+}
+
+const htmlBlockTags = new Set([
+  "address",
+  "article",
+  "aside",
+  "base",
+  "basefont",
+  "blockquote",
+  "body",
+  "caption",
+  "center",
+  "col",
+  "colgroup",
+  "dd",
+  "details",
+  "dialog",
+  "dir",
+  "div",
+  "dl",
+  "dt",
+  "fieldset",
+  "figcaption",
+  "figure",
+  "footer",
+  "form",
+  "frame",
+  "frameset",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+  "head",
+  "header",
+  "hr",
+  "html",
+  "iframe",
+  "legend",
+  "li",
+  "link",
+  "main",
+  "menu",
+  "menuitem",
+  "nav",
+  "noframes",
+  "ol",
+  "optgroup",
+  "option",
+  "p",
+  "param",
+  "pre",
+  "section",
+  "script",
+  "summary",
+  "table",
+  "tbody",
+  "td",
+  "tfoot",
+  "th",
+  "thead",
+  "title",
+  "tr",
+  "track",
+  "style",
+  "textarea",
+  "ul",
+]);
+const htmlVoidBlockTags = new Set([
+  "base",
+  "br",
+  "col",
+  "hr",
+  "img",
+  "input",
+  "link",
+  "meta",
+  "param",
+  "track",
+]);
+const blockedHtmlPreviewSelector = [
+  "base",
+  "embed",
+  "iframe",
+  "link",
+  "math",
+  "meta",
+  "object",
+  "script",
+  "style",
+  "svg",
+  "template",
+].join(",");
+
+// HTML blocks are preserved as raw Markdown source but previewed through a
+// conservative sanitizer. This keeps notes compatible with Markdown renderers
+// that allow raw HTML without letting a synced vault execute arbitrary code.
+function htmlBlockStartIndex(src: string) {
+  const commentIndex = src.search(/^<!--/m);
+  const tagIndex = src.search(/^<\/?[A-Za-z][\w:-]*(?:\s|>|\/>)/m);
+  const indexes = [commentIndex, tagIndex].filter((index) => index >= 0);
+
+  return indexes.length ? Math.min(...indexes) : -1;
+}
+
+function lineLength(src: string) {
+  const newlineIndex = src.search(/\r?\n/);
+
+  return newlineIndex >= 0
+    ? newlineIndex + (src[newlineIndex] === "\r" ? 2 : 1)
+    : src.length;
+}
+
+function trailingLineEndingLength(src: string, index: number) {
+  const match = src.slice(index).match(/^[ \t]*(?:\r?\n|$)/);
+
+  return match ? match[0].length : 0;
+}
+
+function htmlBlockMarkdownToken(src: string) {
+  const commentMatch = src.match(/^<!--[\s\S]*?-->/);
+
+  if (commentMatch) {
+    const raw = src.slice(
+      0,
+      commentMatch[0].length + trailingLineEndingLength(src, commentMatch[0].length),
+    );
+
+    return {
+      type: "htmlBlock",
+      raw,
+      rawHtml: raw.trimEnd(),
+    };
+  }
+
+  const tagMatch = src.match(/^<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/);
+
+  if (!tagMatch) {
+    return undefined;
+  }
+
+  const tagName = tagMatch[1].toLowerCase();
+
+  if (!htmlBlockTags.has(tagName)) {
+    return undefined;
+  }
+
+  const isSelfClosing = /\/>\s*$/.test(tagMatch[0]) || htmlVoidBlockTags.has(tagName);
+  let rawLength = lineLength(src);
+
+  if (!isSelfClosing) {
+    const closePattern = new RegExp(`</${tagName}\\s*>`, "i");
+    const closeMatch = closePattern.exec(src.slice(tagMatch[0].length));
+
+    if (closeMatch) {
+      const closeEnd = tagMatch[0].length + closeMatch.index + closeMatch[0].length;
+      rawLength = closeEnd + trailingLineEndingLength(src, closeEnd);
+    }
+  }
+
+  const raw = src.slice(0, rawLength);
+
+  return {
+    type: "htmlBlock",
+    raw,
+    rawHtml: raw.trimEnd(),
+  };
+}
+
+function safeHtmlAttributeValue(name: string, value: string) {
+  if (/^on/i.test(name) || name.toLowerCase() === "srcdoc") {
+    return false;
+  }
+
+  if (["href", "src", "xlink:href", "formaction"].includes(name.toLowerCase())) {
+    return !/^\s*(?:javascript|data|vbscript):/i.test(value);
+  }
+
+  if (name.toLowerCase() === "style") {
+    return !/(?:expression\s*\(|url\s*\(\s*['"]?\s*(?:javascript|data|vbscript):)/i.test(
+      value,
+    );
+  }
+
+  return true;
+}
+
+function sanitizeHtmlBlock(rawHtml: string) {
+  if (typeof document === "undefined") {
+    return "";
+  }
+
+  const template = document.createElement("template");
+  template.innerHTML = rawHtml;
+  template.content.querySelectorAll(blockedHtmlPreviewSelector).forEach((element) => {
+    element.remove();
+  });
+
+  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
+  const elements: Element[] = [];
+
+  while (walker.nextNode()) {
+    if (walker.currentNode instanceof Element) {
+      elements.push(walker.currentNode);
+    }
+  }
+
+  for (const element of elements) {
+    for (const attribute of Array.from(element.attributes)) {
+      if (!safeHtmlAttributeValue(attribute.name, attribute.value)) {
+        element.removeAttribute(attribute.name);
+      }
+    }
+  }
+
+  return template.innerHTML;
+}
+
+function HtmlBlockNodeView({ node, selected, updateAttributes }: NodeViewProps) {
+  const rawHtml = typeof node.attrs.rawHtml === "string" ? node.attrs.rawHtml : "";
+
+  return (
+    <NodeViewWrapper className="markdown-html-block" contentEditable={false}>
+      <div
+        className="markdown-html-preview"
+        dangerouslySetInnerHTML={{ __html: sanitizeHtmlBlock(rawHtml) }}
+      />
+      {selected ? (
+        <label className="markdown-html-source">
+          <span>HTML source</span>
+          <textarea
+            aria-label="HTML block source"
+            onChange={(event) => updateAttributes({ rawHtml: event.currentTarget.value })}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={(event) => event.stopPropagation()}
+            onMouseDown={(event) => event.stopPropagation()}
+            spellCheck={false}
+            value={rawHtml}
+          />
+        </label>
+      ) : null}
+    </NodeViewWrapper>
+  );
+}
+
+function createHtmlBlockExtension() {
+  return Node.create({
+    name: "htmlBlock",
+    group: "block",
+    atom: true,
+    selectable: true,
+
+    addAttributes() {
+      return {
+        rawHtml: {
+          default: "",
+          parseHTML: (element) => element.getAttribute("data-raw-html") || element.innerHTML,
+          renderHTML: () => ({}),
+        },
+      };
+    },
+
+    parseHTML() {
+      return [{ tag: "div[data-glyphary-html-block]" }];
+    },
+
+    renderHTML({ node }) {
+      const rawHtml = typeof node.attrs.rawHtml === "string" ? node.attrs.rawHtml : "";
+
+      return [
+        "div",
+        {
+          "data-glyphary-html-block": "true",
+          "data-raw-html": rawHtml,
+          class: "markdown-html-block",
+        },
+        ["div", { class: "markdown-html-preview" }, sanitizeHtmlBlock(rawHtml)],
+      ];
+    },
+
+    markdownTokenName: "htmlBlock",
+
+    markdownTokenizer: {
+      name: "htmlBlock",
+      level: "block",
+      start: htmlBlockStartIndex,
+      tokenize: htmlBlockMarkdownToken,
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) => {
+      const rawHtml = typeof token.rawHtml === "string" ? token.rawHtml : String(token.raw ?? "");
+
+      if (!rawHtml.trim()) {
+        return [];
+      }
+
+      return helpers.createNode("htmlBlock", { rawHtml });
+    },
+
+    renderMarkdown: (node: JSONContent) => {
+      const rawHtml = typeof node.attrs?.rawHtml === "string" ? node.attrs.rawHtml.trimEnd() : "";
+
+      return rawHtml;
+    },
+
+    addNodeView() {
+      return ReactNodeViewRenderer(HtmlBlockNodeView);
+    },
+  });
 }
 
 function CollapseNodeView({ node }: NodeViewProps) {
@@ -4887,6 +5468,7 @@ function App() {
         createGalleryExtension(),
         createCalloutExtension(),
         createCollapseExtension(),
+        createHtmlBlockExtension(),
         createRichLinkExtension(),
         createExcalidrawEmbedExtension({
           openDrawing: (target) => openExcalidrawDrawingRef.current(target),
@@ -4904,6 +5486,7 @@ function App() {
               target,
             ),
         ),
+        createBlockBoundaryInsertionExtension(),
         TableKit.configure({
           table: {
             resizable: true,
@@ -5286,6 +5869,13 @@ function App() {
         title: "Code block",
         isActive: () => editorFocused && editor.isActive("codeBlock"),
         run: () => editor.chain().focus().toggleCodeBlock().run(),
+      },
+      {
+        label: "HTML",
+        icon: "html",
+        title: "Insert HTML block",
+        isActive: () => false,
+        run: () => insertHtmlBlock(),
       },
       {
         label: "Table",
@@ -7115,6 +7705,18 @@ function App() {
       .run();
   }
 
+  function insertHtmlBlock() {
+    if (!editor) {
+      return;
+    }
+
+    editor
+      .chain()
+      .focus()
+      .insertContent(emptyHtmlBlockMarkdown, { contentType: "markdown" })
+      .run();
+  }
+
   function insertMarkdownAtCursor(content: string) {
     if (!editor || !content.trim()) {
       return;
@@ -7912,6 +8514,12 @@ function App() {
       title: "Insert collapse",
       description: "Add an expandable details block",
       run: insertCollapseBlock,
+    },
+    {
+      id: "insert-html-block",
+      title: "Insert HTML block",
+      description: "Add a sanitized raw HTML block",
+      run: insertHtmlBlock,
     },
     {
       id: "insert-table-of-contents",
