@@ -282,6 +282,9 @@ body {
 
 :root[data-window-glass="enabled"] .document-tabs,
 :root[data-window-glass="enabled"] .drawer-rail,
+:root[data-window-glass="enabled"] .vault-rail,
+:root[data-window-glass="enabled"] .vault-content,
+:root[data-window-glass="enabled"] .drawer-content,
 :root[data-window-glass="enabled"] .drawer-header,
 :root[data-window-glass="enabled"] .settings-tabs {
   background: var(--glass-muted-overlay);
@@ -630,6 +633,9 @@ body.workspace-resizing * {
   display: flex;
   min-width: 0;
   min-height: 0;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 86%, transparent), color-mix(in srgb, var(--surface-muted) 82%, transparent)),
+    var(--surface);
 }
 
 .vault-rail {
@@ -638,21 +644,22 @@ body.workspace-resizing * {
   flex: 0 0 48px;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  border-right: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-  padding: 10px 7px;
+  gap: 7px;
+  border-right: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 72%, transparent), color-mix(in srgb, var(--surface) 58%, transparent));
+  padding: 12px 7px;
 }
 
 .vault-tab {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-strong);
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--surface);
-  color: var(--muted-strong);
+  background: transparent;
+  color: color-mix(in srgb, var(--muted-strong) 88%, var(--heading));
   cursor: pointer;
   font-size: 0.56rem;
   font-weight: 900;
@@ -677,13 +684,20 @@ body.workspace-resizing * {
 
 .vault-tab:hover,
 .vault-tab.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--border-strong) 62%, transparent);
+  background: color-mix(in srgb, var(--surface) 78%, var(--hover));
+  color: var(--heading);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--shadow) 72%, transparent);
 }
 
 .vault-tab:hover {
   transform: translateY(-1px);
+}
+
+.vault-tab.active {
+  border-color: color-mix(in srgb, var(--accent) 36%, var(--border-soft));
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
 }
 
 .vault-content {
@@ -692,6 +706,8 @@ body.workspace-resizing * {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-muted) 78%, transparent), color-mix(in srgb, var(--surface) 58%, transparent));
   opacity: 1;
   transition:
     opacity var(--motion-duration-base) var(--motion-ease),
@@ -708,10 +724,10 @@ body.workspace-resizing * {
   flex: 0 0 auto;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
-  padding: 14px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--surface-muted);
+  gap: 8px;
+  padding: 15px 13px 10px;
+  border-bottom: 0;
+  background: transparent;
 }
 
 .vault-header-actions {
@@ -722,16 +738,17 @@ body.workspace-resizing * {
 
 .vault-header h2 {
   color: var(--heading);
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   line-height: 1.2;
+  letter-spacing: 0;
 }
 
 .vault-header p {
   max-width: 190px;
-  margin: 5px 0 0;
+  margin: 4px 0 0;
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   line-height: 1.3;
   text-overflow: ellipsis;
@@ -741,10 +758,13 @@ body.workspace-resizing * {
 .vault-path {
   flex: 0 0 auto;
   overflow: hidden;
-  border-bottom: 1px solid var(--border-soft);
-  padding: 10px 14px;
+  margin: 0 10px 6px;
+  border: 1px solid color-mix(in srgb, var(--border-soft) 64%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+  padding: 7px 9px;
   color: var(--muted-strong);
-  font-size: 0.76rem;
+  font-size: 0.68rem;
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -872,19 +892,19 @@ body.workspace-resizing * {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 8px;
+  padding: 3px 9px 10px;
 }
 
 .vault-entry {
   display: grid;
   width: 100%;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 7px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
-  padding: 8px;
+  padding: 6px 7px;
   color: var(--heading);
   cursor: default;
   text-align: left;
@@ -896,16 +916,21 @@ body.workspace-resizing * {
 
 .vault-entry:hover,
 .vault-entry.active {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--hover) 72%, transparent);
 }
 
 .vault-entry:hover {
   transform: translateX(1px);
 }
 
+.vault-entry.active {
+  color: var(--heading);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border-soft) 72%, transparent);
+}
+
 .vault-entry-icon {
-  width: 28px;
-  height: 28px;
+  width: 21px;
+  height: 21px;
   justify-self: center;
   overflow: visible;
 }
@@ -965,8 +990,8 @@ body.workspace-resizing * {
 
 .vault-entry strong {
   overflow: hidden;
-  font-size: 0.84rem;
-  font-weight: 800;
+  font-size: 0.78rem;
+  font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -980,7 +1005,7 @@ body.workspace-resizing * {
 .recent-entry em {
   overflow: hidden;
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-style: normal;
   font-weight: 800;
   text-overflow: ellipsis;
@@ -1010,25 +1035,35 @@ body.workspace-resizing * {
   min-width: 0;
   min-height: 0;
   flex-direction: column;
-  border-radius: 0 0 8px 8px;
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 8px;
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 82%, transparent),
+      color-mix(in srgb, var(--surface-muted) 70%, transparent)
+    ),
+    var(--surface);
 }
 
 .editor-pane-shell.active-group .editor-pane {
-  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow:
+    0 18px 45px var(--shadow),
+    0 0 0 1px color-mix(in srgb, var(--accent) 9%, transparent);
 }
 
 .document-tabs {
   display: flex;
   flex: 0 0 auto;
-  min-height: 42px;
-  gap: 4px;
+  min-height: 38px;
+  gap: 6px;
   overflow-x: auto;
-  border: 1px solid var(--border);
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  background: var(--surface-muted);
-  box-shadow: 0 18px 45px var(--shadow);
-  padding: 7px 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 2px 6px 6px 6px;
 }
 
 .section-corners-square .editor-pane,
@@ -1044,17 +1079,16 @@ body.workspace-resizing * {
 
 .document-tab {
   display: inline-flex;
-  max-width: 220px;
-  min-width: 96px;
-  height: 35px;
+  max-width: 210px;
+  min-width: 88px;
+  height: 30px;
   align-items: center;
   border: 1px solid transparent;
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  background: transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 54%, transparent);
   color: var(--muted-strong);
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
   font-weight: 800;
   transition:
     background var(--motion-duration-fast) var(--motion-ease),
@@ -1065,15 +1099,16 @@ body.workspace-resizing * {
 }
 
 .document-tab:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--hover) 82%, transparent);
   color: var(--heading);
   transform: translateY(-1px);
 }
 
 .document-tab.active {
-  border-color: var(--border-soft);
-  background: var(--surface);
+  border-color: color-mix(in srgb, var(--border-strong) 54%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
   color: var(--heading);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--shadow) 72%, transparent);
   transform: translateY(0);
 }
 
@@ -1088,7 +1123,7 @@ body.workspace-resizing * {
   color: inherit;
   cursor: pointer;
   font: inherit;
-  padding: 0 7px 0 11px;
+  padding: 0 6px 0 12px;
 }
 
 .document-tab-select span {
@@ -1099,19 +1134,19 @@ body.workspace-resizing * {
 }
 
 .document-tab-select em {
-  width: 7px;
-  height: 7px;
-  flex: 0 0 7px;
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
   border-radius: 999px;
   background: var(--accent);
 }
 
 .document-tab-close {
-  width: 26px;
-  height: 26px;
-  flex: 0 0 26px;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 23px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 999px;
   background: transparent;
   color: var(--muted);
   cursor: pointer;
@@ -1125,7 +1160,7 @@ body.workspace-resizing * {
 }
 
 .document-tab-close:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--hover) 80%, transparent);
   color: var(--heading);
   transform: scale(1.04);
 }
@@ -1135,9 +1170,9 @@ body.workspace-resizing * {
   flex: 0 0 auto;
   grid-template-columns: 1fr;
   gap: 10px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--surface-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 68%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
 }
 
 .page-name-control {
@@ -1293,9 +1328,9 @@ body.workspace-resizing * {
   flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 8px;
-  padding: 12px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--surface-muted);
+  padding: 10px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 68%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 58%, transparent);
 }
 
 .tool-button {
@@ -1329,9 +1364,9 @@ body.workspace-resizing * {
 }
 
 .tool-button.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 54%, var(--border));
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  color: var(--accent);
 }
 
 .editor-surface-frame {
@@ -1341,6 +1376,7 @@ body.workspace-resizing * {
   flex: 1;
   min-height: 0;
   overflow: auto;
+  background: color-mix(in srgb, var(--surface) 36%, transparent);
 }
 
 .editor-surface {
@@ -2468,6 +2504,14 @@ body.workspace-resizing * {
   display: flex;
   min-width: 0;
   min-height: 0;
+  border-color: color-mix(in srgb, var(--border) 72%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 78%, transparent),
+      color-mix(in srgb, var(--surface-muted) 68%, transparent)
+    ),
+    var(--surface);
 }
 
 .drawer-rail {
@@ -2476,20 +2520,25 @@ body.workspace-resizing * {
   flex: 0 0 48px;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  border-right: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-  padding: 10px 7px;
+  gap: 7px;
+  border-right: 1px solid color-mix(in srgb, var(--border-soft) 64%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 72%, transparent),
+      color-mix(in srgb, var(--surface) 28%, transparent)
+    );
+  padding: 9px 7px;
 }
 
 .drawer-tab {
   display: grid;
   place-items: center;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-strong);
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
   border-radius: 8px;
-  background: var(--surface);
+  background: transparent;
   color: var(--muted-strong);
   cursor: pointer;
   font-size: 0.62rem;
@@ -2504,9 +2553,9 @@ body.workspace-resizing * {
 
 .drawer-tab:hover,
 .drawer-tab.active {
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-text);
+  border-color: color-mix(in srgb, var(--accent) 26%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
 }
 
 .drawer-tab:hover {
@@ -2519,6 +2568,7 @@ body.workspace-resizing * {
   min-height: 0;
   flex: 1;
   flex-direction: column;
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
   opacity: 1;
   transition:
     opacity var(--motion-duration-base) var(--motion-ease),
@@ -2536,9 +2586,9 @@ body.workspace-resizing * {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--surface-muted);
-  padding: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 54%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 48%, transparent);
+  padding: 12px 13px 10px;
 }
 
 .drawer-header h2 {
@@ -2562,7 +2612,7 @@ body.workspace-resizing * {
 }
 
 .toc-panel {
-  padding: 8px;
+  padding: 8px 9px 10px;
 }
 
 .toc-list {
@@ -2577,15 +2627,15 @@ body.workspace-resizing * {
 .toc-entry {
   display: grid;
   width: 100%;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: 8px;
   background: transparent;
   color: var(--heading);
   cursor: pointer;
-  padding: 8px;
+  padding: 7px 8px;
   text-align: left;
   transition:
     background var(--motion-duration-fast) var(--motion-ease),
@@ -2593,7 +2643,7 @@ body.workspace-resizing * {
 }
 
 .toc-entry:hover {
-  background: var(--hover);
+  background: color-mix(in srgb, var(--hover) 80%, transparent);
   transform: translateX(1px);
 }
 
@@ -2627,14 +2677,18 @@ body.workspace-resizing * {
 
 .empty-toc {
   margin: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-soft) 58%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 48%, transparent);
   color: var(--muted);
   font-size: 0.84rem;
   font-weight: 700;
+  padding: 10px;
 }
 
 .calendar-panel {
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 10px;
 }
 
 .calendar-toolbar {
@@ -2643,6 +2697,10 @@ body.workspace-resizing * {
   grid-template-columns: 64px minmax(0, 1fr) 64px;
   align-items: center;
   gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--border-soft) 54%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
+  padding: 5px;
 }
 
 .calendar-toolbar strong {
@@ -2676,9 +2734,9 @@ body.workspace-resizing * {
   position: relative;
   aspect-ratio: 1;
   min-width: 0;
-  border: 1px solid var(--border-soft);
-  border-radius: 6px;
-  background: var(--surface);
+  border: 1px solid color-mix(in srgb, var(--border-soft) 70%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 68%, transparent);
   color: var(--heading);
   cursor: pointer;
   padding: 0;
@@ -2694,8 +2752,8 @@ body.workspace-resizing * {
 }
 
 .calendar-day:hover {
-  border-color: var(--focus);
-  background: var(--hover);
+  border-color: color-mix(in srgb, var(--focus) 70%, var(--border));
+  background: color-mix(in srgb, var(--hover) 82%, transparent);
   transform: translateY(-1px);
 }
 
@@ -2705,8 +2763,9 @@ body.workspace-resizing * {
 }
 
 .calendar-day.today {
-  border-color: var(--accent);
-  box-shadow: inset 0 0 0 1px var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 68%, var(--border));
+  background: color-mix(in srgb, var(--accent) 9%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 42%, transparent);
 }
 
 .calendar-day span {
@@ -3784,7 +3843,7 @@ body.workspace-resizing * {
 .markdown-import {
   flex: 0 1 42%;
   min-height: 160px;
-  border-bottom: 1px solid var(--border-soft);
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 60%, transparent);
 }
 
 .markdown-export {
@@ -3797,9 +3856,9 @@ body.workspace-resizing * {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--surface-muted);
+  padding: 12px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 58%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 50%, transparent);
 }
 
 .pane-header.compact {
@@ -3842,7 +3901,7 @@ body.workspace-resizing * {
   border: 0;
   outline: none;
   padding: 14px;
-  background: var(--surface);
+  background: color-mix(in srgb, var(--surface) 54%, transparent);
 }
 
 .drawer-pane pre {
@@ -3851,6 +3910,7 @@ body.workspace-resizing * {
   margin: 0;
   overflow: auto;
   padding: 18px;
+  background: color-mix(in srgb, var(--surface) 42%, transparent);
   white-space: pre-wrap;
   word-break: break-word;
 }
