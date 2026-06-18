@@ -486,6 +486,8 @@ type CommandPaletteCommand = {
   run: () => void | Promise<void>;
 };
 
+// The command palette is intentionally shallow at the root. Heavy command
+// families live in scopes so the root stays useful for fuzzy search.
 type CommandPaletteScope = "root" | "ai" | "insert" | "table";
 
 type ExcalidrawSceneData = {
@@ -3726,6 +3728,8 @@ function App() {
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
   const workspaceRef = useRef<HTMLElement | null>(null);
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  // Keyboard navigation moves a virtual selection through scrollable results;
+  // this ref lets the selected option be kept visible without stealing focus.
   const commandPaletteResultsRef = useRef<HTMLDivElement | null>(null);
   const wikiLinkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const richLinkInputRef = useRef<HTMLInputElement | null>(null);
@@ -7635,6 +7639,8 @@ function App() {
     (editor.isActive("table") ||
       editor.isActive("tableCell") ||
       editor.isActive("tableHeader"));
+  // Table mutations are only valid while the current selection is inside a
+  // table, so the entire submenu is contextual rather than always searchable.
   const tableCommandPaletteCommands: CommandPaletteCommand[] = cursorInsideTable
     ? [
         {
@@ -7711,6 +7717,9 @@ function App() {
     selectedWikiLinkSearchIndex >= 0
       ? (filteredWikiLinkFiles[selectedWikiLinkSearchIndex] ?? null)
       : null;
+  // AI commands use saved vault settings, not the unsaved settings draft. That
+  // prevents palette actions from using an API key or model the user has not
+  // explicitly saved for this vault.
   const aiCommandPaletteCommands: CommandPaletteCommand[] = savedAiSettings().enabled
     ? [
         {
@@ -7864,6 +7873,9 @@ function App() {
         },
       ]
     : [];
+  // Insert commands are grouped for density, but they remain ordinary commands
+  // once the user enters the submenu so fuzzy search and keyboard behavior stay
+  // identical to the root palette.
   const insertCommandPaletteCommands: CommandPaletteCommand[] = [
     {
       id: "insert-rich-link",
@@ -7960,6 +7972,9 @@ function App() {
     },
     ...pluginCommandPaletteCommands,
   ];
+  // All scopes share the same filtering, selection, and rendering pipeline.
+  // Adding a new grouped menu should usually mean adding one command list here
+  // and a root "Name ..." command that switches to that scope.
   const activeCommandPaletteCommands =
     commandPaletteScope === "ai"
       ? aiCommandPaletteCommands
@@ -8002,6 +8017,8 @@ function App() {
       return;
     }
 
+    // Filtering or changing scopes can shrink the visible command list while
+    // preserving the old index; clamp it before reading the active command.
     setCommandPaletteSelectedIndex((index) =>
       Math.min(index, Math.max(filteredCommandPaletteCommands.length - 1, 0)),
     );
@@ -8032,6 +8049,8 @@ function App() {
   function handleCommandPaletteKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (event.key === "Escape") {
       event.preventDefault();
+      // Escape follows the same hierarchy as Alfred-style palettes: first back
+      // out of the submenu, then close the dialog from the root.
       if (commandPaletteScope !== "root") {
         setCommandPaletteScope("root");
         setCommandPaletteQuery("");
@@ -8077,6 +8096,8 @@ function App() {
   }
 
   async function runCommandPaletteCommand(command: CommandPaletteCommand) {
+    // Submenu commands are navigational; closing here would make selecting
+    // "AI ...", "Insert ...", or "Table ..." look like a no-op.
     if (
       command.id === "ai-menu" ||
       command.id === "insert-menu" ||
