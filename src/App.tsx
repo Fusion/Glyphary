@@ -182,6 +182,8 @@ import type {
   SearchResult,
   SettingsDragState,
   SettingsTab,
+  TaskFilter,
+  TaskSort,
   ThemePreset,
   ThemeTokenControl,
   ThemeTokenGroup,
@@ -464,7 +466,10 @@ type ToolbarIconName =
   | "code"
   | "table"
   | "columns"
-  | "callout";
+  | "callout"
+  | "refresh"
+  | "task-open"
+  | "task-done";
 
 type CommandPaletteCommand = {
   id: string;
@@ -589,6 +594,28 @@ function renderToolbarIcon(icon: ToolbarIconName) {
           <path d="M11 9h5.2" />
           <path d="M11 12.4h4" />
           <path d="m8.2 18.5 2.2 2" />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <path d="M20 7.5v5h-5" />
+          <path d="M19.1 12.2a7.1 7.1 0 0 0-12-4.7L4.5 10" />
+          <path d="M4 16.5v-5h5" />
+          <path d="M4.9 11.8a7.1 7.1 0 0 0 12 4.7l2.6-2.5" />
+        </svg>
+      );
+    case "task-open":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="5.5" y="5.5" width="13" height="13" rx="3" />
+        </svg>
+      );
+    case "task-done":
+      return (
+        <svg aria-hidden="true" viewBox="0 0 24 24">
+          <rect x="5.5" y="5.5" width="13" height="13" rx="3" />
+          <path d="m8.7 12.3 2.3 2.3 4.6-5.1" />
         </svg>
       );
   }
@@ -3638,6 +3665,11 @@ function App() {
   const [searchMode, setSearchMode] = useState<SearchMode>("filename");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("incomplete");
+  const [taskResults, setTaskResults] = useState<SearchResult[]>([]);
+  const [tasksSearching, setTasksSearching] = useState(false);
+  const [taskListQuery, setTaskListQuery] = useState("");
+  const [taskSort, setTaskSort] = useState<TaskSort>("name");
   const [recentFiles, setRecentFiles] = useState<ActiveFile[]>([]);
   const [wikiLinkIndex, setWikiLinkIndex] = useState<VaultIndexedFile[]>([]);
   const [wikiLinkIndexVersion, setWikiLinkIndexVersion] = useState(0);
@@ -5049,6 +5081,7 @@ function App() {
         setCurrentDir(workspace.currentDir);
         setSearchQuery("");
         setSearchResults([]);
+        setTaskResults([]);
         await loadEntries(workspace.vaultRoot, workspace.currentDir);
         await rebuildWikiLinkIndex(workspace.vaultRoot);
 
@@ -5941,6 +5974,7 @@ function App() {
       hydrateDocumentTab(tab, "primary");
       setSearchQuery("");
       setSearchResults([]);
+      setTaskResults([]);
       await loadEntries(selected, "");
       setWikiLinkIndexAndRef([]);
       await rebuildWikiLinkIndex(selected);
@@ -7523,6 +7557,10 @@ function App() {
       return "Recent";
     }
 
+    if (vaultDrawerItem === "tasks") {
+      return "Tasks";
+    }
+
     return "Search";
   }
 
@@ -7537,7 +7575,109 @@ function App() {
       return vaultRoot ? "Recently opened files" : "Open a vault";
     }
 
+    if (vaultDrawerItem === "tasks") {
+      return vaultRoot ? "Markdown task list items" : "Open a vault";
+    }
+
     return "Find in vault";
+  }
+
+  function taskSearchPattern(filter: TaskFilter) {
+    if (filter === "complete") {
+      return "- \\[[xX]\\]";
+    }
+
+    if (filter === "all") {
+      return "- \\[( |[xX])\\]";
+    }
+
+    return "- \\[ \\]";
+  }
+
+  function taskResultPresentation(lineText: string | null | undefined) {
+    const line = lineText?.trim() || "Task";
+    const match = line.match(/^- \[([ xX])\]\s*(.*)$/);
+
+    if (!match) {
+      return {
+        label: line,
+        completed: false,
+      };
+    }
+
+    return {
+      label: match[2] || "Task",
+      completed: match[1].toLowerCase() === "x",
+    };
+  }
+
+  const visibleTaskResults = useMemo(() => {
+    const query = taskListQuery.trim().toLowerCase();
+
+    return taskResults
+      .filter((result) => {
+        if (!query) {
+          return true;
+        }
+
+        const task = taskResultPresentation(result.lineText);
+        const searchableText = `${task.label} ${result.relativePath}`.toLowerCase();
+
+        return searchableText.includes(query);
+      })
+      .sort((left, right) => {
+        if (taskSort === "date") {
+          const byDate = (right.modifiedMs ?? 0) - (left.modifiedMs ?? 0);
+
+          if (byDate !== 0) {
+            return byDate;
+          }
+        }
+
+        const leftTask = taskResultPresentation(left.lineText);
+        const rightTask = taskResultPresentation(right.lineText);
+        const byName = leftTask.label.localeCompare(rightTask.label, undefined, {
+          sensitivity: "base",
+        });
+
+        if (byName !== 0) {
+          return byName;
+        }
+
+        return `${left.relativePath}:${left.lineNumber ?? 0}`.localeCompare(
+          `${right.relativePath}:${right.lineNumber ?? 0}`,
+        );
+      });
+  }, [taskListQuery, taskResults, taskSort]);
+
+  async function refreshTasks(filter = taskFilter) {
+    if (!vaultRoot) {
+      setTaskResults([]);
+      return;
+    }
+
+    try {
+      setTasksSearching(true);
+      const results = await invoke<SearchResult[]>("search_vault", {
+        root: vaultRoot,
+        query: taskSearchPattern(filter),
+        includeContent: true,
+        markdownOnly: true,
+        excludeDotPaths: true,
+      });
+
+      // Filename hits are not useful in this view; task navigation is based on
+      // the exact Markdown task lines returned by content search.
+      const contentResults = results.filter((result) => result.isContentMatch);
+      setTaskResults(contentResults);
+      setStatus(
+        `Found ${contentResults.length} task${contentResults.length === 1 ? "" : "s"}`,
+      );
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTasksSearching(false);
+    }
   }
 
   async function searchVault() {
@@ -7568,6 +7708,14 @@ function App() {
   async function openSearchResult(result: SearchResult) {
     await openFile(result.relativePath);
   }
+
+  useEffect(() => {
+    if (vaultDrawerItem !== "tasks") {
+      return;
+    }
+
+    void refreshTasks(taskFilter);
+  }, [vaultDrawerItem, vaultRoot, taskFilter]);
 
   function openImagePreviewFromEditor(event: ReactMouseEvent<HTMLDivElement>) {
     const target = event.target;
@@ -8178,6 +8326,26 @@ function App() {
                 <path d="M12 7.5v5l3.2 1.9" />
               </svg>
             </button>
+            <button
+              className={vaultDrawerItem === "tasks" && vaultDrawerOpen ? "vault-tab active" : "vault-tab"}
+              type="button"
+              aria-label={
+                vaultDrawerOpen && vaultDrawerItem === "tasks"
+                  ? "Close tasks drawer"
+                  : "Open tasks drawer"
+              }
+              title={vaultDrawerOpen && vaultDrawerItem === "tasks" ? "Close Tasks" : "Open Tasks"}
+              onClick={() => toggleVaultDrawerItem("tasks")}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M9 6h11" />
+                <path d="M9 12h11" />
+                <path d="M9 18h11" />
+                <path d="m3.7 6 1.1 1.1L7 4.8" />
+                <rect x="3.3" y="10.7" width="3.4" height="3.4" rx="0.7" />
+                <rect x="3.3" y="16.7" width="3.4" height="3.4" rx="0.7" />
+              </svg>
+            </button>
           </div>
           {vaultDrawerOpen ? (
             <div className="vault-content">
@@ -8300,6 +8468,109 @@ function App() {
                   {!vaultRoot ? (
                     <p className="empty-vault">Open a vault to track recent files.</p>
                   ) : null}
+                </div>
+              ) : vaultDrawerItem === "tasks" ? (
+                <div className="vault-tasks" role="region" aria-label="Vault tasks">
+                  <div className="task-options" aria-label="Task filter">
+                    <button
+                      className={taskFilter === "incomplete" ? "active" : ""}
+                      disabled={!vaultRoot}
+                      type="button"
+                      onClick={() => setTaskFilter("incomplete")}
+                    >
+                      Open
+                    </button>
+                    <button
+                      className={taskFilter === "complete" ? "active" : ""}
+                      disabled={!vaultRoot}
+                      type="button"
+                      onClick={() => setTaskFilter("complete")}
+                    >
+                      Done
+                    </button>
+                    <button
+                      className={taskFilter === "all" ? "active" : ""}
+                      disabled={!vaultRoot}
+                      type="button"
+                      onClick={() => setTaskFilter("all")}
+                    >
+                      All
+                    </button>
+                    <button
+                      className="task-refresh-button"
+                      disabled={!vaultRoot || tasksSearching}
+                      type="button"
+                      title="Refresh tasks"
+                      aria-label="Refresh tasks"
+                      onClick={() => refreshTasks(taskFilter)}
+                    >
+                      {tasksSearching ? "..." : renderToolbarIcon("refresh")}
+                    </button>
+                  </div>
+                  <div className="task-list-tools">
+                    <label>
+                      <span>Find</span>
+                      <input
+                        disabled={!vaultRoot}
+                        value={taskListQuery}
+                        onChange={(event) => setTaskListQuery(event.currentTarget.value)}
+                        placeholder="Filter tasks"
+                      />
+                    </label>
+                    <label>
+                      <span>Sort</span>
+                      <select
+                        disabled={!vaultRoot}
+                        value={taskSort}
+                        onChange={(event) => setTaskSort(event.currentTarget.value as TaskSort)}
+                      >
+                        <option value="name">Name</option>
+                        <option value="date">Date</option>
+                      </select>
+                    </label>
+                  </div>
+                  {visibleTaskResults.length > 0 ? (
+                    <div className="task-results" role="list" aria-label="Task results">
+                      {visibleTaskResults.map((result, index) => {
+                        const task = taskResultPresentation(result.lineText);
+
+                        return (
+                          <button
+                            key={`${result.relativePath}-${result.lineNumber ?? "task"}-${index}`}
+                            type="button"
+                            onClick={() => openSearchResult(result)}
+                          >
+                            <span
+                              className={
+                                task.completed
+                                  ? "task-result-icon completed"
+                                  : "task-result-icon"
+                              }
+                            >
+                              {renderToolbarIcon(task.completed ? "task-done" : "task-open")}
+                            </span>
+                            <span className="task-result-text">
+                              <strong>{task.label}</strong>
+                              <span>
+                                {result.relativePath}
+                                {result.lineNumber ? `:${result.lineNumber}` : ""}
+                              </span>
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : vaultRoot ? (
+                    <p className="empty-vault">
+                      {tasksSearching
+                        ? "Searching tasks..."
+                        : taskResults.length > 0
+                          ? "No tasks match this filter."
+                          : "No matching tasks found."}
+                    </p>
+                  ) : (
+                    <p className="empty-vault">Open a vault to list Markdown tasks.</p>
+                  )}
                 </div>
               ) : (
                 <div className="vault-search" role="search">

@@ -479,6 +479,7 @@ test("tauri backend modules document their responsibilities and contracts", () =
 
   const rustFiles = rustFilesUnder("src-tauri/src");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
+  const searchBackend = readFileSync("src-tauri/src/search.rs", "utf8");
 
   for (const file of rustFiles) {
     const source = readFileSync(file, "utf8");
@@ -494,6 +495,10 @@ test("tauri backend modules document their responsibilities and contracts", () =
   assert.doesNotMatch(backend, /mod tests \{/);
   assert.doesNotMatch(rustFiles.join("\n"), /src-tauri\/src\/tests\.rs/);
   assert.ok(rustFiles.includes("src-tauri/src/tests/mod.rs"));
+  assert.match(searchBackend, /RegexMatcherBuilder/);
+  assert.match(searchBackend, /SearcherBuilder/);
+  assert.match(searchBackend, /BinaryDetection::quit/);
+  assert.doesNotMatch(searchBackend, /Command::new\("rg"\)/);
 });
 
 test("frontend pure logic is split into documented helper modules", () => {
@@ -965,16 +970,48 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
   assert.match(css, /\.tidbit-capture-editor \.tiptap \{[\s\S]*max-width: var\(--glyphary-editor-max-width\)/);
 });
 
-test("vault drawer exposes files search and recent views", () => {
+test("vault drawer exposes files search recent and task views", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(appTypes, /export type VaultDrawerItem = "files" \| "search" \| "recent"/);
+  assert.match(appTypes, /export type TaskFilter = "incomplete" \| "complete" \| "all"/);
+  assert.match(appTypes, /export type TaskSort = "name" \| "date"/);
+  assert.match(appTypes, /modifiedMs\?: number/);
+  assert.match(appTypes, /export type VaultDrawerItem = "files" \| "search" \| "recent" \| "tasks"/);
   assert.match(app, /recentFilesWithOpenedFile/);
   assert.match(appTypes, /recentFiles: ActiveFile\[\]/);
   assert.match(app, /Recently opened files/);
   assert.match(app, /toggleVaultDrawerItem\("recent"\)/);
+  assert.match(app, /toggleVaultDrawerItem\("tasks"\)/);
+  assert.match(app, /useState<TaskFilter>\("incomplete"\)/);
+  assert.match(app, /useState<TaskSort>\("name"\)/);
+  assert.match(app, /taskListQuery/);
+  assert.match(app, /visibleTaskResults/);
+  assert.match(app, /setTaskListQuery\(event\.currentTarget\.value\)/);
+  assert.match(app, /setTaskSort\(event\.currentTarget\.value as TaskSort\)/);
+  assert.match(app, /right\.modifiedMs \?\? 0/);
+  assert.match(app, /function taskSearchPattern/);
+  assert.match(app, /function taskResultPresentation/);
+  assert.match(app, /line\.match\(\/\^- \\\[/);
+  assert.ok(app.includes('return "- \\\\[[xX]\\\\]";'));
+  assert.ok(app.includes('return "- \\\\[ \\\\]";'));
+  assert.match(app, /includeContent: true/);
+  assert.match(app, /markdownOnly: true/);
+  assert.match(app, /excludeDotPaths: true/);
+  assert.match(app, /aria-label="Refresh tasks"/);
+  assert.match(app, /renderToolbarIcon\("refresh"\)/);
+  assert.match(app, /renderToolbarIcon\(task\.completed \? "task-done" : "task-open"\)/);
+  assert.match(app, /result\.isContentMatch/);
+  assert.match(css, /\.vault-tasks/);
+  assert.match(css, /\.task-options/);
+  assert.match(css, /\.task-list-tools/);
+  assert.match(css, /\.task-list-tools input/);
+  assert.match(css, /\.task-list-tools select/);
+  assert.match(css, /\.task-refresh-button svg/);
+  assert.match(css, /\.task-result-icon/);
+  assert.match(css, /\.task-result-text/);
+  assert.match(css, /\.task-results/);
   assert.doesNotMatch(app, /className="file-context"/);
   assert.match(app, /displayVaultRelativePath\(activeFile\?\.relativePath \?\? currentDir, vaultRoot\)/);
   assert.doesNotMatch(app, /vaultDrawerItem === "files"[\s\S]*?return vaultRoot \|\| "No vault selected"/);

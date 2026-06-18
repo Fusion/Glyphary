@@ -301,6 +301,7 @@ body {
 :root[data-window-glass="enabled"] .drawer-header,
 :root[data-window-glass="enabled"] .vault-path,
 :root[data-window-glass="enabled"] .vault-search,
+:root[data-window-glass="enabled"] .vault-tasks,
 :root[data-window-glass="enabled"] .metadata-shell,
 :root[data-window-glass="enabled"] .toolbar,
 :root[data-window-glass="enabled"] .pane-header,
@@ -318,7 +319,9 @@ body {
 :root[data-window-glass="enabled"] .settings-panel select,
 :root[data-window-glass="enabled"] .metadata-shell input,
 :root[data-window-glass="enabled"] .metadata-shell textarea,
-:root[data-window-glass="enabled"] .vault-search input {
+:root[data-window-glass="enabled"] .vault-search input,
+:root[data-window-glass="enabled"] .task-list-tools input,
+:root[data-window-glass="enabled"] .task-list-tools select {
   background: var(--glass-inner-overlay);
 }
 
@@ -329,6 +332,7 @@ body {
 :root[data-window-glass="enabled"] .document-tab,
 :root[data-window-glass="enabled"] .file-menu-popover,
 :root[data-window-glass="enabled"] .search-options button,
+:root[data-window-glass="enabled"] .task-options button,
 :root[data-window-glass="enabled"] .shortcut-capture-control button,
 :root[data-window-glass="enabled"] .settings-inline-action {
   border-color: var(--glass-border-overlay);
@@ -337,6 +341,7 @@ body {
 
 :root[data-window-glass="enabled"] .document-tab.active,
 :root[data-window-glass="enabled"] .search-options button.active,
+:root[data-window-glass="enabled"] .task-options button.active,
 :root[data-window-glass="enabled"] .tool-button.active,
 :root[data-window-glass="enabled"] .appearance-button.active {
   border-color: color-mix(in srgb, var(--accent) 42%, var(--glass-border-overlay));
@@ -348,6 +353,7 @@ body {
 :root[data-window-glass="enabled"] .appearance-button:focus-visible,
 :root[data-window-glass="enabled"] .file-menu-popover button:not(:disabled):hover,
 :root[data-window-glass="enabled"] .search-options button:hover,
+:root[data-window-glass="enabled"] .task-options button:hover,
 :root[data-window-glass="enabled"] .toc-entry:hover,
 :root[data-window-glass="enabled"] .vault-entry:hover {
   background: var(--glass-muted-overlay);
@@ -843,6 +849,16 @@ body.workspace-resizing * {
   background: var(--surface);
 }
 
+.vault-tasks {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
 .vault-search label {
   display: flex;
   flex: 0 0 auto;
@@ -879,7 +895,15 @@ body.workspace-resizing * {
   gap: 6px;
 }
 
-.search-options button {
+.task-options {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: 1fr 1fr 1fr 34px;
+  gap: 6px;
+}
+
+.search-options button,
+.task-options button {
   height: 30px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
@@ -890,19 +914,91 @@ body.workspace-resizing * {
   font-weight: 900;
 }
 
-.search-options button.active {
+.task-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.task-refresh-button svg {
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.task-list-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 6px;
+}
+
+.task-list-tools label {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.task-list-tools span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.task-list-tools input,
+.task-list-tools select {
+  min-width: 0;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--heading);
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 750;
+  outline: none;
+}
+
+.task-list-tools input {
+  padding: 0 8px;
+}
+
+.task-list-tools select {
+  padding: 0 6px;
+}
+
+.task-list-tools input:focus,
+.task-list-tools select:focus {
+  border-color: var(--focus);
+}
+
+.task-list-tools input:disabled,
+.task-list-tools select:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.search-options button.active,
+.task-options button.active {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-text);
 }
 
 .vault-search input:disabled,
-.search-options button:disabled {
+.search-options button:disabled,
+.task-options button:disabled {
   cursor: not-allowed;
   opacity: 0.42;
 }
 
-.search-results {
+.search-results,
+.task-results {
   display: flex;
   flex: 1;
   min-height: 0;
@@ -911,7 +1007,8 @@ body.workspace-resizing * {
   overflow: auto;
 }
 
-.search-results button {
+.search-results button,
+.task-results button {
   display: grid;
   gap: 3px;
   border: 0;
@@ -923,12 +1020,21 @@ body.workspace-resizing * {
   text-align: left;
 }
 
-.search-results button:hover {
+.task-results button {
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+}
+
+.search-results button:hover,
+.task-results button:hover {
   background: var(--hover);
 }
 
 .search-results strong,
-.search-results em {
+.search-results em,
+.task-results strong,
+.task-results span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -939,7 +1045,43 @@ body.workspace-resizing * {
   font-weight: 900;
 }
 
-.search-results span {
+.task-results strong {
+  color: var(--heading);
+  font-size: 0.76rem;
+  font-weight: 850;
+}
+
+.task-result-icon {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.task-result-icon.completed {
+  color: var(--accent);
+}
+
+.task-result-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.9;
+}
+
+.task-result-text {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.search-results span,
+.task-results span {
   color: var(--muted);
   font-size: 0.66rem;
   font-weight: 800;

@@ -16,7 +16,6 @@ use std::{
     collections::HashMap,
     fs,
     path::{Component, Path, PathBuf},
-    process::Command,
     sync::Mutex,
     time::Duration,
 };

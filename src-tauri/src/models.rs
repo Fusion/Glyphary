@@ -191,6 +191,7 @@ pub(crate) struct SearchResult {
     pub(crate) line_number: Option<usize>,
     pub(crate) line_text: Option<String>,
     pub(crate) is_content_match: bool,
+    pub(crate) modified_ms: Option<u64>,
 }
 
 #[derive(Debug, Serialize)]
@@ -292,30 +293,4 @@ pub(crate) struct RichLinkMetadata {
     pub(crate) description: String,
     pub(crate) image: String,
     pub(crate) site_name: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RipgrepPath {
-    pub(crate) text: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RipgrepLines {
-    pub(crate) text: String,
-}
-
-#[derive(Deserialize)]
-pub(crate) struct RipgrepMatchData {
-    pub(crate) path: RipgrepPath,
-    pub(crate) lines: RipgrepLines,
-    pub(crate) line_number: Option<usize>,
-}
-
-#[derive(Deserialize)]
-#[serde(tag = "type", content = "data")]
-pub(crate) enum RipgrepEvent {
-    #[serde(rename = "match")]
-    Match(RipgrepMatchData),
-    #[serde(other)]
-    Other,
 }
