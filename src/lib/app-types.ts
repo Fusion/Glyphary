@@ -216,6 +216,7 @@ export type VaultAppearanceSettings = {
   statusBarVisible: boolean;
   sectionCorners: "rounded" | "square";
   workspaceMargin: "compact" | "comfortable" | "spacious";
+  uiFontWeight: "regular" | "medium" | "bold";
 };
 
 export type CanvasEdgeStyle = "curved" | "straight" | "stepped";

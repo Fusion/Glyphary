@@ -154,6 +154,22 @@ pub(crate) fn default_glass_opacity() -> f64 {
     DEFAULT_GLASS_OPACITY
 }
 
+pub(crate) fn default_status_bar_visible() -> bool {
+    true
+}
+
+pub(crate) fn default_section_corners() -> String {
+    "rounded".into()
+}
+
+pub(crate) fn default_workspace_margin() -> String {
+    "comfortable".into()
+}
+
+pub(crate) fn default_ui_font_weight() -> String {
+    "regular".into()
+}
+
 pub(crate) fn default_canvas_node_border_width() -> f64 {
     DEFAULT_CANVAS_NODE_BORDER_WIDTH
 }
@@ -239,6 +255,10 @@ impl Default for AppearanceSettings {
         Self {
             glass_effect: false,
             glass_opacity: DEFAULT_GLASS_OPACITY,
+            status_bar_visible: true,
+            section_corners: default_section_corners(),
+            workspace_margin: default_workspace_margin(),
+            ui_font_weight: default_ui_font_weight(),
         }
     }
 }

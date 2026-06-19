@@ -2,7 +2,7 @@ APP_NAME := Glyphary
 APP_BUNDLE := src-tauri/target/release/bundle/macos/$(APP_NAME).app
 DMG := src-tauri/target/release/bundle/dmg/$(APP_NAME)_1.0.0-beta.1_aarch64.dmg
 
-.PHONY: help install dev web docs docs-open manual manual-open build check test audit prod-app release run-app open-app open-dmg ship-dmg clean
+.PHONY: help install dev web docs docs-open manual manual-open build check test audit prod-app release windows run-app open-app open-dmg ship-dmg clean
 
 help:
 	@echo "Targets:"
@@ -19,6 +19,7 @@ help:
 	@echo "  make audit     Run npm audit"
 	@echo "  make prod-app  Build the production macOS .app"
 	@echo "  make release   Build the production .app and .dmg"
+	@echo "  make windows   Try a macOS-hosted Windows NSIS cross-build"
 	@echo "  make run-app   Open the built macOS .app"
 	@echo "  make open-dmg  Open the built DMG"
 	@echo "  make ship-dmg  DMGgn, notarize, stable for distribution on github"
@@ -64,6 +65,9 @@ prod-app:
 
 release:
 	npm run tauri build -- --target universal-apple-darwin
+
+windows:
+	PATH="/opt/homebrew/opt/llvm/bin:$$PATH" npm run tauri build -- --runner cargo-xwin --target x86_64-pc-windows-msvc --bundles nsis
 
 run-app:
 	@test -d "$(APP_BUNDLE)" || (echo "$(APP_BUNDLE) does not exist. Run 'make release' first."; exit 1)

@@ -59,6 +59,7 @@ import {
 } from "../.test-dist/dates.js";
 import {
   isMacOsPlatform,
+  isWindowsPlatform,
 } from "../.test-dist/platform.js";
 import {
   richLinkMarkdown,
@@ -226,20 +227,32 @@ test("drag and paste image filtering accepts supported image formats", () => {
   assert.equal(isSupportedImageFile({ name: "notes.txt", type: "text/plain" }), false);
 });
 
-test("macOS platform detection controls platform-specific window actions", () => {
+test("desktop platform detection controls platform-specific window actions", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
   const capabilities = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+  const windowsConfig = JSON.parse(readFileSync("src-tauri/tauri.windows.conf.json", "utf8"));
 
   assert.equal(isMacOsPlatform("MacIntel"), true);
   assert.equal(isMacOsPlatform("", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"), true);
   assert.equal(isMacOsPlatform("Win32"), false);
   assert.equal(isMacOsPlatform("Linux x86_64"), false);
+  assert.equal(isWindowsPlatform("Win32"), true);
+  assert.equal(isWindowsPlatform("", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"), true);
+  assert.equal(isWindowsPlatform("MacIntel"), false);
+  assert.match(app, /hideDuplicateDocumentActions/);
+  assert.match(app, /isWindowsPlatform/);
+  assert.match(css, /\.titlebar[\s\S]*background: var\(--surface\)/);
+  assert.doesNotMatch(css, /data-window-glass="enabled"] \.document-tabs,\n:root\[data-window-glass="enabled"] \.titlebar/);
+  assert.match(css, /data-window-glass="enabled"] \.titlebar[\s\S]*backdrop-filter: none/);
   assert.match(app, /getCurrentWindow\(\)\.setTheme\(resolvedAppearance\)/);
   assert.doesNotMatch(app, /mac-window-title/);
   assert.doesNotMatch(app, /app-brand/);
   assert.ok(capabilities.permissions.includes("core:window:allow-set-theme"));
   assert.equal(config.app.windows[0].theme, "Dark");
+  assert.equal(config.app.windows[0].transparent, true);
+  assert.equal(windowsConfig.app.windows[0].transparent, false);
   assert.notEqual(config.app.windows[0].hiddenTitle, true);
 });
 
@@ -386,7 +399,7 @@ test("columns markdown containers are wired into the editor", () => {
 test("gallery markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
-  const readme = readFileSync("README.md", "utf8");
+  const manual = readFileSync("docs-manual/index.html", "utf8");
 
   assert.match(app, /function createGalleryExtension\(\)/);
   assert.match(app, /name: "gallery"/);
@@ -400,7 +413,7 @@ test("gallery markdown containers are wired into the editor", () => {
   assert.match(app, /id: "gallery-layout"/);
   assert.match(app, /title: "Gallery layout"/);
   assert.match(css, /\.markdown-gallery/);
-  assert.match(readme, /::: gallery/);
+  assert.match(manual, /Gallery layout/);
 });
 
 test("editor images can be opened in a full-size preview", () => {
@@ -1585,6 +1598,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(settings, /statusBarVisible: true/);
   assert.match(settings, /sectionCorners: "rounded"/);
   assert.match(settings, /workspaceMargin: "comfortable"/);
+  assert.match(settings, /uiFontWeight: "regular"/);
   assert.match(settings, /defaultGlassOpacity = 0\.58/);
   assert.match(settings, /minimumGlassOpacity = 0\.24/);
   assert.match(settings, /maximumGlassOpacity = 0\.9/);
@@ -1595,11 +1609,16 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(app, /Show status bar/);
   assert.match(app, /Use rounded section corners/);
   assert.match(app, /Workspace margins/);
+  assert.match(app, /UI text weight/);
   assert.match(app, /<option value="compact">Flush<\/option>/);
   assert.match(app, /<option value="spacious">Roomy<\/option>/);
+  assert.match(app, /<option value="regular">Regular<\/option>/);
+  assert.match(app, /<option value="medium">Medium<\/option>/);
+  assert.match(app, /<option value="bold">Bold<\/option>/);
   assert.match(app, /normalizedVaultAppearanceDraft/);
   assert.match(app, /section-corners-\$\{normalizedVaultAppearanceDraft\.sectionCorners\}/);
   assert.match(app, /workspace-margin-\$\{normalizedVaultAppearanceDraft\.workspaceMargin\}/);
+  assert.match(app, /ui-weight-\$\{normalizedVaultAppearanceDraft\.uiFontWeight\}/);
   assert.doesNotMatch(
     app,
     /setVaultAppearanceDraft\(\(settings\) => \(\{(?:(?!\}\)\);)[\s\S])*event\.currentTarget/,
@@ -1607,6 +1626,10 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(css, /\.section-corners-square \.editor-pane/);
   assert.match(css, /\.workspace-margin-compact/);
   assert.match(css, /\.workspace-margin-spacious/);
+  assert.match(css, /--glyphary-ui-font-weight: 400/);
+  assert.match(css, /\.app-shell\.ui-weight-regular/);
+  assert.match(css, /\.app-shell\.ui-weight-medium/);
+  assert.match(css, /\.app-shell\.ui-weight-bold/);
   assert.match(css, /--glyphary-shell-padding-top: 8px/);
   assert.match(css, /--glyphary-shell-padding-inline: 8px/);
   assert.match(css, /\.workspace-margin-compact \{[\s\S]*--glyphary-shell-padding-top: 0px/);
@@ -1678,6 +1701,10 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(modelsBackend, /pub\(crate\) struct AppearanceSettings/);
   assert.match(modelsBackend, /glass_effect/);
   assert.match(modelsBackend, /glass_opacity/);
+  assert.match(modelsBackend, /status_bar_visible/);
+  assert.match(modelsBackend, /section_corners/);
+  assert.match(modelsBackend, /workspace_margin/);
+  assert.match(modelsBackend, /ui_font_weight/);
   assert.match(modelsBackend, /preset_id/);
   assert.match(windowingBackend, /Effect::UnderWindowBackground/);
   assert.match(windowingBackend, /set_background_color\(Some\(Color\(0, 0, 0, 0\)\)\)/);

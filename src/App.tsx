@@ -136,7 +136,7 @@ import {
   isSupportedImageFile,
 } from "./lib/assets";
 import { expandDateTemplate } from "./lib/dates";
-import { isMacOsPlatform } from "./lib/platform";
+import { isMacOsPlatform, isWindowsPlatform } from "./lib/platform";
 import {
   defaultAutosaveSettings,
   defaultCanvasSettings,
@@ -4293,10 +4293,9 @@ function App() {
   const [folderActionDialog, setFolderActionDialog] = useState<FolderActionDialogState | null>(null);
   const [dirty, setDirty] = useState(false);
   const [status, setStatus] = useState("No vault open");
-  const hideWindowDocumentActions = isMacOsPlatform(
-    window.navigator.platform,
-    window.navigator.userAgent,
-  );
+  const hideDuplicateDocumentActions =
+    isMacOsPlatform(window.navigator.platform, window.navigator.userAgent) ||
+    isWindowsPlatform(window.navigator.platform, window.navigator.userAgent);
   const clickTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const activeFileRef = useRef<ActiveFile | null>(null);
   const currentDirRef = useRef("");
@@ -10343,6 +10342,7 @@ function App() {
     `callout-style-${themeCalloutDraft.style}`,
     `section-corners-${normalizedVaultAppearanceDraft.sectionCorners}`,
     `workspace-margin-${normalizedVaultAppearanceDraft.workspaceMargin}`,
+    `ui-weight-${normalizedVaultAppearanceDraft.uiFontWeight}`,
   ]
     .filter(Boolean)
     .join(" ");
@@ -10388,7 +10388,7 @@ function App() {
       </datalist>
       <header className="titlebar">
         <div className="app-actions">
-          {!hideWindowDocumentActions ? (
+          {!hideDuplicateDocumentActions ? (
             <div className="file-menu">
               <button className="secondary-action" type="button">
                 File
@@ -10443,7 +10443,7 @@ function App() {
               </svg>
             )}
           </button>
-          {!hideWindowDocumentActions ? (
+          {!hideDuplicateDocumentActions ? (
             <button className="secondary-action" type="button" onClick={resetDocument}>
               New
             </button>
@@ -10502,6 +10502,7 @@ function App() {
         </div>
       </header>
 
+      {vaultRoot ? (
       <section
         ref={workspaceRef}
         className={[
@@ -11106,6 +11107,31 @@ function App() {
           ) : null}
         </aside>
       </section>
+      ) : (
+        <section className="vault-onboarding" aria-label="Open a vault">
+          <div className="vault-onboarding-card">
+            <div className="vault-onboarding-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <path d="M3.5 6.5h6.2l2 2h8.8v9a2 2 0 0 1-2 2h-15a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z" />
+                <path d="M2.5 9.5h19" />
+                <path d="M8 14h8" />
+              </svg>
+            </div>
+            <div className="vault-onboarding-copy">
+              <p className="vault-onboarding-kicker">Welcome to Glyphary</p>
+              <h1>Choose a vault to begin.</h1>
+              <p>
+                Glyphary works directly with a folder of Markdown notes. Select your Obsidian
+                vault, or any folder you want to use as a vault, and the file browser, search,
+                daily notes, assets, and settings will be scoped to that location.
+              </p>
+            </div>
+            <button className="primary-action vault-onboarding-action" type="button" onClick={openVault}>
+              Select Vault Folder
+            </button>
+          </div>
+        </section>
+      )}
       {settingsOpen ? (
         <div className="settings-screen" role="dialog" aria-modal="true" aria-label="Settings">
           <div className="settings-card" style={settingsCardStyle}>
@@ -11889,6 +11915,25 @@ function App() {
                         <option value="compact">Flush</option>
                         <option value="comfortable">Comfortable</option>
                         <option value="spacious">Roomy</option>
+                      </select>
+                    </label>
+                    <label className="settings-field compact-field">
+                      <span>UI text weight</span>
+                      <select
+                        disabled={!vaultRoot}
+                        value={normalizedVaultAppearanceDraft.uiFontWeight}
+                        onChange={(event) => {
+                          const uiFontWeight = event.currentTarget
+                            .value as VaultAppearanceSettings["uiFontWeight"];
+                          setVaultAppearanceDraft((settings) => ({
+                            ...normalizeVaultAppearanceSettings(settings),
+                            uiFontWeight,
+                          }));
+                        }}
+                      >
+                        <option value="regular">Regular</option>
+                        <option value="medium">Medium</option>
+                        <option value="bold">Bold</option>
                       </select>
                     </label>
                   </section>

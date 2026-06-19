@@ -84,10 +84,26 @@ pub(crate) fn clean_appearance_settings(settings: AppearanceSettings) -> Appeara
     } else {
         DEFAULT_GLASS_OPACITY
     };
+    let section_corners = match settings.section_corners.as_str() {
+        "square" => "square",
+        _ => "rounded",
+    };
+    let workspace_margin = match settings.workspace_margin.as_str() {
+        "compact" | "spacious" => settings.workspace_margin.as_str(),
+        _ => "comfortable",
+    };
+    let ui_font_weight = match settings.ui_font_weight.as_str() {
+        "medium" | "bold" => settings.ui_font_weight.as_str(),
+        _ => "regular",
+    };
 
     AppearanceSettings {
         glass_effect: settings.glass_effect,
         glass_opacity,
+        status_bar_visible: settings.status_bar_visible,
+        section_corners: section_corners.into(),
+        workspace_margin: workspace_margin.into(),
+        ui_font_weight: ui_font_weight.into(),
     }
 }
 pub(crate) fn clean_canvas_settings(settings: CanvasSettings) -> CanvasSettings {

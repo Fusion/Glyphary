@@ -85,6 +85,7 @@ export const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
   statusBarVisible: true,
   sectionCorners: "rounded",
   workspaceMargin: "comfortable",
+  uiFontWeight: "regular",
 };
 
 export const defaultCanvasSettings: CanvasSettings = {
@@ -383,6 +384,12 @@ export function normalizeVaultAppearanceSettings(
     settings?.workspaceMargin === "spacious"
       ? settings.workspaceMargin
       : defaultVaultAppearanceSettings.workspaceMargin;
+  const uiFontWeight =
+    settings?.uiFontWeight === "regular" ||
+    settings?.uiFontWeight === "medium" ||
+    settings?.uiFontWeight === "bold"
+      ? settings.uiFontWeight
+      : defaultVaultAppearanceSettings.uiFontWeight;
 
   return {
     glassEffect: settings?.glassEffect ?? defaultVaultAppearanceSettings.glassEffect,
@@ -391,6 +398,7 @@ export function normalizeVaultAppearanceSettings(
       settings?.statusBarVisible ?? defaultVaultAppearanceSettings.statusBarVisible,
     sectionCorners,
     workspaceMargin,
+    uiFontWeight,
   };
 }
 

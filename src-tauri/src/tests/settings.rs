@@ -31,6 +31,22 @@ fn lists_directories_before_files() {
 }
 
 #[test]
+fn lists_underscore_canvas_files() {
+    let root = test_root();
+    fs::write(root.join("_Veterinary Clinic Purchase.canvas"), "{}\n")
+        .expect("canvas file should be created");
+
+    let entries = list_vault_dir(root.to_string_lossy().into_owned(), "".into())
+        .expect("directory should list");
+
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].relative_path, "_Veterinary Clinic Purchase.canvas");
+    assert!(!entries[0].is_dir);
+
+    fs::remove_dir_all(root).expect("test root should be removed");
+}
+
+#[test]
 fn hides_dotfiles_unless_vault_settings_enable_them() {
     let root = test_root();
     fs::write(root.join("alpha.md"), "# Alpha\n").expect("file should be created");
@@ -84,6 +100,10 @@ fn reads_default_vault_settings_when_missing() {
     assert!(!settings.editor.vim_mode);
     assert!(!settings.appearance.glass_effect);
     assert_eq!(settings.appearance.glass_opacity, DEFAULT_GLASS_OPACITY);
+    assert!(settings.appearance.status_bar_visible);
+    assert_eq!(settings.appearance.section_corners, "rounded");
+    assert_eq!(settings.appearance.workspace_margin, "comfortable");
+    assert_eq!(settings.appearance.ui_font_weight, "regular");
     assert!(!settings.debug.enabled);
     assert_eq!(
         settings.css_snippets.directory,
@@ -163,6 +183,10 @@ fn writes_vault_settings_file() {
             appearance: AppearanceSettings {
                 glass_effect: true,
                 glass_opacity: 0.42,
+                status_bar_visible: false,
+                section_corners: "square".into(),
+                workspace_margin: "spacious".into(),
+                ui_font_weight: "bold".into(),
             },
             debug: DebugSettings { enabled: true },
             css_snippets: CssSnippetSettings {
@@ -186,6 +210,10 @@ fn writes_vault_settings_file() {
     assert!(settings.editor.vim_mode);
     assert!(settings.appearance.glass_effect);
     assert_eq!(settings.appearance.glass_opacity, 0.42);
+    assert!(!settings.appearance.status_bar_visible);
+    assert_eq!(settings.appearance.section_corners, "square");
+    assert_eq!(settings.appearance.workspace_margin, "spacious");
+    assert_eq!(settings.appearance.ui_font_weight, "bold");
     assert!(settings.debug.enabled);
     assert_eq!(settings.css_snippets.directory, "themes/css");
     assert_eq!(settings.css_snippets.enabled, vec!["quiet.css", "wide.css"]);
@@ -207,6 +235,10 @@ fn clamps_glass_opacity_settings() {
             appearance: AppearanceSettings {
                 glass_effect: true,
                 glass_opacity: 10.0,
+                section_corners: "weird".into(),
+                workspace_margin: "huge".into(),
+                ui_font_weight: "black".into(),
+                ..AppearanceSettings::default()
             },
             ..VaultSettings::default()
         },
@@ -214,6 +246,9 @@ fn clamps_glass_opacity_settings() {
     .expect("settings should write");
 
     assert_eq!(settings.appearance.glass_opacity, MAX_GLASS_OPACITY);
+    assert_eq!(settings.appearance.section_corners, "rounded");
+    assert_eq!(settings.appearance.workspace_margin, "comfortable");
+    assert_eq!(settings.appearance.ui_font_weight, "regular");
 
     fs::remove_dir_all(root).expect("test root should be removed");
 }

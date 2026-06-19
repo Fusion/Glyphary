@@ -127,6 +127,14 @@ pub(crate) struct AppearanceSettings {
     pub(crate) glass_effect: bool,
     #[serde(default = "crate::defaults::default_glass_opacity")]
     pub(crate) glass_opacity: f64,
+    #[serde(default = "crate::defaults::default_status_bar_visible")]
+    pub(crate) status_bar_visible: bool,
+    #[serde(default = "crate::defaults::default_section_corners")]
+    pub(crate) section_corners: String,
+    #[serde(default = "crate::defaults::default_workspace_margin")]
+    pub(crate) workspace_margin: String,
+    #[serde(default = "crate::defaults::default_ui_font_weight")]
+    pub(crate) ui_font_weight: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]

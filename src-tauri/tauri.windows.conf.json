@@ -1,0 +1,15 @@
+{
+  "app": {
+    "windows": [
+      {
+        "title": "Glyphary",
+        "width": 1470,
+        "height": 956,
+        "minWidth": 760,
+        "minHeight": 560,
+        "theme": "Dark",
+        "transparent": false
+      }
+    ]
+  }
+}

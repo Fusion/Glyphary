@@ -77,16 +77,19 @@ pub(crate) fn list_vault_dir(root: String, relative: String) -> Result<Vec<Vault
         })
         .map(|entry| {
             let entry = entry.map_err(|err| format!("Could not read directory entry: {err}"))?;
-            let file_type = entry
-                .file_type()
-                .map_err(|err| format!("Could not read file type: {err}"))?;
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry
+                .file_type()
+                .map(|file_type| file_type.is_dir())
+                // ponytail: Windows cloud/reparse providers can be flaky here; metadata is enough for drawer display.
+                .or_else(|_| entry.metadata().map(|metadata| metadata.is_dir()))
+                .unwrap_or(false);
 
             Ok(VaultEntry {
                 name,
                 relative_path: relative_string(&root, &path)?,
-                is_dir: file_type.is_dir(),
+                is_dir,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;

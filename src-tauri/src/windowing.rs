@@ -10,7 +10,8 @@
 //!   window/WebView material state.
 //! - Disabling the user-facing glass option must still keep enough transparent
 //!   material for macOS titlebar contrast to remain legible.
-use super::*;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 #[cfg(target_os = "macos")]
 pub(crate) fn apply_window_glass_effect(

@@ -19,3 +19,10 @@ export function isMacOsPlatform(platform: string, userAgent = "") {
     normalizedUserAgent.includes("mac os x")
   );
 }
+
+export function isWindowsPlatform(platform: string, userAgent = "") {
+  const normalizedPlatform = platform.toLowerCase();
+  const normalizedUserAgent = userAgent.toLowerCase();
+
+  return normalizedPlatform.startsWith("win") || normalizedUserAgent.includes("windows");
+}

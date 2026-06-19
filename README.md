@@ -94,6 +94,12 @@ through follow-up prompts.
 Glyphary supports light, dark, and auto modes, theme templates, approved CSS
 snippets, a theme builder, and basic Obsidian-style theme compatibility.
 
+## Releasing
+
+```
+make prod-app && make run-app && make windows
+```
+
 ## Learn More
 
 The full user manual covers vaults, editing, canvas files, AI features, settings,
