@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs-site/assets/glyphary-icon.png" alt="Glyphary logo" width="96" height="96" />
+  <img src="src-tauri/icons/icon.png" alt="Glyphary logo" width="96" height="96" />
 </p>
 
 # Glyphary
@@ -12,7 +12,7 @@ columns, callouts, card links, image galleries, task lists, and expand/collapse
 blocks are edited visually instead of through raw syntax.
 
 <p align="center">
-  <img src="docs-site/assets/screenshots/main-workspace.png" alt="Glyphary workspace with an open vault" />
+  <img src="https://glyphary.github.io/assets/screenshots/main-workspace.png" alt="Glyphary workspace with an open vault" />
 </p>
 
 ## Highlights
@@ -36,7 +36,19 @@ like a native rich editor. This is especially useful for structures that are
 awkward to maintain by hand, such as tables, columns, and callout-heavy notes.
 
 <p align="center">
-  <img src="docs-site/assets/screenshots/rich-markdown-note.png" alt="Glyphary editing a rich Markdown note" />
+  <img src="https://glyphary.github.io/assets/screenshots/columns.png" alt="Glyphary editing Markdown columns visually" />
+</p>
+
+<p align="center">
+  <img src="https://glyphary.github.io/assets/screenshots/callouts.png" alt="Glyphary callouts" />
+</p>
+
+<p align="center">
+  <img src="https://glyphary.github.io/assets/screenshots/collapse.png" alt="Glyphary expand and collapse blocks" />
+</p>
+
+<p align="center">
+  <img src="https://glyphary.github.io/assets/screenshots/rich-links.png" alt="Glyphary rich card links" />
 </p>
 
 ## Canvas
@@ -46,7 +58,7 @@ You can add cards, notes, media, web pages, groups, colors, and arrowed edges,
 then save back to the original canvas file.
 
 <p align="center">
-  <img src="docs-manual/assets/screenshots/canvas.png" alt="Glyphary canvas editor" />
+  <img src="https://glyphary.github.io/assets/screenshots/canvas.png" alt="Glyphary canvas editor" />
 </p>
 
 ## Search And Commands
@@ -57,7 +69,7 @@ Markdown notes get editing commands, tables get table commands, and canvases get
 canvas commands.
 
 <p align="center">
-  <img src="docs-site/assets/screenshots/command-palette.png" alt="Glyphary command palette" />
+  <img src="https://glyphary.github.io/assets/screenshots/vault-search.png" alt="Glyphary vault search" />
 </p>
 
 ## AI
@@ -73,14 +85,14 @@ research the local vault with bounded retrieval, summarize a concept across
 related notes, build tables of linked pages, and refine the same generated block
 through follow-up prompts.
 
+<p align="center">
+  <img src="https://glyphary.github.io/assets/screenshots/ai-builder.png" alt="Glyphary AI Builder" />
+</p>
+
 ## Appearance
 
 Glyphary supports light, dark, and auto modes, theme templates, approved CSS
 snippets, a theme builder, and basic Obsidian-style theme compatibility.
-
-<p align="center">
-  <img src="docs-site/assets/screenshots/settings-appearance.png" alt="Glyphary appearance settings" />
-</p>
 
 ## Learn More
 
