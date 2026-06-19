@@ -27,6 +27,7 @@ import type {
   AiSettings,
   AppearanceMode,
   AutosaveSettings,
+  CanvasSettings,
   CssSnippetSettings,
   DebugSettings,
   EditorBehaviorSettings,
@@ -46,6 +47,10 @@ export const defaultCssSnippetDirectory = "_snippets_";
 export const defaultGlassOpacity = 0.58;
 export const minimumGlassOpacity = 0.24;
 export const maximumGlassOpacity = 0.9;
+export const minimumCanvasNodeBorderWidth = 0;
+export const maximumCanvasNodeBorderWidth = 6;
+export const minimumCanvasEdgeThickness = 0.5;
+export const maximumCanvasEdgeThickness = 8;
 
 export const defaultFrontmatterPillSettings: FrontmatterPillSettings = {
   enabled: true,
@@ -80,6 +85,15 @@ export const defaultVaultAppearanceSettings: VaultAppearanceSettings = {
   statusBarVisible: true,
   sectionCorners: "rounded",
   workspaceMargin: "comfortable",
+};
+
+export const defaultCanvasSettings: CanvasSettings = {
+  nodeBorderWidth: 1,
+  edgeThickness: 2.5,
+  edgeStyle: "curved",
+  showGrid: true,
+  showNavigationPreview: true,
+  snapToGrid: false,
 };
 
 export const defaultCssSnippetSettings: CssSnippetSettings = {
@@ -404,6 +418,56 @@ export function sameVaultAppearanceSettings(
     normalizedLeft.statusBarVisible === normalizedRight.statusBarVisible &&
     normalizedLeft.sectionCorners === normalizedRight.sectionCorners &&
     normalizedLeft.workspaceMargin === normalizedRight.workspaceMargin
+  );
+}
+
+export function normalizeCanvasSettings(settings: CanvasSettings | undefined | null) {
+  const nodeBorderWidth =
+    typeof settings?.nodeBorderWidth === "number" && Number.isFinite(settings.nodeBorderWidth)
+      ? Math.min(
+          maximumCanvasNodeBorderWidth,
+          Math.max(minimumCanvasNodeBorderWidth, settings.nodeBorderWidth),
+        )
+      : defaultCanvasSettings.nodeBorderWidth;
+  const edgeThickness =
+    typeof settings?.edgeThickness === "number" && Number.isFinite(settings.edgeThickness)
+      ? Math.min(
+          maximumCanvasEdgeThickness,
+          Math.max(minimumCanvasEdgeThickness, settings.edgeThickness),
+        )
+      : defaultCanvasSettings.edgeThickness;
+  const edgeStyle =
+    settings?.edgeStyle === "straight" ||
+    settings?.edgeStyle === "curved" ||
+    settings?.edgeStyle === "stepped"
+      ? settings.edgeStyle
+      : defaultCanvasSettings.edgeStyle;
+
+  return {
+    nodeBorderWidth,
+    edgeThickness,
+    edgeStyle,
+    showGrid: settings?.showGrid ?? defaultCanvasSettings.showGrid,
+    showNavigationPreview:
+      settings?.showNavigationPreview ?? defaultCanvasSettings.showNavigationPreview,
+    snapToGrid: settings?.snapToGrid ?? defaultCanvasSettings.snapToGrid,
+  };
+}
+
+export function sameCanvasSettings(
+  left: CanvasSettings | undefined | null,
+  right: CanvasSettings | undefined | null,
+) {
+  const normalizedLeft = normalizeCanvasSettings(left);
+  const normalizedRight = normalizeCanvasSettings(right);
+
+  return (
+    normalizedLeft.nodeBorderWidth === normalizedRight.nodeBorderWidth &&
+    normalizedLeft.edgeThickness === normalizedRight.edgeThickness &&
+    normalizedLeft.edgeStyle === normalizedRight.edgeStyle &&
+    normalizedLeft.showGrid === normalizedRight.showGrid &&
+    normalizedLeft.showNavigationPreview === normalizedRight.showNavigationPreview &&
+    normalizedLeft.snapToGrid === normalizedRight.snapToGrid
   );
 }
 

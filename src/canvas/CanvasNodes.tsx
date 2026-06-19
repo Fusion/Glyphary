@@ -63,9 +63,9 @@ function canvasNodeStyle(color: string | undefined): CanvasColorStyle {
 
   return {
     "--canvas-node-accent": accent,
-    "--canvas-node-accent-soft": `color-mix(in srgb, ${accent} 24%, transparent)`,
-    "--canvas-node-bg": `color-mix(in srgb, ${accent} 24%, var(--surface))`,
-    "--canvas-node-border": `color-mix(in srgb, ${accent} 78%, var(--border))`,
+    "--canvas-node-accent-soft": `color-mix(in srgb, ${accent} 36%, transparent)`,
+    "--canvas-node-bg": `color-mix(in srgb, ${accent} 42%, var(--surface))`,
+    "--canvas-node-border": `color-mix(in srgb, ${accent} 88%, var(--border))`,
   };
 }
 

@@ -282,6 +282,7 @@ body {
 :root[data-window-glass="enabled"] .editor-groups,
 :root[data-window-glass="enabled"] .editor-pane-shell,
 :root[data-window-glass="enabled"] .drawer-panel,
+:root[data-window-glass="enabled"] .canvas-view,
 :root[data-window-glass="enabled"] .editor-surface,
 :root[data-window-glass="enabled"] .editor-surface .ProseMirror {
   background: transparent;
@@ -319,6 +320,9 @@ body {
 :root[data-window-glass="enabled"] .vault-tasks,
 :root[data-window-glass="enabled"] .metadata-shell,
 :root[data-window-glass="enabled"] .toolbar,
+:root[data-window-glass="enabled"] .canvas-view .react-flow__controls,
+:root[data-window-glass="enabled"] .canvas-view .react-flow__minimap,
+:root[data-window-glass="enabled"] .canvas-context-menu,
 :root[data-window-glass="enabled"] .pane-header,
 :root[data-window-glass="enabled"] .calendar-toolbar,
 :root[data-window-glass="enabled"] .settings-tabs {
@@ -349,6 +353,17 @@ body {
 
 :root[data-window-glass="enabled"] .tidbit-capture-editor .tiptap {
   background: transparent;
+}
+
+:root[data-window-glass="enabled"] .canvas-node-card,
+:root[data-window-glass="enabled"] .canvas-group-node {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--canvas-node-bg, var(--surface)) 82%, var(--glass-inner-overlay)),
+      color-mix(in srgb, var(--canvas-node-bg, var(--surface)) 58%, transparent)
+    ),
+    color-mix(in srgb, var(--glass-inner-overlay) 64%, transparent);
 }
 
 :root[data-window-glass="enabled"] .secondary-action,
@@ -1334,6 +1349,9 @@ body.workspace-resizing * {
 .section-corners-square .editor-pane,
 .section-corners-square .drawer-pane,
 .section-corners-square .vault-pane,
+.section-corners-square .canvas-node-card,
+.section-corners-square .canvas-group-node,
+.section-corners-square .canvas-dialog,
 .section-corners-square .document-tabs,
 .section-corners-square .settings-card,
 .section-corners-square .ai-review-card,
@@ -1653,13 +1671,26 @@ body.workspace-resizing * {
 
 .canvas-editor-pane {
   min-height: 0;
+  overflow: hidden;
 }
 
 .canvas-view {
   position: relative;
   flex: 1;
   min-height: 0;
-  background: color-mix(in srgb, var(--surface) 28%, transparent);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 1px 1px, color-mix(in srgb, var(--accent) 24%, var(--border-soft)) 1.2px, transparent 0),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 64%, transparent),
+      color-mix(in srgb, var(--surface) 42%, transparent)
+    );
+  background-size: 22px 22px, auto;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 10%, transparent) inset,
+    0 0 0 1px color-mix(in srgb, var(--border-soft) 70%, transparent) inset,
+    0 20px 60px color-mix(in srgb, var(--shadow) 18%, transparent) inset;
 }
 
 .canvas-view .react-flow {
@@ -1675,11 +1706,54 @@ body.workspace-resizing * {
   cursor: grabbing;
 }
 
+.canvas-view .react-flow__attribution {
+  display: none;
+}
+
 .canvas-view .react-flow__controls,
 .canvas-view .react-flow__minimap {
-  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  background: color-mix(in srgb, var(--surface) 86%, transparent);
-  box-shadow: 0 10px 30px var(--shadow);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  box-shadow: 0 8px 20px color-mix(in srgb, var(--shadow) 42%, transparent);
+}
+
+.canvas-view .react-flow__controls {
+  bottom: 12px;
+  left: 12px;
+}
+
+.canvas-view .react-flow__controls-button {
+  width: 30px;
+  height: 30px;
+  border-bottom-color: color-mix(in srgb, var(--border-soft) 58%, transparent);
+  background: transparent;
+  color: var(--muted-strong);
+}
+
+.canvas-view .react-flow__controls-button:hover {
+  background: color-mix(in srgb, var(--hover) 80%, transparent);
+  color: var(--heading);
+}
+
+.canvas-view .react-flow__controls-button svg {
+  max-width: 14px;
+  max-height: 14px;
+  fill: currentColor;
+}
+
+.canvas-view .react-flow__minimap {
+  right: 12px;
+  bottom: 12px;
+}
+
+.canvas-view .react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--selection) 38%, transparent);
+}
+
+.canvas-view .react-flow__minimap-node {
+  fill: color-mix(in srgb, var(--muted-strong) 72%, var(--surface));
 }
 
 .canvas-view .react-flow__edge-path,
@@ -1688,11 +1762,11 @@ body.workspace-resizing * {
 }
 
 .canvas-view .react-flow__handle {
-  width: 10px;
-  height: 10px;
-  border: 2px solid color-mix(in srgb, var(--surface) 82%, transparent);
-  background: color-mix(in srgb, var(--canvas-node-accent, var(--accent)) 82%, var(--text));
-  opacity: 0.42;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid color-mix(in srgb, var(--surface) 88%, transparent);
+  background: color-mix(in srgb, var(--canvas-node-accent, var(--accent)) 74%, var(--heading));
+  opacity: 0;
   transition:
     opacity 120ms ease,
     transform 120ms ease;
@@ -1710,13 +1784,15 @@ body.workspace-resizing * {
   position: absolute;
   z-index: 92;
   display: grid;
-  min-width: 190px;
-  gap: 2px;
-  border: 1px solid var(--border-strong);
+  min-width: 200px;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 76%, transparent);
   border-radius: 8px;
-  background: var(--surface);
-  box-shadow: 0 14px 32px var(--shadow-strong);
-  padding: 5px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 90%, transparent), color-mix(in srgb, var(--surface-muted) 78%, transparent)),
+    var(--surface);
+  box-shadow: 0 16px 34px color-mix(in srgb, var(--shadow-strong) 74%, transparent);
+  padding: 6px;
 }
 
 .canvas-context-menu button {
@@ -1724,12 +1800,12 @@ body.workspace-resizing * {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  padding: 8px 10px;
+  padding: 8px 9px;
   color: var(--heading);
   cursor: pointer;
   font: inherit;
   font-size: 0.78rem;
-  font-weight: 850;
+  font-weight: 800;
   text-align: left;
 }
 
@@ -1755,9 +1831,9 @@ body.workspace-resizing * {
 .canvas-context-menu .canvas-color-choice {
   display: grid;
   place-items: center;
-  min-height: 28px;
+  min-height: 26px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 7px;
+  border-radius: 6px;
   background: var(--canvas-choice-color, var(--surface-muted));
   padding: 0;
 }
@@ -1790,10 +1866,12 @@ body.workspace-resizing * {
   width: min(520px, calc(100% - 40px));
   max-height: min(620px, calc(100% - 40px));
   gap: 14px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
   border-radius: 10px;
-  background: var(--surface);
-  box-shadow: 0 18px 44px var(--shadow-strong);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 92%, transparent), color-mix(in srgb, var(--surface-muted) 76%, transparent)),
+    var(--surface);
+  box-shadow: 0 18px 44px color-mix(in srgb, var(--shadow-strong) 74%, transparent);
   padding: 18px;
   transform: translate(-50%, -50%);
 }
@@ -1925,21 +2003,51 @@ body.workspace-resizing * {
 
 .canvas-node-card,
 .canvas-group-node {
+  position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border: 1.5px solid var(--canvas-node-border, var(--border));
+  border: var(--canvas-node-border-width, 1px) solid var(--canvas-node-border, color-mix(in srgb, var(--border) 76%, transparent));
   border-radius: 8px;
-  background: var(--canvas-node-bg, color-mix(in srgb, var(--surface) 88%, transparent));
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--shadow) 70%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--canvas-node-bg, var(--surface)) 96%, white 4%),
+      color-mix(in srgb, var(--canvas-node-bg, var(--surface)) 82%, var(--surface-muted))
+    ),
+    var(--canvas-node-bg, var(--surface));
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 22%, transparent) inset,
+    0 10px 22px color-mix(in srgb, var(--shadow) 34%, transparent);
   color: var(--text);
+}
+
+.canvas-node-card::before,
+.canvas-group-node::before {
+  /* Canvas colors must be readable at a glance; the stripe survives low-opacity
+     glass settings where a colored fill alone can become too subtle. */
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--canvas-node-accent, transparent);
+  content: "";
+  opacity: 0.84;
+  pointer-events: none;
+}
+
+.canvas-view .react-flow__node.selected .canvas-node-card,
+.canvas-view .react-flow__node.selected .canvas-group-node {
+  border-color: color-mix(in srgb, var(--canvas-node-accent, var(--accent)) 78%, var(--border));
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--canvas-node-accent, var(--accent)) 24%, transparent),
+    0 12px 28px color-mix(in srgb, var(--shadow-strong) 42%, transparent);
 }
 
 .canvas-node-card {
   display: grid;
   grid-template-rows: auto 1fr;
-  gap: 8px;
-  padding: 10px;
+  gap: 7px;
+  padding: 9px;
 }
 
 .canvas-text-node {
@@ -1957,8 +2065,8 @@ body.workspace-resizing * {
   color: var(--text);
   font: inherit;
   font-family: var(--font-editor);
-  font-size: 0.78rem;
-  line-height: 1.35;
+  font-size: 0.8rem;
+  line-height: 1.4;
   padding: 0;
 }
 
@@ -1971,15 +2079,15 @@ body.workspace-resizing * {
 }
 
 .canvas-link-node {
-  border-style: dashed;
+  border-style: solid;
 }
 
 .canvas-web-preview {
   width: 100%;
   min-height: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-soft) 72%, transparent);
   border-radius: 6px;
-  background: var(--surface-muted);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
 }
 
 .canvas-web-fallback {
@@ -1992,39 +2100,43 @@ body.workspace-resizing * {
   display: flex;
   align-items: flex-start;
   padding: 10px;
-  background: var(--canvas-node-bg, color-mix(in srgb, var(--surface) 18%, transparent));
+  background: var(--canvas-node-bg, color-mix(in srgb, var(--surface) 10%, transparent));
   border-style: dashed;
   box-shadow: none;
 }
 
 .canvas-group-node strong {
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-soft) 64%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
   color: var(--muted-strong);
-  font-size: 0.74rem;
-  font-weight: 900;
-  padding: 4px 8px;
-  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 850;
+  padding: 4px 7px;
+  text-transform: none;
 }
 
 .canvas-node-card header {
   display: grid;
-  gap: 2px;
+  gap: 3px;
   min-width: 0;
+  padding-bottom: 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 52%, transparent);
 }
 
 .canvas-node-card header span {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.64rem;
   font-weight: 900;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .canvas-node-card header strong {
   overflow: hidden;
   color: var(--heading);
-  font-size: 0.9rem;
+  font-size: 0.84rem;
+  font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2038,7 +2150,7 @@ body.workspace-resizing * {
   color: var(--text);
   font-family: var(--font-editor);
   font-size: 0.78rem;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 
 .canvas-markdown-preview p,

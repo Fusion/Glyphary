@@ -218,6 +218,17 @@ export type VaultAppearanceSettings = {
   workspaceMargin: "compact" | "comfortable" | "spacious";
 };
 
+export type CanvasEdgeStyle = "curved" | "straight" | "stepped";
+
+export type CanvasSettings = {
+  nodeBorderWidth: number;
+  edgeThickness: number;
+  edgeStyle: CanvasEdgeStyle;
+  showGrid: boolean;
+  showNavigationPreview: boolean;
+  snapToGrid: boolean;
+};
+
 export type SettingsDragState = {
   pointerId: number;
   startX: number;
@@ -238,6 +249,7 @@ export type VaultSettings = {
   cssSnippets?: CssSnippetSettings | null;
   plugins?: PluginSettings | null;
   ai?: AiSettings | null;
+  canvas?: CanvasSettings | null;
   theme?: VaultThemeSettings | null;
 };
 
@@ -285,7 +297,7 @@ export type SearchMode = "filename" | "content";
 export type TaskFilter = "incomplete" | "complete" | "all";
 export type TaskSort = "name" | "date";
 export type AppearanceMode = "auto" | "light" | "dark";
-export type SettingsTab = "main" | "appearance" | "plugins" | "ai" | "debug";
+export type SettingsTab = "main" | "appearance" | "canvas" | "plugins" | "ai" | "debug";
 export type DrawerItem = "source" | "toc" | "calendar";
 export type VaultDrawerItem = "files" | "search" | "recent" | "tasks";
 export type ResizeSide = "vault" | "drawer";

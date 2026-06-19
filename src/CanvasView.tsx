@@ -49,7 +49,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { invoke } from "@tauri-apps/api/core";
-import type { VaultEntry } from "./lib/app-types.js";
+import type { CanvasEdgeStyle, CanvasSettings, VaultEntry } from "./lib/app-types.js";
 import {
   CanvasDialogs,
   type CanvasFlowPosition,
@@ -58,7 +58,6 @@ import {
 } from "./canvas/CanvasDialogs.js";
 import { canvasNodeTypes, type CanvasNodeData } from "./canvas/CanvasNodes.js";
 import {
-  canvasEdgeStrokeWidth,
   canvasSideHandleId,
   canvasSnapGridSize,
   canvasVaultRootDirectory,
@@ -74,6 +73,7 @@ import {
   serializeCanvasDocument,
   type JsonCanvasNode,
 } from "./lib/canvas.js";
+import { defaultCanvasSettings, normalizeCanvasSettings } from "./lib/settings.js";
 
 export { canvasTitle, isCanvasPath } from "./lib/canvas.js";
 
@@ -88,28 +88,52 @@ type CanvasNodeContextMenuState = {
   nodeId: string;
 };
 
+export type CanvasCommandAction = "card" | "note" | "media" | "web" | "group";
+
+export type CanvasCommandRequest = {
+  id: number;
+  action: CanvasCommandAction;
+};
+
 const canvasEdgeMarker = {
   type: MarkerType.ArrowClosed,
   width: 16,
   height: 16,
 };
 
+function canvasFlowEdgeType(style: CanvasEdgeStyle) {
+  if (style === "straight") {
+    return "straight";
+  }
+
+  if (style === "stepped") {
+    return "smoothstep";
+  }
+
+  return "default";
+}
+
 function CanvasGraph({
   content,
   name,
   vaultRoot,
+  settings,
+  commandRequest,
   onOpenFile,
   onChange,
 }: {
   content: string;
   name: string;
   vaultRoot: string;
+  settings: CanvasSettings;
+  commandRequest?: CanvasCommandRequest | null;
   onOpenFile: (relativePath: string) => void;
   onChange: (content: string) => void;
 }) {
   const reactFlow = useReactFlow<Node<CanvasNodeData>, Edge>();
   const canvasElementRef = useRef<HTMLElement | null>(null);
   const lastContextMenuOpenedAtRef = useRef(0);
+  const handledCommandRequestIdRef = useRef<number | null>(null);
   const parsed = useMemo(() => {
     try {
       return { canvas: parseCanvasDocument(content), error: "" };
@@ -156,6 +180,8 @@ function CanvasGraph({
       }));
   }, [onOpenFile, parsed.canvas.nodes, vaultRoot]);
   const parsedEdges = useMemo<Edge[]>(() => {
+    const edgeType = canvasFlowEdgeType(settings.edgeStyle);
+
     return (parsed.canvas.edges ?? []).map((edge) => ({
       id: edge.id,
       source: edge.fromNode,
@@ -166,12 +192,12 @@ function CanvasGraph({
       markerEnd: canvasEdgeMarker,
       style: {
         ...(edge.color ? { stroke: edge.color } : {}),
-        strokeWidth: canvasEdgeStrokeWidth,
+        strokeWidth: settings.edgeThickness,
       },
       labelStyle: edge.color ? { fill: edge.color } : undefined,
-      type: "smoothstep",
+      type: edgeType,
     }));
-  }, [parsed.canvas.edges]);
+  }, [parsed.canvas.edges, settings.edgeStyle, settings.edgeThickness]);
   const [nodes, setNodes] = useState(parsedNodes);
   const [edges, setEdges] = useState(parsedEdges);
   const [editingCardId, setEditingCardId] = useState<string | null>(null);
@@ -271,8 +297,8 @@ function CanvasGraph({
           sourceHandle: connection.sourceHandle,
           targetHandle: connection.targetHandle,
           markerEnd: canvasEdgeMarker,
-          style: { strokeWidth: canvasEdgeStrokeWidth },
-          type: "smoothstep",
+          style: { strokeWidth: settings.edgeThickness },
+          type: canvasFlowEdgeType(settings.edgeStyle),
         };
         const nextEdges = addEdge(edge, currentEdges);
 
@@ -281,7 +307,7 @@ function CanvasGraph({
         return nextEdges;
       });
     },
-    [emitCanvasChange, nodes],
+    [emitCanvasChange, nodes, settings.edgeStyle, settings.edgeThickness],
   );
   const addCanvasNode = useCallback(
     (node: Node<CanvasNodeData>) => {
@@ -507,13 +533,36 @@ function CanvasGraph({
     },
     [closeContextMenu],
   );
+  const centeredCanvasPosition = useCallback(() => {
+    const bounds = canvasElementRef.current?.getBoundingClientRect();
+
+    if (!bounds) {
+      return { flowX: 0, flowY: 0 };
+    }
+
+    const position = reactFlow.screenToFlowPosition({
+      x: bounds.left + bounds.width / 2,
+      y: bounds.top + bounds.height / 2,
+    });
+
+    return {
+      flowX: Math.round(position.x),
+      flowY: Math.round(position.y),
+    };
+  }, [reactFlow]);
   const runCanvasMenuAction = useCallback(
-    (action: "card" | "note" | "media" | "web" | "group" | "snap") => {
-      if (!contextMenu) {
+    (
+      action: CanvasCommandAction | "snap",
+      requestedPosition?: Pick<CanvasContextMenuState, "flowX" | "flowY">,
+    ) => {
+      if (!contextMenu && !requestedPosition) {
         return;
       }
 
-      const menuPosition = { flowX: contextMenu.flowX, flowY: contextMenu.flowY };
+      const menuPosition = requestedPosition ?? {
+        flowX: contextMenu?.flowX ?? 0,
+        flowY: contextMenu?.flowY ?? 0,
+      };
 
       closeContextMenu();
 
@@ -572,6 +621,14 @@ function CanvasGraph({
     },
     [addCanvasNode, closeContextMenu, contextMenu, createFlowNode, edges, emitCanvasChange],
   );
+  useEffect(() => {
+    if (!commandRequest || handledCommandRequestIdRef.current === commandRequest.id) {
+      return;
+    }
+
+    handledCommandRequestIdRef.current = commandRequest.id;
+    runCanvasMenuAction(commandRequest.action, centeredCanvasPosition());
+  }, [centeredCanvasPosition, commandRequest, runCanvasMenuAction]);
   const pendingVaultDirectoryLoad = useMemo(() => {
     if (!vaultPickerDialog) {
       return null;
@@ -798,7 +855,16 @@ function CanvasGraph({
   );
 
   return (
-    <section className="canvas-view" aria-label={`${name} canvas`} ref={canvasElementRef}>
+    <section
+      className="canvas-view"
+      aria-label={`${name} canvas`}
+      ref={canvasElementRef}
+      style={
+        {
+          "--canvas-node-border-width": `${settings.nodeBorderWidth}px`,
+        } as CSSProperties
+      }
+    >
       <ReactFlow
         colorMode="system"
         connectionMode={ConnectionMode.Loose}
@@ -820,9 +886,11 @@ function CanvasGraph({
         nodesDraggable
         nodesConnectable
         proOptions={{ hideAttribution: true }}
+        snapGrid={[canvasSnapGridSize, canvasSnapGridSize]}
+        snapToGrid={settings.snapToGrid}
       >
-        <Background />
-        <MiniMap pannable zoomable />
+        {settings.showGrid ? <Background /> : null}
+        {settings.showNavigationPreview ? <MiniMap pannable zoomable /> : null}
         <Controls showInteractive={false} />
       </ReactFlow>
       {contextMenu ? (
@@ -905,12 +973,16 @@ export function CanvasView(props: {
   content: string;
   name: string;
   vaultRoot: string;
+  settings?: CanvasSettings | null;
+  commandRequest?: CanvasCommandRequest | null;
   onOpenFile: (relativePath: string) => void;
   onChange: (content: string) => void;
 }) {
+  const settings = normalizeCanvasSettings(props.settings ?? defaultCanvasSettings);
+
   return (
     <ReactFlowProvider>
-      <CanvasGraph {...props} />
+      <CanvasGraph {...props} settings={settings} />
     </ReactFlowProvider>
   );
 }

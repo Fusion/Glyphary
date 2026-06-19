@@ -32,6 +32,7 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
     let css_snippets = clean_css_snippet_settings(settings.css_snippets)?;
     let plugins = clean_plugin_settings(settings.plugins)?;
     let ai = clean_ai_settings(settings.ai)?;
+    let canvas = clean_canvas_settings(settings.canvas);
 
     if asset_directory.is_empty() {
         Err("Asset directory cannot be empty".into())
@@ -48,6 +49,7 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
             css_snippets,
             plugins,
             ai,
+            canvas,
             theme,
         })
     }
@@ -86,6 +88,36 @@ pub(crate) fn clean_appearance_settings(settings: AppearanceSettings) -> Appeara
     AppearanceSettings {
         glass_effect: settings.glass_effect,
         glass_opacity,
+    }
+}
+pub(crate) fn clean_canvas_settings(settings: CanvasSettings) -> CanvasSettings {
+    let node_border_width = if settings.node_border_width.is_finite() {
+        settings
+            .node_border_width
+            .clamp(MIN_CANVAS_NODE_BORDER_WIDTH, MAX_CANVAS_NODE_BORDER_WIDTH)
+    } else {
+        DEFAULT_CANVAS_NODE_BORDER_WIDTH
+    };
+    let edge_thickness = if settings.edge_thickness.is_finite() {
+        settings
+            .edge_thickness
+            .clamp(MIN_CANVAS_EDGE_THICKNESS, MAX_CANVAS_EDGE_THICKNESS)
+    } else {
+        DEFAULT_CANVAS_EDGE_THICKNESS
+    };
+    let edge_style = settings.edge_style.trim();
+
+    CanvasSettings {
+        node_border_width,
+        edge_thickness,
+        edge_style: if CANVAS_EDGE_STYLE_ALLOWLIST.contains(&edge_style) {
+            edge_style.into()
+        } else {
+            DEFAULT_CANVAS_EDGE_STYLE.into()
+        },
+        show_grid: settings.show_grid,
+        show_navigation_preview: settings.show_navigation_preview,
+        snap_to_grid: settings.snap_to_grid,
     }
 }
 pub(crate) fn clean_tidbit_settings(settings: TidbitSettings) -> TidbitSettings {

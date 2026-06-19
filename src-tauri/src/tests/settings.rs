@@ -45,20 +45,10 @@ fn hides_dotfiles_unless_vault_settings_enable_them() {
     write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
             files: FileDisplaySettings {
                 show_dotfiles: true,
             },
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect("settings should write");
@@ -105,6 +95,18 @@ fn reads_default_vault_settings_when_missing() {
     assert_eq!(settings.ai.base_url, DEFAULT_AI_BASE_URL);
     assert_eq!(settings.ai.model, DEFAULT_AI_MODEL);
     assert!(settings.ai.api_key.is_empty());
+    assert_eq!(
+        settings.canvas.node_border_width,
+        DEFAULT_CANVAS_NODE_BORDER_WIDTH
+    );
+    assert_eq!(
+        settings.canvas.edge_thickness,
+        DEFAULT_CANVAS_EDGE_THICKNESS
+    );
+    assert_eq!(settings.canvas.edge_style, DEFAULT_CANVAS_EDGE_STYLE);
+    assert!(settings.canvas.show_grid);
+    assert!(settings.canvas.show_navigation_preview);
+    assert!(!settings.canvas.snap_to_grid);
     assert!(settings.theme.is_none());
 
     fs::remove_dir_all(root).expect("test root should be removed");
@@ -117,23 +119,13 @@ fn writes_ai_settings_for_openai_compatible_backends() {
     let settings = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
             ai: AiSettings {
                 enabled: true,
                 base_url: " https://llm.example.com/v1/ ".into(),
                 model: " local-model ".into(),
                 api_key: " secret ".into(),
             },
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect("AI settings should write");
@@ -177,9 +169,7 @@ fn writes_vault_settings_file() {
                 directory: "themes/css".into(),
                 enabled: vec!["quiet.css".into(), "quiet.css".into(), "wide.css".into()],
             },
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect("settings should write");
@@ -214,26 +204,49 @@ fn clamps_glass_opacity_settings() {
     let settings = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
             appearance: AppearanceSettings {
                 glass_effect: true,
                 glass_opacity: 10.0,
             },
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect("settings should write");
 
     assert_eq!(settings.appearance.glass_opacity, MAX_GLASS_OPACITY);
+
+    fs::remove_dir_all(root).expect("test root should be removed");
+}
+
+#[test]
+fn normalizes_canvas_settings() {
+    let root = test_root();
+
+    let settings = write_vault_settings(
+        root.to_string_lossy().into_owned(),
+        VaultSettings {
+            canvas: CanvasSettings {
+                node_border_width: 20.0,
+                edge_thickness: -1.0,
+                edge_style: "zigzag".into(),
+                show_grid: false,
+                show_navigation_preview: false,
+                snap_to_grid: true,
+            },
+            ..VaultSettings::default()
+        },
+    )
+    .expect("settings should write");
+
+    assert_eq!(
+        settings.canvas.node_border_width,
+        MAX_CANVAS_NODE_BORDER_WIDTH
+    );
+    assert_eq!(settings.canvas.edge_thickness, MIN_CANVAS_EDGE_THICKNESS);
+    assert_eq!(settings.canvas.edge_style, DEFAULT_CANVAS_EDGE_STYLE);
+    assert!(!settings.canvas.show_grid);
+    assert!(!settings.canvas.show_navigation_preview);
+    assert!(settings.canvas.snap_to_grid);
 
     fs::remove_dir_all(root).expect("test root should be removed");
 }
@@ -246,17 +259,7 @@ fn rejects_invalid_vault_settings_asset_directories() {
         root.to_string_lossy().into_owned(),
         VaultSettings {
             asset_directory: " ".into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect_err("empty asset directory should fail");
@@ -264,17 +267,7 @@ fn rejects_invalid_vault_settings_asset_directories() {
         root.to_string_lossy().into_owned(),
         VaultSettings {
             asset_directory: "../assets".into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect_err("escaping asset directory should fail");
@@ -292,42 +285,22 @@ fn rejects_invalid_frontmatter_pill_headers() {
     let empty = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             frontmatter_pills: FrontmatterPillSettings {
                 enabled: true,
                 header_name: " ".into(),
             },
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect_err("empty pill header should fail");
     let unsafe_name = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             frontmatter_pills: FrontmatterPillSettings {
                 enabled: true,
                 header_name: "tags: bad".into(),
             },
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
-            theme: None,
+            ..VaultSettings::default()
         },
     )
     .expect_err("unsafe pill header should fail");
@@ -353,17 +326,6 @@ fn writes_vault_theme_tokens() {
     let settings = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
             theme: Some(VaultTheme {
                 preset_id: Some("field-notes".into()),
                 callouts: VaultThemeCallouts::default(),
@@ -375,6 +337,7 @@ fn writes_vault_theme_tokens() {
                 },
                 tokens,
             }),
+            ..VaultSettings::default()
         },
     )
     .expect("settings should write");
@@ -415,23 +378,13 @@ fn rejects_unsupported_vault_theme_tokens() {
     let error = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
             theme: Some(VaultTheme {
                 preset_id: None,
                 callouts: VaultThemeCallouts::default(),
                 options: VaultThemeOptions::default(),
                 tokens,
             }),
+            ..VaultSettings::default()
         },
     )
     .expect_err("unsupported token should fail");
@@ -448,17 +401,6 @@ fn writes_vault_theme_options_without_tokens() {
     let settings = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
             theme: Some(VaultTheme {
                 preset_id: None,
                 callouts: VaultThemeCallouts {
@@ -476,6 +418,7 @@ fn writes_vault_theme_options_without_tokens() {
                 },
                 tokens: HashMap::new(),
             }),
+            ..VaultSettings::default()
         },
     )
     .expect("theme options should write without token overrides");
@@ -508,17 +451,6 @@ fn rejects_unsupported_vault_callout_settings() {
     let bad_style = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
             theme: Some(VaultTheme {
                 preset_id: None,
                 callouts: VaultThemeCallouts {
@@ -528,6 +460,7 @@ fn rejects_unsupported_vault_callout_settings() {
                 options: VaultThemeOptions::default(),
                 tokens: HashMap::new(),
             }),
+            ..VaultSettings::default()
         },
     )
     .expect_err("unsupported callout style should fail");
@@ -537,17 +470,6 @@ fn rejects_unsupported_vault_callout_settings() {
     let bad_icon = write_vault_settings(
         root.to_string_lossy().into_owned(),
         VaultSettings {
-            asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
-            frontmatter_pills: FrontmatterPillSettings::default(),
-            files: FileDisplaySettings::default(),
-            autosave: AutosaveSettings::default(),
-            tidbits: TidbitSettings::default(),
-            editor: EditorSettings::default(),
-            appearance: AppearanceSettings::default(),
-            debug: DebugSettings::default(),
-            css_snippets: CssSnippetSettings::default(),
-            plugins: PluginSettings::default(),
-            ai: AiSettings::default(),
             theme: Some(VaultTheme {
                 preset_id: None,
                 callouts: VaultThemeCallouts {
@@ -557,6 +479,7 @@ fn rejects_unsupported_vault_callout_settings() {
                 options: VaultThemeOptions::default(),
                 tokens: HashMap::new(),
             }),
+            ..VaultSettings::default()
         },
     )
     .expect_err("unsupported callout icon should fail");

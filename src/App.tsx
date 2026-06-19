@@ -55,7 +55,13 @@ import xml from "highlight.js/lib/languages/xml";
 import { createLowlight } from "lowlight";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
-import { CanvasView, canvasTitle, isCanvasPath } from "./CanvasView";
+import {
+  CanvasView,
+  canvasTitle,
+  isCanvasPath,
+  type CanvasCommandAction,
+  type CanvasCommandRequest,
+} from "./CanvasView";
 import {
   aiBuilderEffectiveTaskQueries,
   aiBuilderPromptRequestsTaskContext,
@@ -80,6 +86,7 @@ import {
   displayPath,
   displayVaultRelativePath,
   defaultAutosaveSettings,
+  defaultCanvasSettings,
   defaultCssSnippetDirectory,
   defaultCssSnippetSettings,
   defaultDebugSettings,
@@ -126,6 +133,7 @@ import {
   monthTitle,
   normalizeAiSettings,
   normalizeAutosaveSettings,
+  normalizeCanvasSettings,
   normalizeCssSnippetSettings,
   normalizeDebugSettings,
   normalizeEditorBehaviorSettings,
@@ -144,6 +152,7 @@ import {
   sameAiSettings,
   sameCalendarDate,
   sameAutosaveSettings,
+  sameCanvasSettings,
   sameCssSnippetSettings,
   sameDebugSettings,
   sameEditorBehaviorSettings,
@@ -178,6 +187,7 @@ import type {
   CalloutIconName,
   CalloutKind,
   CalloutStyle,
+  CanvasSettings,
   CssSnippetContent,
   CssSnippetFile,
   CssSnippetSettings,
@@ -4272,6 +4282,7 @@ function App() {
     cssSnippets: defaultCssSnippetSettings,
     plugins: defaultPluginSettings,
     ai: defaultAiSettings,
+    canvas: defaultCanvasSettings,
     theme: null,
   });
   const [settingsDraft, setSettingsDraft] = useState(defaultVaultAssetDirectory);
@@ -4308,6 +4319,7 @@ function App() {
   const [aiTestStatus, setAiTestStatus] = useState<"success" | "error" | null>(null);
   const [aiSubmitting, setAiSubmitting] = useState(false);
   const [aiSubmittingTitle, setAiSubmittingTitle] = useState("");
+  const [canvasDraft, setCanvasDraft] = useState<CanvasSettings>(defaultCanvasSettings);
   const [selectedThemePresetIdDraft, setSelectedThemePresetIdDraft] = useState<string | null>(null);
   const [themeDraft, setThemeDraft] = useState<Record<string, string>>({});
   const [themeOptionsDraft, setThemeOptionsDraft] =
@@ -4354,6 +4366,8 @@ function App() {
     useState<CommandPaletteScope>("root");
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteSelectedIndex, setCommandPaletteSelectedIndex] = useState(0);
+  const [canvasCommandRequest, setCanvasCommandRequest] =
+    useState<CanvasCommandRequest | null>(null);
   const [richLinkDialogOpen, setRichLinkDialogOpen] = useState(false);
   const [richLinkUrlDraft, setRichLinkUrlDraft] = useState("");
   const [richLinkSubmitting, setRichLinkSubmitting] = useState(false);
@@ -4411,6 +4425,7 @@ function App() {
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
   const workspaceRef = useRef<HTMLElement | null>(null);
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  const canvasCommandRequestIdRef = useRef(0);
   // Keyboard navigation moves a virtual selection through scrollable results;
   // this ref lets the selected option be kept visible without stealing focus.
   const commandPaletteResultsRef = useRef<HTMLDivElement | null>(null);
@@ -4466,6 +4481,7 @@ function App() {
     cssSnippets: defaultCssSnippetSettings,
     plugins: defaultPluginSettings,
     ai: defaultAiSettings,
+    canvas: defaultCanvasSettings,
     theme: null,
   });
   // Track only properties we applied from the theme builder so switching vaults
@@ -4903,6 +4919,10 @@ function App() {
     return normalizeAiSettings(vaultSettings.ai);
   }
 
+  function savedCanvasSettings() {
+    return normalizeCanvasSettings(vaultSettings.canvas);
+  }
+
   function updateAiDraft(nextSettings: AiSettings) {
     setAiTestStatus(null);
     setAiDraft(nextSettings);
@@ -4921,6 +4941,7 @@ function App() {
       !sameCssSnippetSettings(cssSnippetDraft, savedCssSnippetSettings()) ||
       !samePluginSettings(pluginDraft, savedPluginSettings()) ||
       !sameAiSettings(aiDraft, savedAiSettings()) ||
+      !sameCanvasSettings(canvasDraft, savedCanvasSettings()) ||
       selectedThemePresetIdDraft !== savedThemePresetId() ||
       !sameThemeTokens(themeDraft, savedThemeTokens()) ||
       !sameThemeOptions(themeOptionsDraft, savedThemeOptions()) ||
@@ -4940,6 +4961,7 @@ function App() {
     const savedCssSnippets = savedCssSnippetSettings();
     const savedPlugins = savedPluginSettings();
     const savedAi = savedAiSettings();
+    const savedCanvas = savedCanvasSettings();
 
     setSettingsDraft(vaultSettings.assetDirectory);
     setFrontmatterPillDraft(savedFrontmatterPillSettings());
@@ -4952,6 +4974,7 @@ function App() {
     setCssSnippetDraft(savedCssSnippets);
     setPluginDraft(savedPlugins);
     setAiDraft(savedAi);
+    setCanvasDraft(savedCanvas);
     setAiTestStatus(null);
     setSelectedThemePresetIdDraft(savedThemePresetId());
     setThemeDraft(savedThemeTokens());
@@ -6760,6 +6783,7 @@ function App() {
           cssSnippets: defaultCssSnippetSettings,
           plugins: defaultPluginSettings,
           ai: defaultAiSettings,
+          canvas: defaultCanvasSettings,
           theme: null,
     };
     const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
@@ -6776,6 +6800,7 @@ function App() {
     const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
     const plugins = normalizePluginSettings(settings.plugins);
     const ai = normalizeAiSettings(settings.ai);
+    const canvas = normalizeCanvasSettings(settings.canvas);
 
     const normalizedSettings = {
       ...settings,
@@ -6789,6 +6814,7 @@ function App() {
       cssSnippets,
       plugins,
       ai,
+      canvas,
       theme:
         Object.keys(themeTokens).length > 0 ||
         !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -6818,6 +6844,7 @@ function App() {
     setCssSnippetDraft(cssSnippets);
     setPluginDraft(plugins);
     setAiDraft(ai);
+    setCanvasDraft(canvas);
     setAiTestStatus(null);
     setSelectedThemePresetIdDraft(themePresetId);
     setThemeDraft(themeTokens);
@@ -6863,6 +6890,7 @@ function App() {
           cssSnippets: normalizeCssSnippetSettings(cssSnippetDraft),
           plugins: normalizePluginSettings(pluginDraft),
           ai: normalizeAiSettings(aiDraft),
+          canvas: normalizeCanvasSettings(canvasDraft),
           theme:
             Object.keys(normalizeThemeTokens(themeDraft)).length > 0 ||
             !sameThemeOptions(themeOptionsDraft, defaultThemeOptions) ||
@@ -6890,6 +6918,7 @@ function App() {
       const cssSnippets = normalizeCssSnippetSettings(settings.cssSnippets);
       const plugins = normalizePluginSettings(settings.plugins);
       const ai = normalizeAiSettings(settings.ai);
+      const canvas = normalizeCanvasSettings(settings.canvas);
       const normalizedSettings = {
         ...settings,
         frontmatterPills,
@@ -6902,6 +6931,7 @@ function App() {
         cssSnippets,
         plugins,
         ai,
+        canvas,
         theme:
           Object.keys(themeTokens).length > 0 ||
           !sameThemeOptions(themeOptions, defaultThemeOptions) ||
@@ -6935,6 +6965,7 @@ function App() {
       setCssSnippetDraft(cssSnippets);
       setPluginDraft(plugins);
       setAiDraft(ai);
+      setCanvasDraft(canvas);
       setAiTestStatus(null);
       setSelectedThemePresetIdDraft(themePresetId);
       setThemeDraft(themeTokens);
@@ -9244,7 +9275,13 @@ function App() {
     }
   }
 
+  const activeDocumentTab =
+    editorGroups[activeGroupId]?.tabs.find(
+      (tab) => tab.id === editorGroups[activeGroupId]?.activeTabId,
+    ) ?? null;
+  const activeDocumentIsCanvas = activeDocumentTab?.kind === "canvas";
   const cursorInsideTable =
+    !activeDocumentIsCanvas &&
     !!editor &&
     (editor.isActive("table") ||
       editor.isActive("tableCell") ||
@@ -9489,6 +9526,46 @@ function App() {
         },
       ]
     : [];
+  function requestCanvasCommand(action: CanvasCommandAction) {
+    canvasCommandRequestIdRef.current += 1;
+    setCanvasCommandRequest({
+      id: canvasCommandRequestIdRef.current,
+      action,
+    });
+  }
+
+  const canvasInsertCommandPaletteCommands: CommandPaletteCommand[] = [
+    {
+      id: "canvas-add-card",
+      title: "Add Card",
+      description: "Insert a new editable canvas card",
+      run: () => requestCanvasCommand("card"),
+    },
+    {
+      id: "canvas-add-note-from-vault",
+      title: "Add Note From Vault",
+      description: "Insert a Markdown note node selected from the vault",
+      run: () => requestCanvasCommand("note"),
+    },
+    {
+      id: "canvas-add-media-from-vault",
+      title: "Add Media From Vault",
+      description: "Insert an image, video, or audio node selected from the vault",
+      run: () => requestCanvasCommand("media"),
+    },
+    {
+      id: "canvas-add-web-page",
+      title: "Add Web Page",
+      description: "Insert a web page node",
+      run: () => requestCanvasCommand("web"),
+    },
+    {
+      id: "canvas-create-group",
+      title: "Create Group",
+      description: "Insert a visual grouping region",
+      run: () => requestCanvasCommand("group"),
+    },
+  ];
   // Insert commands are grouped for density, but they remain ordinary commands
   // once the user enters the submenu so fuzzy search and keyboard behavior stay
   // identical to the root palette.
@@ -9542,7 +9619,24 @@ function App() {
       run: appendTableOfContentsBlock,
     },
   ];
-  const commandPaletteCommands: CommandPaletteCommand[] = [
+  const activeInsertCommandPaletteCommands = activeDocumentIsCanvas
+    ? canvasInsertCommandPaletteCommands
+    : insertCommandPaletteCommands;
+  const openInsertCommandPalette = () => {
+    setCommandPaletteScope("insert");
+    setCommandPaletteQuery("");
+    setCommandPaletteSelectedIndex(0);
+    window.setTimeout(() => commandPaletteInputRef.current?.focus(), 0);
+  };
+  const canvasCommandPaletteCommands: CommandPaletteCommand[] = [
+    {
+      id: "insert-menu",
+      title: "Insert ...",
+      description: "Open canvas insert commands",
+      run: openInsertCommandPalette,
+    },
+  ];
+  const editorCommandPaletteCommands: CommandPaletteCommand[] = [
     // Table editing is contextual enough that the palette keeps it close to
     // the cursor state instead of permanently crowding the formatting toolbar.
     ...(tableCommandPaletteCommands.length > 0
@@ -9585,31 +9679,31 @@ function App() {
       id: "insert-menu",
       title: "Insert ...",
       description: "Open insert commands",
-      run: () => {
-        setCommandPaletteScope("insert");
-        setCommandPaletteQuery("");
-        setCommandPaletteSelectedIndex(0);
-        window.setTimeout(() => commandPaletteInputRef.current?.focus(), 0);
-      },
+      run: openInsertCommandPalette,
     },
     ...pluginCommandPaletteCommands,
   ];
+  const commandPaletteCommands = activeDocumentIsCanvas
+    ? canvasCommandPaletteCommands
+    : editorCommandPaletteCommands;
   // All scopes share the same filtering, selection, and rendering pipeline.
   // Adding a new grouped menu should usually mean adding one command list here
   // and a root "Name ..." command that switches to that scope.
   const activeCommandPaletteCommands =
-    commandPaletteScope === "ai"
+    commandPaletteScope === "ai" && !activeDocumentIsCanvas
       ? aiCommandPaletteCommands
       : commandPaletteScope === "insert"
-        ? insertCommandPaletteCommands
-        : commandPaletteScope === "table"
+        ? activeInsertCommandPaletteCommands
+        : commandPaletteScope === "table" && !activeDocumentIsCanvas
           ? tableCommandPaletteCommands
           : commandPaletteCommands;
   const commandPaletteScopeTitle =
     commandPaletteScope === "ai"
       ? "AI commands"
-      : commandPaletteScope === "insert"
-        ? "Insert commands"
+    : commandPaletteScope === "insert"
+        ? activeDocumentIsCanvas
+          ? "Canvas insert commands"
+          : "Insert commands"
         : commandPaletteScope === "table"
           ? "Table commands"
           : "";
@@ -9617,7 +9711,9 @@ function App() {
     commandPaletteScope === "ai"
       ? "Type an AI command..."
       : commandPaletteScope === "insert"
-        ? "Type an insert command..."
+        ? activeDocumentIsCanvas
+          ? "Type a canvas insert command..."
+          : "Type an insert command..."
         : commandPaletteScope === "table"
           ? "Type a table command..."
           : "Type a command...";
@@ -10295,8 +10391,10 @@ function App() {
 
         {isCanvasTab ? (
           <CanvasView
+            commandRequest={isActiveGroup ? canvasCommandRequest : null}
             content={paneMarkdown}
             name={panePageName}
+            settings={canvasDraft}
             vaultRoot={vaultRoot}
             onChange={(nextContent) => updateCanvasDocument(groupId, nextContent)}
             onOpenFile={openFile}
@@ -10328,6 +10426,7 @@ function App() {
   } as CSSProperties;
   const normalizedVaultAppearanceDraft =
     normalizeVaultAppearanceSettings(vaultAppearanceDraft);
+  const normalizedCanvasDraft = normalizeCanvasSettings(canvasDraft);
 
   const appShellClassName = [
     "app-shell",
@@ -10355,11 +10454,6 @@ function App() {
     transform: `translate(${settingsOffset.x}px, ${settingsOffset.y}px)`,
   } as CSSProperties;
   const aiBuilderHistoryTurns = activeAiBuilderHistoryTurns();
-  const activeDocumentTab =
-    editorGroups[activeGroupId]?.tabs.find(
-      (tab) => tab.id === editorGroups[activeGroupId]?.activeTabId,
-    ) ?? null;
-  const activeDocumentIsCanvas = activeDocumentTab?.kind === "canvas";
 
   return (
     <main className={appShellClassName} style={appShellStyle}>
@@ -11150,6 +11244,15 @@ function App() {
                   Appearance
                 </button>
                 <button
+                  className={settingsTab === "canvas" ? "active" : ""}
+                  type="button"
+                  role="tab"
+                  aria-selected={settingsTab === "canvas"}
+                  onClick={() => setSettingsTab("canvas")}
+                >
+                  Canvas
+                </button>
+                <button
                   className={settingsTab === "plugins" ? "active" : ""}
                   type="button"
                   role="tab"
@@ -11355,6 +11458,126 @@ function App() {
                         }
                       />
                       <span>Autosave current page once per minute</span>
+                    </label>
+                  </section>
+                </div>
+              ) : null}
+              {settingsTab === "canvas" ? (
+                <div className="settings-tab-panel" role="tabpanel" aria-label="Canvas settings">
+                  <section className="settings-section" aria-label="Canvas rendering settings">
+                    <div className="settings-section-header">
+                      <div>
+                        <h3>Canvas</h3>
+                        <p>Tune JSON Canvas rendering and interaction for this vault.</p>
+                      </div>
+                    </div>
+                    <label className="settings-range-control">
+                      <span>
+                        Node border thickness
+                        <strong>{normalizedCanvasDraft.nodeBorderWidth.toFixed(1)}px</strong>
+                      </span>
+                      <input
+                        aria-label="Canvas node border thickness"
+                        disabled={!vaultRoot}
+                        max="6"
+                        min="0"
+                        step="0.5"
+                        type="range"
+                        value={normalizedCanvasDraft.nodeBorderWidth}
+                        onChange={(event) => {
+                          const nodeBorderWidth = Number(event.currentTarget.value);
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            nodeBorderWidth,
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="settings-range-control">
+                      <span>
+                        Edge thickness
+                        <strong>{normalizedCanvasDraft.edgeThickness.toFixed(1)}px</strong>
+                      </span>
+                      <input
+                        aria-label="Canvas edge thickness"
+                        disabled={!vaultRoot}
+                        max="8"
+                        min="0.5"
+                        step="0.5"
+                        type="range"
+                        value={normalizedCanvasDraft.edgeThickness}
+                        onChange={(event) => {
+                          const edgeThickness = Number(event.currentTarget.value);
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            edgeThickness,
+                          }));
+                        }}
+                      />
+                    </label>
+                    <label className="settings-field compact-field">
+                      <span>Edge style</span>
+                      <select
+                        disabled={!vaultRoot}
+                        value={normalizedCanvasDraft.edgeStyle}
+                        onChange={(event) => {
+                          const edgeStyle = event.currentTarget
+                            .value as CanvasSettings["edgeStyle"];
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            edgeStyle,
+                          }));
+                        }}
+                      >
+                        <option value="curved">Curved</option>
+                        <option value="straight">Straight</option>
+                        <option value="stepped">Stepped</option>
+                      </select>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={normalizedCanvasDraft.showGrid}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const showGrid = event.currentTarget.checked;
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            showGrid,
+                          }));
+                        }}
+                      />
+                      <span>Show canvas grid</span>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={normalizedCanvasDraft.snapToGrid}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const snapToGrid = event.currentTarget.checked;
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            snapToGrid,
+                          }));
+                        }}
+                      />
+                      <span>Snap moved nodes to grid</span>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={normalizedCanvasDraft.showNavigationPreview}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const showNavigationPreview = event.currentTarget.checked;
+                          setCanvasDraft((settings) => ({
+                            ...normalizeCanvasSettings(settings),
+                            showNavigationPreview,
+                          }));
+                        }}
+                      />
+                      <span>Show preview/navigation box</span>
                     </label>
                   </section>
                 </div>

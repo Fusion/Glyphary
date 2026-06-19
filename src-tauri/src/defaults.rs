@@ -24,6 +24,14 @@ pub(crate) const DEFAULT_CSS_SNIPPET_DIRECTORY: &str = "_snippets_";
 pub(crate) const DEFAULT_GLASS_OPACITY: f64 = 0.58;
 pub(crate) const MIN_GLASS_OPACITY: f64 = 0.24;
 pub(crate) const MAX_GLASS_OPACITY: f64 = 0.9;
+pub(crate) const DEFAULT_CANVAS_NODE_BORDER_WIDTH: f64 = 1.0;
+pub(crate) const MIN_CANVAS_NODE_BORDER_WIDTH: f64 = 0.0;
+pub(crate) const MAX_CANVAS_NODE_BORDER_WIDTH: f64 = 6.0;
+pub(crate) const DEFAULT_CANVAS_EDGE_THICKNESS: f64 = 2.5;
+pub(crate) const MIN_CANVAS_EDGE_THICKNESS: f64 = 0.5;
+pub(crate) const MAX_CANVAS_EDGE_THICKNESS: f64 = 8.0;
+pub(crate) const DEFAULT_CANVAS_EDGE_STYLE: &str = "curved";
+pub(crate) const CANVAS_EDGE_STYLE_ALLOWLIST: &[&str] = &["curved", "straight", "stepped"];
 pub(crate) const PLUGIN_DIRECTORY: &str = ".glyphary/plugins";
 pub(crate) const PLUGIN_MANIFEST_FILE: &str = "plugin.json";
 pub(crate) const DEFAULT_AI_BASE_URL: &str = "https://api.openai.com/v1";
@@ -146,6 +154,26 @@ pub(crate) fn default_glass_opacity() -> f64 {
     DEFAULT_GLASS_OPACITY
 }
 
+pub(crate) fn default_canvas_node_border_width() -> f64 {
+    DEFAULT_CANVAS_NODE_BORDER_WIDTH
+}
+
+pub(crate) fn default_canvas_edge_thickness() -> f64 {
+    DEFAULT_CANVAS_EDGE_THICKNESS
+}
+
+pub(crate) fn default_canvas_edge_style() -> String {
+    DEFAULT_CANVAS_EDGE_STYLE.into()
+}
+
+pub(crate) fn default_canvas_show_grid() -> bool {
+    true
+}
+
+pub(crate) fn default_canvas_show_navigation_preview() -> bool {
+    true
+}
+
 pub(crate) fn default_callout_icons() -> HashMap<String, String> {
     HashMap::from([
         ("note".into(), "info".into()),
@@ -169,6 +197,7 @@ impl Default for VaultSettings {
             css_snippets: CssSnippetSettings::default(),
             plugins: PluginSettings::default(),
             ai: AiSettings::default(),
+            canvas: CanvasSettings::default(),
             theme: None,
         }
     }
@@ -230,6 +259,19 @@ impl Default for AiSettings {
             base_url: DEFAULT_AI_BASE_URL.into(),
             model: DEFAULT_AI_MODEL.into(),
             api_key: String::new(),
+        }
+    }
+}
+
+impl Default for CanvasSettings {
+    fn default() -> Self {
+        Self {
+            node_border_width: DEFAULT_CANVAS_NODE_BORDER_WIDTH,
+            edge_thickness: DEFAULT_CANVAS_EDGE_THICKNESS,
+            edge_style: DEFAULT_CANVAS_EDGE_STYLE.into(),
+            show_grid: true,
+            show_navigation_preview: true,
+            snap_to_grid: false,
         }
     }
 }

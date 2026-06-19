@@ -68,6 +68,8 @@ pub(crate) struct VaultSettings {
     pub(crate) plugins: PluginSettings,
     #[serde(default)]
     pub(crate) ai: AiSettings,
+    #[serde(default)]
+    pub(crate) canvas: CanvasSettings,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) theme: Option<VaultTheme>,
 }
@@ -125,6 +127,23 @@ pub(crate) struct AppearanceSettings {
     pub(crate) glass_effect: bool,
     #[serde(default = "crate::defaults::default_glass_opacity")]
     pub(crate) glass_opacity: f64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct CanvasSettings {
+    #[serde(default = "crate::defaults::default_canvas_node_border_width")]
+    pub(crate) node_border_width: f64,
+    #[serde(default = "crate::defaults::default_canvas_edge_thickness")]
+    pub(crate) edge_thickness: f64,
+    #[serde(default = "crate::defaults::default_canvas_edge_style")]
+    pub(crate) edge_style: String,
+    #[serde(default = "crate::defaults::default_canvas_show_grid")]
+    pub(crate) show_grid: bool,
+    #[serde(default = "crate::defaults::default_canvas_show_navigation_preview")]
+    pub(crate) show_navigation_preview: bool,
+    #[serde(default)]
+    pub(crate) snap_to_grid: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
