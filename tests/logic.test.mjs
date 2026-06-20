@@ -1131,6 +1131,7 @@ test("wikilinks use the vault filename index for navigation and insertion", () =
   assert.match(app, /state\.selection\.\$from\.parent !== parent/);
   assert.match(app, /wikilink-hidden-syntax/);
   assert.match(app, /markup\.indexOf\("\|"\)/);
+  assert.match(app, /\[\[Actual Page\|Shown Text\]\] -> Shown Text/);
   assert.match(app, /data-wikilink-target/);
   assert.match(app, /resolveWikiLinkTarget/);
   assert.match(app, /rebuildWikiLinkIndex/);

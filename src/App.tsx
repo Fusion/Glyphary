@@ -758,6 +758,8 @@ function createWikiLinkExtension(options: WikiLinkExtensionOptions) {
                     const pipeIndex = markup.indexOf("|");
 
                     if (pipeIndex >= 0) {
+                      // Obsidian-style aliases display only the alias outside
+                      // the active line: [[Actual Page|Shown Text]] -> Shown Text.
                       decorations.push(
                         Decoration.inline(from + 2, from + 2 + pipeIndex + 1, {
                           class: "wikilink-hidden-syntax",
