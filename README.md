@@ -5,7 +5,9 @@
 # Glyphary
 
 +-----------------------------------------------------------+
+
 | **Click for [Documentation and Install guide](https://glyphary.github.io/)**
+
 +-----------------------------------------------------------+
 
 Glyphary is a fully open-source, fast, responsive, macOS-only Markdown workspace

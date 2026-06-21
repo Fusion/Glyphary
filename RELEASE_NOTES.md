@@ -1,116 +1,77 @@
 # Glyphary 1.0.0-beta.2 Release Notes
 
-This release is a large step forward from `0.1.0`, focused on making Glyphary feel like a serious local-first Markdown workspace: richer editing, AI-assisted page building, Obsidian-compatible canvas support, faster navigation, better packaging, and more polished app chrome.
+This beta is focused on making Glyphary feel more natural as a local-first
+Markdown editor: cleaner reading, better Obsidian compatibility, richer table
+controls, and release packaging that is ready for notarization.
 
-## Highlights
+## What's New Since 1.0.0-beta.1
 
-### AI Builder
+### Reading And Editing
 
-Glyphary now includes an AI Builder for creating and refining page sections from natural-language prompts.
-
-- Supports bring-your-own-key OpenAI-compatible backends.
-- Can generate rich Markdown content, including Glyphary-native blocks.
-- Can search bounded vault context when the prompt asks about related notes.
-- Supports follow-up refinement of previously inserted AI Builder blocks.
-- Preserves AI Builder history per file.
-- Adds review actions before applying generated content.
-
-### Obsidian Canvas Support
-
-Glyphary can now open and edit Obsidian-compatible `.canvas` files.
-
-- Render canvas files as editable graph documents.
-- Add cards, notes, media, web pages, and groups.
-- Move nodes and edit edges.
-- Delete selected nodes/edges with keyboard shortcuts.
-- Use right-click canvas actions.
-- Configure canvas appearance, including edge style, stroke width, node borders, and minimap visibility.
-- Preserve unknown canvas JSON fields for safer round-tripping.
-
-### Better Command Palette
-
-The command palette has been reorganized into cleaner command groups.
-
-- Contextual command groups for AI, Insert, Table, and Canvas actions.
-- Better keyboard navigation, including scrolling selected results into view.
-- Canvas mode now shows canvas-relevant commands instead of Markdown-only commands.
-- Insert commands include rich blocks such as callouts, columns, HTML blocks, table of contents, gallery layout, and rich links.
-
-### Tasks View
-
-The left drawer now has a Tasks view.
-
-- Finds Markdown task-list items across the vault.
-- Filters complete, incomplete, or all tasks.
-- Defaults to incomplete tasks.
-- Supports quick filtering and sorting by name or date.
-- Uses internal search logic, avoiding an external `rg` dependency.
-- Ignores dotfiles/dotfolders and non-Markdown files for task scans.
-
-### Visual Editing Improvements
-
-- Added View/Edit chrome modes so reading can hide frontmatter and the formatting toolbar while the document remains editable.
-- Added frontmatter-driven page banners via a `banner` value that can point at a vault image.
-- Wikilinks with aliases such as `[[Page Name|Display Name]]` now render as clean links when the cursor is outside the line.
-- Added gallery blocks for selected images.
-- Improved insertion points between special blocks.
+- Added View/Edit chrome modes. View mode hides frontmatter and the formatting
+  toolbar while keeping the document editable.
+- Added frontmatter-driven page banners with `banner: '![[image.png]]'`.
+- Banner images now render above the frontmatter area.
+- Added wikilink aliases such as `[[Actual Page|Display Name]]`.
+- Wikilinks render as clean links outside the active line, hiding `[[...]]`
+  syntax and alias targets while preserving the Markdown on disk.
 - Added plain paste with `Cmd+Shift+V`.
-- Improved HTML block insertion and rendering.
-- Improved table, callout, columns, collapse, rich-link, and TOC block behavior.
-- Better block boundary controls with less intrusive UI.
+- Fixed column insertion so new columns insert at the cursor instead of the end
+  of the file.
+- Fixed frontmatter parsing so a document wrapped in `---` is not treated as one
+  giant metadata block.
 
-### Appearance And Layout
+### Tabs And Navigation
 
-- Softer visual language across drawers, panes, and tabs.
-- Better glass window behavior.
-- Added configurable glass opacity.
-- Added configurable workspace margins, section corners, status bar visibility, and UI text weight.
-- Improved Windows title/menu chrome behavior.
-- Updated application icon assets.
+- The last tab can now be closed, leaving the editor center empty.
+- The command palette now stays out of document commands when no note or canvas
+  is open.
+- Added a configurable New Tab file. When set, `Cmd+T` opens that vault note;
+  when unset, Glyphary prompts from the status bar instead of opening a blank tab.
+- Opening a daily note from the calendar now refreshes the file drawer selection
+  to the opened note.
 
-### Packaging And Platform Work
+### File Tree Actions
 
-- Version moved to `1.0.0-beta.2`.
-- Added Mac and Windows build targets.
-- Added Windows-specific Tauri configuration.
-- Added release/build Makefile improvements.
-- Added app icon generation for platform bundles.
-- Added `Cmd+W` behavior for closing the current tab.
-- Added `Cmd+T` New Tab behavior backed by a vault setting for a chosen default note.
-- The final tab can now be closed, leaving the editor center empty until another note or canvas opens.
+- Right-clicking empty space in a folder now offers New Note, New Canvas, and New
+  Folder actions for that folder.
+- Markdown files, canvas files, and folders can be renamed from the right-click
+  menu.
+- Canvas files can now be created directly from folder context menus.
 
-### Vault File Management
+### Tables
 
-- Empty space in the file drawer now offers create-note, create-canvas, and create-folder actions for the current folder.
-- Markdown files, canvas files, and folders can be renamed from the right-click menu.
-- New canvas files can be created directly from the folder context menu.
+- Added an editor table context menu with the same row and column operations as
+  the command palette.
+- Added Align Column... with left, center, and right alignment based on Markdown
+  table alignment syntax.
+- Fixed the table menu styling so it is opaque.
+- Fixed the Align Column submenu hover gap.
+- Fixed table column alignment so it does not leave the document selected after
+  applying or undoing the change.
 
 ### Documentation
 
-- Reworked README for a clearer product overview.
-- Added and expanded the full manual site.
-- Added documentation for AI Builder, AI commands, canvas files, plugins, theming, galleries, search, tasks, and workspace workflows.
+- Added installation instructions at the start of the documentation for macOS
+  GitHub release DMGs and Windows installers.
+- Added a developer setup section covering checkout, dependencies, dev builds,
+  checks, and release targets.
+- Added a Markdown reference page for Glyphary-supported syntax, including table
+  alignment and wikilink aliases.
+- Updated the README and public site copy for page banners, View/Edit mode,
+  configurable New Tab behavior, table context actions, and file-tree actions.
 
-### Internal Cleanup
+### Packaging
 
-- Continued splitting frontend and backend code into smaller feature modules.
-- Added more focused regression tests.
-- Expanded Rust backend tests for settings, search, plugins, AI, canvas-adjacent workflows, assets, calendar, vault behavior, and snippets.
-- Removed or reduced stale compatibility paths where no longer needed.
-
-## Fixes
-
-- Fixed block insertion between adjacent rich/special blocks.
-- Fixed glass background opacity behavior.
-- Fixed stale README gallery test expectation.
-- Fixed Windows file listing edge cases for underscore-prefixed `.canvas` files.
-- Fixed duplicate File/New controls on platforms with an app menu.
-- Fixed app icon packaging issues.
-- Fixed command palette organization and keyboard navigation issues.
-- Fixed the command palette so it does not open document commands when no note or canvas is active.
-- Fixed column insertion so the block inserts at the cursor instead of appending to the file.
-- Fixed frontmatter parsing so a whole document wrapped in `---` is not swallowed as metadata.
+- Version fields are now `1.0.0-beta.2`.
+- Fixed the Windows bundle icon configuration.
+- Updated the release Makefile to build the universal macOS DMG path directly.
+- Fixed macOS release signing so the universal app binary is signed with the
+  Developer ID Application identity, hardened runtime, and secure timestamp
+  before notarization.
 
 ## Notes
 
-This release is still marked beta because the feature surface grew significantly: AI Builder, canvas editing, Windows packaging, plugins, and richer appearance settings all deserve real-world vault testing before calling it stable.
+`1.0.0-beta.2` is still a beta because these changes touch editing behavior,
+Markdown rendering, table mutation, file-tree actions, and platform packaging.
+Please test with a real vault before replacing your daily build.
