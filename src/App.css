@@ -3379,6 +3379,19 @@ body.workspace-resizing * {
   line-height: 1;
 }
 
+.editor-surface mark {
+  border-radius: 3px;
+  background: color-mix(in srgb, #f6d85f 54%, transparent);
+  padding: 0 0.12em;
+  color: inherit;
+}
+
+.editor-surface sup,
+.editor-surface sub {
+  font-size: 0.74em;
+  line-height: 0;
+}
+
 .editor-surface pre {
   overflow: auto;
   border-radius: var(--radius-md);

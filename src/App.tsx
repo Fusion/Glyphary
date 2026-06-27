@@ -3641,6 +3641,70 @@ function createKeyboardKeyExtension() {
   });
 }
 
+function createDelimitedMarkdownMarkExtension({
+  delimiter,
+  name,
+  start,
+  tag,
+  tokenPattern,
+}: {
+  delimiter: string;
+  name: string;
+  start: string | ((src: string) => number);
+  tag: string;
+  tokenPattern: RegExp;
+}) {
+  return Mark.create({
+    name,
+
+    parseHTML() {
+      return [{ tag }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      return [tag, mergeAttributes(HTMLAttributes), 0];
+    },
+
+    markdownTokenizer: {
+      name,
+      level: "inline",
+      start,
+      tokenize(src, _tokens, lexer) {
+        const match = src.match(tokenPattern);
+
+        if (!match) {
+          return;
+        }
+
+        const text = match[1];
+
+        return {
+          type: name,
+          raw: match[0],
+          text,
+          tokens: lexer.inlineTokens(text),
+        };
+      },
+    },
+
+    parseMarkdown: (token: MarkdownToken, helpers) =>
+      helpers.applyMark(name, helpers.parseInline(token.tokens ?? [])),
+
+    renderMarkdown: (node: JSONContent, helpers) =>
+      `${delimiter}${helpers.renderChildren(node.content ?? [])}${delimiter}`,
+  });
+}
+
+function findSingleTildeDelimiter(src: string) {
+  for (let index = 0; index < src.length; index += 1) {
+    if (src[index] === "~" && src[index - 1] !== "~" && src[index + 1] !== "~") {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
 function CollapseNodeView({ node }: NodeViewProps) {
   const title =
     typeof node.attrs.title === "string" && node.attrs.title.trim()
@@ -6065,6 +6129,27 @@ function App() {
         createCollapseExtension(),
         createHtmlBlockExtension(),
         createKeyboardKeyExtension(),
+        createDelimitedMarkdownMarkExtension({
+          name: "highlight",
+          tag: "mark",
+          delimiter: "==",
+          start: "==",
+          tokenPattern: /^==(?![=])([^=\n]+?)==(?!=)/,
+        }),
+        createDelimitedMarkdownMarkExtension({
+          name: "superscript",
+          tag: "sup",
+          delimiter: "^",
+          start: "^",
+          tokenPattern: /^\^([^\^\n]+?)\^/,
+        }),
+        createDelimitedMarkdownMarkExtension({
+          name: "subscript",
+          tag: "sub",
+          delimiter: "~",
+          start: findSingleTildeDelimiter,
+          tokenPattern: /^~(?!~)([^~\n]+?)~(?!~)/,
+        }),
         createRichLinkExtension(),
         createExcalidrawEmbedExtension({
           openDrawing: (target) => openExcalidrawDrawingRef.current(target),
@@ -9217,7 +9302,7 @@ function App() {
     editor.chain().focus().insertContent(emptyColumnsMarkdown, { contentType: "markdown" }).run();
   }
 
-  function formatSelectionAsKeyboardKey() {
+  function formatSelectionWithMark(markType: string, label: string) {
     if (!editor) {
       return;
     }
@@ -9225,7 +9310,7 @@ function App() {
     const { doc, selection } = editor.state;
 
     if (selection.empty) {
-      setStatus("Select text before formatting it as a keyboard key");
+      setStatus(`Select text before formatting it as ${label}`);
       return;
     }
 
@@ -9237,9 +9322,13 @@ function App() {
       .insertContent({
         type: "text",
         text: selectedText,
-        marks: [{ type: "keyboardKey" }],
+        marks: [{ type: markType }],
       })
       .run();
+  }
+
+  function formatSelectionAsKeyboardKey() {
+    formatSelectionWithMark("keyboardKey", "a keyboard key");
   }
 
   function selectedGalleryImages(targetEditor: Editor) {
@@ -10655,6 +10744,30 @@ function App() {
     window.setTimeout(() => commandPaletteInputRef.current?.focus(), 0);
   };
   const formatCommandPaletteCommands: CommandPaletteCommand[] = [
+    {
+      id: "format-strikethrough",
+      title: "Strikethrough",
+      description: "Wrap selected text in ~~ delimiters",
+      run: () => formatSelectionWithMark("strike", "strikethrough"),
+    },
+    {
+      id: "format-highlight",
+      title: "Highlight",
+      description: "Wrap selected text in == delimiters",
+      run: () => formatSelectionWithMark("highlight", "a highlight"),
+    },
+    {
+      id: "format-superscript",
+      title: "Superscript",
+      description: "Wrap selected text in ^ delimiters",
+      run: () => formatSelectionWithMark("superscript", "superscript"),
+    },
+    {
+      id: "format-subscript",
+      title: "Subscript",
+      description: "Wrap selected text in ~ delimiters",
+      run: () => formatSelectionWithMark("subscript", "subscript"),
+    },
     {
       id: "format-keyboard",
       title: "Keyboard",
