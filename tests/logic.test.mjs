@@ -524,6 +524,7 @@ test("html blocks are preserved as sanitized editable source blocks", () => {
   assert.match(app, /const htmlBlockTags = new Set/);
   assert.match(app, /function htmlBlockMarkdownToken/);
   assert.match(app, /function sanitizeHtmlBlock/);
+  assert.match(app, /function createKeyboardKeyExtension/);
   assert.match(app, /blockedHtmlPreviewSelector/);
   assert.match(app, /safeHtmlAttributeValue/);
   assert.match(app, /function isAiBuilderMarkerComment/);
@@ -541,9 +542,14 @@ test("html blocks are preserved as sanitized editable source blocks", () => {
   assert.match(app, /markdown-html-block-hidden/);
   assert.match(app, /ReactNodeViewRenderer\(HtmlBlockNodeView\)/);
   assert.match(app, /createHtmlBlockExtension\(\)/);
+  assert.match(app, /name: "keyboardKey"/);
+  assert.match(app, /tag: "kbd"/);
+  assert.match(app, /htmlReopen: \{ open: "<kbd>", close: "<\/kbd>" \}/);
+  assert.match(app, /`<kbd>\$\{helpers\.renderChildren\(node\.content \?\? \[\]\)\}<\/kbd>`/);
+  assert.match(app, /createKeyboardKeyExtension\(\)/);
   assert.match(app, /function insertHtmlBlock\(\)/);
   assert.match(app, /insertContent\(emptyHtmlBlockMarkdown, \{ contentType: "markdown" \}\)/);
-  assert.match(app, /createCollapseExtension\(\),\s*createHtmlBlockExtension\(\),\s*createRichLinkExtension\(\)/);
+  assert.match(app, /createCollapseExtension\(\),\s*createHtmlBlockExtension\(\),\s*createKeyboardKeyExtension\(\),\s*createRichLinkExtension\(\)/);
   assert.match(app, /"script"/);
   assert.match(app, /"style"/);
   assert.match(app, /"pre"/);
@@ -553,6 +559,7 @@ test("html blocks are preserved as sanitized editable source blocks", () => {
   assert.match(css, /\.markdown-html-block/);
   assert.match(css, /\.markdown-html-preview/);
   assert.match(css, /\.markdown-html-source textarea/);
+  assert.match(css, /\.editor-surface kbd/);
 });
 
 test("rich link markdown containers are wired into the editor", () => {
@@ -1888,8 +1895,20 @@ test("command save shortcut is wrapped in the webview", () => {
   assert.match(app, /new PluginKey<PageSearchPluginState>\("pageSearch"\)/);
   assert.match(app, /const PageSearchRenderer = Extension\.create/);
   assert.match(app, /PageSearchRenderer/);
+  assert.match(app, /const CommandPaletteSelectionRenderer = Extension\.create/);
+  assert.match(app, /CommandPaletteSelectionRenderer/);
+  assert.match(app, /commandPaletteSelectionPluginKey/);
+  assert.match(app, /commandPaletteSelectionRef/);
+  assert.match(app, /function captureCommandPaletteSelection/);
+  assert.match(app, /function restoreCommandPaletteSelection/);
+  assert.match(app, /Selection\.fromJSON\(saved\.editor\.state\.doc, saved\.selection\)/);
+  assert.match(app, /saved\.editor\.view\.focus\(\)/);
+  assert.match(app, /captureCommandPaletteSelection\(\);\s*setCommandPaletteOpen\(true\)/);
+  assert.match(app, /function closeCommandPalette\(\) \{\s*restoreCommandPaletteSelection\(\)/);
   assert.match(app, /Decoration\.inline\(match\.from, match\.to/);
+  assert.match(app, /Decoration\.inline\(range\.from, range\.to/);
   assert.match(app, /targetEditor\.state\.tr\.setMeta\(pageSearchPluginKey, state\)/);
+  assert.match(app, /targetEditor\.state\.tr\.setMeta\(commandPaletteSelectionPluginKey, state\)/);
   assert.match(app, /function openPageSearch/);
   assert.match(app, /function closePageSearch/);
   assert.match(app, /function movePageSearch/);
@@ -1918,6 +1937,7 @@ test("command save shortcut is wrapped in the webview", () => {
   assert.match(css, /\.page-search-bar/);
   assert.match(css, /\.editor-surface \.page-search-match/);
   assert.match(css, /\.editor-surface \.page-search-match\.active/);
+  assert.match(css, /\.editor-surface \.command-palette-preserved-selection/);
 });
 
 test("renaming a page title immediately saves the active file", () => {
@@ -1935,7 +1955,7 @@ test("quick command palette exposes initial editor commands", () => {
   const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
 
   assert.match(app, /type CommandPaletteCommand/);
-  assert.match(app, /type CommandPaletteScope = "root" \| "ai" \| "insert" \| "table"/);
+  assert.match(app, /type CommandPaletteScope = "root" \| "ai" \| "insert" \| "format" \| "table"/);
   assert.match(app, /commandPaletteCommands/);
   assert.match(app, /insertCommandPaletteCommands/);
   assert.match(app, /canvasInsertCommandPaletteCommands/);
@@ -1972,6 +1992,13 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /title: "Insert table of contents"/);
   assert.match(app, /id: "insert-menu"/);
   assert.match(app, /title: "Insert \.\.\."/);
+  assert.match(app, /function formatSelectionAsKeyboardKey\(\)/);
+  assert.match(app, /marks: \[\{ type: "keyboardKey" \}\]/);
+  assert.match(app, /id: "format-keyboard"/);
+  assert.match(app, /title: "Keyboard"/);
+  assert.match(app, /Wrap selected text in <kbd> tags/);
+  assert.match(app, /id: "format-menu"/);
+  assert.match(app, /title: "Format \.\.\."/);
   assert.match(app, /id: "canvas-add-card"/);
   assert.match(app, /title: "Add Card"/);
   assert.match(app, /id: "canvas-add-note-from-vault"/);
@@ -1987,6 +2014,9 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /Canvas insert commands/);
   assert.match(app, /Type an insert command/);
   assert.match(app, /Type a canvas insert command/);
+  assert.match(app, /setCommandPaletteScope\("format"\)/);
+  assert.match(app, /Format commands/);
+  assert.match(app, /Type a format command/);
   assert.match(app, /function appendTableOfContentsBlock\(\)/);
   assert.match(app, /insertContent\("```toc\\n```", \{ contentType: "markdown" \}\)/);
   assert.match(app, /role="combobox"/);
@@ -2093,7 +2123,7 @@ test("AI commands use vault settings and review output before editing", () => {
   assert.match(app, /id: "ai-menu"/);
   assert.match(app, /title: "AI \.\.\."/);
   assert.match(app, /setCommandPaletteScope\("ai"\)/);
-  assert.match(app, /commandPaletteScope === "ai"[\s\S]*aiCommandPaletteCommands[\s\S]*commandPaletteScope === "insert"[\s\S]*activeInsertCommandPaletteCommands[\s\S]*commandPaletteScope === "table"[\s\S]*tableCommandPaletteCommands[\s\S]*commandPaletteCommands/);
+  assert.match(app, /commandPaletteScope === "ai"[\s\S]*aiCommandPaletteCommands[\s\S]*commandPaletteScope === "insert"[\s\S]*activeInsertCommandPaletteCommands[\s\S]*commandPaletteScope === "format"[\s\S]*formatCommandPaletteCommands[\s\S]*commandPaletteScope === "table"[\s\S]*tableCommandPaletteCommands[\s\S]*commandPaletteCommands/);
   assert.match(app, /AI commands/);
   assert.match(app, /Type an AI command/);
   assert.match(app, /Enable AI commands in Settings before using this command/);

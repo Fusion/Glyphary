@@ -1814,6 +1814,10 @@ body.workspace-resizing * {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 68%, transparent);
 }
 
+.editor-surface .command-palette-preserved-selection {
+  background: var(--selection);
+}
+
 .editor-surface-frame {
   /* The placeholder is layered behind the editable surface; isolate keeps that local. */
   isolation: isolate;
@@ -3353,6 +3357,20 @@ body.workspace-resizing * {
   padding: 0.12rem 0.32rem;
   font-family: var(--font-mono);
   font-size: var(--glyphary-code-font-size);
+}
+
+.editor-surface kbd {
+  border: 1px solid color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--editor-text) 34%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--editor-text) 4%);
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--editor-text) 12%, transparent);
+  padding: 0.04em 0.34em 0.08em;
+  color: var(--editor-text);
+  font-family: var(--font-ui);
+  font-size: 0.82em;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .editor-surface pre {

@@ -6,7 +6,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { Extension, mergeAttributes, Node } from "@tiptap/core";
+import { Extension, Mark, mergeAttributes, Node } from "@tiptap/core";
 import type { Editor, JSONContent, MarkdownToken, NodeViewProps } from "@tiptap/core";
 import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
 import { redo, undo } from "@tiptap/pm/history";
@@ -845,9 +845,13 @@ type PageSearchPluginState = {
   matches: PageSearchMatch[];
 };
 
+type CommandPaletteSelectionState = {
+  ranges: PageSearchMatch[];
+};
+
 // The command palette is intentionally shallow at the root. Heavy command
 // families live in scopes so the root stays useful for fuzzy search.
-type CommandPaletteScope = "root" | "ai" | "insert" | "table";
+type CommandPaletteScope = "root" | "ai" | "insert" | "format" | "table";
 
 type ExcalidrawSceneData = {
   type?: string;
@@ -1304,6 +1308,46 @@ const PageSearchRenderer = Extension.create({
             );
 
             return DecorationSet.create(state.doc, decorations);
+          },
+        },
+      }),
+    ];
+  },
+});
+
+const commandPaletteSelectionPluginKey = new PluginKey<CommandPaletteSelectionState>(
+  "commandPaletteSelection",
+);
+
+const CommandPaletteSelectionRenderer = Extension.create({
+  name: "commandPaletteSelectionRenderer",
+
+  addProseMirrorPlugins() {
+    return [
+      new Plugin<CommandPaletteSelectionState>({
+        key: commandPaletteSelectionPluginKey,
+        state: {
+          init: () => ({ ranges: [] }),
+          apply(transaction, previous) {
+            return transaction.getMeta(commandPaletteSelectionPluginKey) ?? previous;
+          },
+        },
+        props: {
+          decorations(state) {
+            const selection = commandPaletteSelectionPluginKey.getState(state);
+
+            if (!selection || selection.ranges.length === 0) {
+              return DecorationSet.empty;
+            }
+
+            return DecorationSet.create(
+              state.doc,
+              selection.ranges.map((range) =>
+                Decoration.inline(range.from, range.to, {
+                  class: "command-palette-preserved-selection",
+                }),
+              ),
+            );
           },
         },
       }),
@@ -3533,6 +3577,27 @@ function createHtmlBlockExtension() {
   });
 }
 
+function createKeyboardKeyExtension() {
+  return Mark.create({
+    name: "keyboardKey",
+
+    parseHTML() {
+      return [{ tag: "kbd" }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      return ["kbd", mergeAttributes(HTMLAttributes), 0];
+    },
+
+    markdownOptions: {
+      htmlReopen: { open: "<kbd>", close: "</kbd>" },
+    },
+
+    renderMarkdown: (node: JSONContent, helpers) =>
+      `<kbd>${helpers.renderChildren(node.content ?? [])}</kbd>`,
+  });
+}
+
 function CollapseNodeView({ node }: NodeViewProps) {
   const title =
     typeof node.attrs.title === "string" && node.attrs.title.trim()
@@ -4635,8 +4700,14 @@ function App() {
   const suppressDirectoryClickRef = useRef(false);
   const editorGroupsRef = useRef<Record<EditorGroupId, EditorGroupState>>(editorGroups);
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
+  const activeEditorRef = useRef<Editor | null>(null);
   const workspaceRef = useRef<HTMLElement | null>(null);
   const commandPaletteInputRef = useRef<HTMLInputElement | null>(null);
+  const commandPaletteSelectionRef = useRef<{
+    editor: Editor;
+    ranges: PageSearchMatch[];
+    selection: unknown;
+  } | null>(null);
   const pageSearchInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCommandRequestIdRef = useRef(0);
   // Keyboard navigation moves a virtual selection through scrollable results;
@@ -5934,6 +6005,7 @@ function App() {
           lowlight,
         }),
         PageSearchRenderer,
+        CommandPaletteSelectionRenderer,
         TocCodeBlockRenderer,
         MermaidCodeBlockRenderer,
         createWikiLinkExtension({
@@ -5947,6 +6019,7 @@ function App() {
         createCalloutExtension(),
         createCollapseExtension(),
         createHtmlBlockExtension(),
+        createKeyboardKeyExtension(),
         createRichLinkExtension(),
         createExcalidrawEmbedExtension({
           openDrawing: (target) => openExcalidrawDrawingRef.current(target),
@@ -6082,6 +6155,45 @@ function App() {
   const secondaryEditor = useEditor(createEditorOptions("secondary"), [editorBehavior.vimMode]);
   const activeEditor = activeGroupId === "secondary" ? secondaryEditor : primaryEditor;
   const editor = isEditorReady(activeEditor) ? activeEditor : null;
+  activeEditorRef.current = editor;
+
+  function captureCommandPaletteSelection() {
+    const targetEditor = activeEditorRef.current;
+
+    if (!targetEditor) {
+      commandPaletteSelectionRef.current = null;
+      return;
+    }
+
+    const selection = targetEditor.state.selection;
+    commandPaletteSelectionRef.current = {
+      editor: targetEditor,
+      ranges: selection.empty
+        ? []
+        : selection.ranges.map((range) => ({
+            from: range.$from.pos,
+            to: range.$to.pos,
+          })),
+      selection: selection.toJSON(),
+    };
+  }
+
+  function restoreCommandPaletteSelection() {
+    const saved = commandPaletteSelectionRef.current;
+
+    if (!saved || !isEditorReady(saved.editor)) {
+      return;
+    }
+
+    try {
+      const selection = Selection.fromJSON(saved.editor.state.doc, saved.selection);
+      saved.editor.view.dispatch(saved.editor.state.tr.setSelection(selection));
+      saved.editor.view.focus();
+    } catch {
+      commandPaletteSelectionRef.current = null;
+    }
+  }
+
   const pageSearchResults = useMemo(
     () => pageSearchMatches(editor, pageSearchQuery),
     [editor, pageSearchQuery, markdown],
@@ -6169,6 +6281,25 @@ function App() {
     primaryEditor,
     secondaryEditor,
   ]);
+
+  useEffect(() => {
+    const saved = commandPaletteSelectionRef.current;
+
+    [primaryEditor, secondaryEditor].forEach((targetEditor) => {
+      if (!isEditorReady(targetEditor)) {
+        return;
+      }
+
+      const state =
+        commandPaletteOpen && saved?.editor === targetEditor
+          ? { ranges: saved.ranges }
+          : { ranges: [] };
+
+      targetEditor.view.dispatch(
+        targetEditor.state.tr.setMeta(commandPaletteSelectionPluginKey, state),
+      );
+    });
+  }, [commandPaletteOpen, primaryEditor, secondaryEditor]);
 
   useEffect(() => {
     [primaryEditor, secondaryEditor].forEach((targetEditor) => {
@@ -7663,6 +7794,7 @@ function App() {
       setCommandPaletteScope("root");
       setCommandPaletteQuery("");
       setCommandPaletteSelectedIndex(0);
+      captureCommandPaletteSelection();
       setCommandPaletteOpen(true);
     };
     const handleGlobalPageSearchShortcut = (event: KeyboardEvent) => {
@@ -8968,6 +9100,31 @@ function App() {
     }
 
     editor.chain().focus().insertContent(emptyColumnsMarkdown, { contentType: "markdown" }).run();
+  }
+
+  function formatSelectionAsKeyboardKey() {
+    if (!editor) {
+      return;
+    }
+
+    const { doc, selection } = editor.state;
+
+    if (selection.empty) {
+      setStatus("Select text before formatting it as a keyboard key");
+      return;
+    }
+
+    const selectedText = doc.textBetween(selection.from, selection.to, "\n", "\n");
+
+    editor
+      .chain()
+      .focus()
+      .insertContent({
+        type: "text",
+        text: selectedText,
+        marks: [{ type: "keyboardKey" }],
+      })
+      .run();
   }
 
   function selectedGalleryImages(targetEditor: Editor) {
@@ -10382,6 +10539,20 @@ function App() {
     setCommandPaletteSelectedIndex(0);
     window.setTimeout(() => commandPaletteInputRef.current?.focus(), 0);
   };
+  const formatCommandPaletteCommands: CommandPaletteCommand[] = [
+    {
+      id: "format-keyboard",
+      title: "Keyboard",
+      description: "Wrap selected text in <kbd> tags",
+      run: formatSelectionAsKeyboardKey,
+    },
+  ];
+  const openFormatCommandPalette = () => {
+    setCommandPaletteScope("format");
+    setCommandPaletteQuery("");
+    setCommandPaletteSelectedIndex(0);
+    window.setTimeout(() => commandPaletteInputRef.current?.focus(), 0);
+  };
   const canvasCommandPaletteCommands: CommandPaletteCommand[] = [
     {
       id: "insert-menu",
@@ -10435,6 +10606,12 @@ function App() {
       description: "Open insert commands",
       run: openInsertCommandPalette,
     },
+    {
+      id: "format-menu",
+      title: "Format ...",
+      description: "Open selection formatting commands",
+      run: openFormatCommandPalette,
+    },
     ...pluginCommandPaletteCommands,
   ];
   const commandPaletteCommands = activeDocumentTab
@@ -10450,6 +10627,8 @@ function App() {
       ? aiCommandPaletteCommands
       : commandPaletteScope === "insert"
         ? activeInsertCommandPaletteCommands
+        : commandPaletteScope === "format" && !activeDocumentIsCanvas
+          ? formatCommandPaletteCommands
         : commandPaletteScope === "table" && !activeDocumentIsCanvas
           ? tableCommandPaletteCommands
           : commandPaletteCommands;
@@ -10460,6 +10639,8 @@ function App() {
         ? activeDocumentIsCanvas
           ? "Canvas insert commands"
           : "Insert commands"
+        : commandPaletteScope === "format"
+          ? "Format commands"
         : commandPaletteScope === "table"
           ? "Table commands"
           : "";
@@ -10470,6 +10651,8 @@ function App() {
         ? activeDocumentIsCanvas
           ? "Type a canvas insert command..."
           : "Type an insert command..."
+        : commandPaletteScope === "format"
+          ? "Type a format command..."
         : commandPaletteScope === "table"
           ? "Type a table command..."
           : "Type a command...";
@@ -10514,10 +10697,12 @@ function App() {
   }, [commandPaletteOpen, commandPaletteSelectedIndex, selectedCommandPaletteCommand]);
 
   function closeCommandPalette() {
+    restoreCommandPaletteSelection();
     setCommandPaletteOpen(false);
     setCommandPaletteScope("root");
     setCommandPaletteQuery("");
     setCommandPaletteSelectedIndex(0);
+    commandPaletteSelectionRef.current = null;
   }
 
   function handleCommandPaletteKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
@@ -10575,6 +10760,7 @@ function App() {
     if (
       command.id === "ai-menu" ||
       command.id === "insert-menu" ||
+      command.id === "format-menu" ||
       command.id === "table-menu"
     ) {
       await command.run();
@@ -10588,6 +10774,7 @@ function App() {
       command.id !== "insert-rich-link" &&
       command.id !== "insert-excalidraw" &&
       command.id !== "create-tidbit" &&
+      !command.id.startsWith("format-") &&
       !command.id.startsWith("ai-")
     ) {
       setStatus(command.title);
