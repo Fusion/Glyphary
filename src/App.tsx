@@ -193,6 +193,7 @@ import {
 } from "./lib/settings";
 import { richLinkMarkdown } from "./lib/rich-links";
 import { renderToolbarIcon, type ToolbarIconName } from "./toolbar-icons";
+import packageJson from "../package.json";
 import type {
   ActiveFile,
   AiBuilderHistoryAsset,
@@ -274,6 +275,8 @@ const codeLanguages = [
 ];
 
 const lowlight = createLowlight();
+const currentAppVersion = packageJson.version;
+const githubReleasesApiUrl = "https://api.github.com/repos/glyphary/glyphary/releases";
 
 // Keep lowlight registration explicit so Markdown language names can be
 // serialized directly from fenced code blocks and still highlight on reload.
@@ -314,6 +317,38 @@ function loadMermaidRenderer() {
   });
 
   return mermaidRenderer;
+}
+
+function releaseNotificationFromGitHubRelease(value: unknown) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const release = value as Record<string, unknown>;
+  const tagName = typeof release.tag_name === "string" ? release.tag_name.trim() : "";
+  const url = typeof release.html_url === "string" ? release.html_url : "";
+
+  if (!tagName || !url) {
+    return null;
+  }
+
+  return {
+    name:
+      typeof release.name === "string" && release.name.trim()
+        ? release.name.trim()
+        : tagName,
+    notes:
+      typeof release.body === "string" && release.body.trim()
+        ? release.body.trim()
+        : "No release notes were published for this release.",
+    publishedAt: typeof release.published_at === "string" ? release.published_at : "",
+    tagName,
+    url,
+  } satisfies ReleaseNotification;
+}
+
+function normalizedReleaseVersion(value: string) {
+  return value.trim().replace(/^v/i, "");
 }
 
 const RuntimeGapCursor = GapCursor as typeof GapCursor & {
@@ -834,6 +869,14 @@ type TableContextMenuState = {
 };
 
 type TableColumnAlignment = "left" | "center" | "right";
+
+type ReleaseNotification = {
+  name: string;
+  notes: string;
+  publishedAt: string;
+  tagName: string;
+  url: string;
+};
 
 type PageSearchMatch = {
   from: number;
@@ -4648,6 +4691,8 @@ function App() {
   const [richLinkDialogOpen, setRichLinkDialogOpen] = useState(false);
   const [richLinkUrlDraft, setRichLinkUrlDraft] = useState("");
   const [richLinkSubmitting, setRichLinkSubmitting] = useState(false);
+  const [releaseNotification, setReleaseNotification] =
+    useState<ReleaseNotification | null>(null);
   const [aiReview, setAiReview] = useState<AiReviewState | null>(null);
   const [aiPageBuilderOpen, setAiPageBuilderOpen] = useState(false);
   const [aiPageBuilderPrompt, setAiPageBuilderPrompt] = useState("");
@@ -7963,6 +8008,76 @@ function App() {
     return () =>
       window.removeEventListener("keydown", closeAiPageBuilderAssetReviewOnEscape);
   }, [aiPageBuilderAssetReview]);
+
+  useEffect(() => {
+    if (!releaseNotification) {
+      return;
+    }
+
+    const closeReleaseNotificationOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setReleaseNotification(null);
+      }
+    };
+
+    window.addEventListener("keydown", closeReleaseNotificationOnEscape);
+
+    return () =>
+      window.removeEventListener("keydown", closeReleaseNotificationOnEscape);
+  }, [releaseNotification]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function checkForReleaseUpdate() {
+      try {
+        const response = await fetch(githubReleasesApiUrl, {
+          headers: { Accept: "application/vnd.github+json" },
+        });
+
+        if (!response.ok) {
+          return;
+        }
+
+        const releases = await response.json();
+
+        if (!Array.isArray(releases)) {
+          return;
+        }
+
+        const nextRelease = releases
+          .filter((release) => {
+            if (!release || typeof release !== "object") {
+              return false;
+            }
+
+            const flags = release as Record<string, unknown>;
+
+            return flags.draft !== true;
+          })
+          .map(releaseNotificationFromGitHubRelease)
+          .find(
+            (release): release is ReleaseNotification =>
+              release !== null &&
+              normalizedReleaseVersion(release.tagName) !==
+                normalizedReleaseVersion(currentAppVersion),
+          );
+
+        if (!cancelled && nextRelease) {
+          setReleaseNotification(nextRelease);
+        }
+      } catch {
+        // Update checks should never interrupt local-first editing.
+      }
+    }
+
+    void checkForReleaseUpdate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!commandPaletteOpen) {
@@ -14025,6 +14140,55 @@ function App() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+      {releaseNotification ? (
+        <div
+          className="release-update-screen"
+          role="presentation"
+          onMouseDown={() => setReleaseNotification(null)}
+        >
+          <section
+            className="release-update-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Glyphary update available"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="release-update-header">
+              <h2>Glyphary {releaseNotification.tagName} is available</h2>
+              <span>
+                You are running {currentAppVersion}
+                {releaseNotification.publishedAt
+                  ? ` - Published ${new Date(
+                      releaseNotification.publishedAt,
+                    ).toLocaleDateString()}`
+                  : ""}
+              </span>
+            </div>
+            <div className="release-update-notes">
+              <strong>{releaseNotification.name}</strong>
+              <p>{releaseNotification.notes}</p>
+            </div>
+            <div className="release-update-actions">
+              <button
+                className="inline-action"
+                type="button"
+                onClick={() => setReleaseNotification(null)}
+              >
+                Later
+              </button>
+              <a
+                className="inline-action"
+                href={releaseNotification.url}
+                rel="noreferrer"
+                target="_blank"
+                onClick={() => setReleaseNotification(null)}
+              >
+                Open Release
+              </a>
+            </div>
+          </section>
         </div>
       ) : null}
       {wikiLinkPicker ? (

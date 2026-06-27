@@ -597,6 +597,35 @@ siteName: Example Site
   assert.match(css, /\.rich-link-content/);
 });
 
+test("startup release checks surface a GitHub release with a different version", () => {
+  const app = readFileSync("src/App.tsx", "utf8");
+  const css = readFileSync("src/App.css", "utf8");
+
+  assert.match(app, /import packageJson from "\.\.\/package\.json"/);
+  assert.match(app, /const currentAppVersion = packageJson\.version/);
+  assert.match(
+    app,
+    /https:\/\/api\.github\.com\/repos\/glyphary\/glyphary\/releases/,
+  );
+  assert.match(app, /function releaseNotificationFromGitHubRelease/);
+  assert.match(app, /function normalizedReleaseVersion/);
+  assert.match(app, /fetch\(githubReleasesApiUrl/);
+  assert.match(app, /application\/vnd\.github\+json/);
+  assert.match(app, /flags\.draft !== true/);
+  assert.match(app, /normalizedReleaseVersion\(release\.tagName\)/);
+  assert.match(app, /normalizedReleaseVersion\(currentAppVersion\)/);
+  assert.match(app, /setReleaseNotification\(nextRelease\)/);
+  assert.match(app, /aria-label="Glyphary update available"/);
+  assert.match(app, /Glyphary \{releaseNotification\.tagName\} is available/);
+  assert.match(app, /You are running \{currentAppVersion\}/);
+  assert.match(app, /releaseNotification\.notes/);
+  assert.match(app, /Open Release/);
+  assert.match(css, /\.release-update-screen/);
+  assert.match(css, /\.release-update-card/);
+  assert.match(css, /\.release-update-notes p/);
+  assert.match(css, /\.inline-action \{\s*display: inline-grid;/);
+});
+
 test("excalidraw drawings are embedded as vault files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");

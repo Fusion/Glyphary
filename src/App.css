@@ -636,6 +636,12 @@ h2 {
     transform var(--motion-duration-fast) var(--motion-ease);
 }
 
+.inline-action {
+  display: inline-grid;
+  place-items: center;
+  text-decoration: none;
+}
+
 .secondary-action {
   min-width: 78px;
   padding: 10px 14px;
@@ -5154,6 +5160,77 @@ body.workspace-resizing * {
 
 .rich-link-dialog-actions,
 .excalidraw-create-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.release-update-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 86;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--app-bg) 62%, transparent);
+  padding: 24px;
+}
+
+.release-update-card {
+  display: grid;
+  width: min(620px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  gap: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 22px 60px var(--shadow-strong);
+  padding: 18px;
+}
+
+.release-update-header {
+  display: grid;
+  gap: 5px;
+}
+
+.release-update-header h2 {
+  margin: 0;
+  color: var(--heading);
+  font-size: 1.05rem;
+  line-height: 1.25;
+}
+
+.release-update-header span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.release-update-notes {
+  display: grid;
+  min-height: 0;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+  padding: 12px;
+}
+
+.release-update-notes strong {
+  color: var(--heading);
+  font-size: 0.9rem;
+}
+
+.release-update-notes p {
+  overflow: auto;
+  max-height: min(420px, 46vh);
+  margin: 0;
+  color: var(--text);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.release-update-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
