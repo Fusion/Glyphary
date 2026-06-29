@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   FormEvent as ReactFormEvent,
@@ -6,15 +6,9 @@ import type {
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { Extension, Mark, mergeAttributes, Node } from "@tiptap/core";
-import type { Editor, JSONContent, MarkdownToken, NodeViewProps } from "@tiptap/core";
-import type { Node as ProseMirrorNode, ResolvedPos } from "@tiptap/pm/model";
-import { redo, undo } from "@tiptap/pm/history";
-import { NodeSelection, Plugin, PluginKey, Selection, TextSelection } from "@tiptap/pm/state";
-import { TableMap } from "@tiptap/pm/tables";
-import { Decoration, DecorationSet } from "@tiptap/pm/view";
-import type { EditorView } from "@tiptap/pm/view";
-import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
+import type { Editor } from "@tiptap/core";
+import { Selection } from "@tiptap/pm/state";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -30,34 +24,8 @@ import type {
 } from "@excalidraw/excalidraw/types";
 import type { ExcalidrawElement } from "@excalidraw/excalidraw/element/types";
 import "@excalidraw/excalidraw/index.css";
-import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
+import { useEditor } from "@tiptap/react";
 import {
-  EditorContent,
-  NodeViewContent,
-  NodeViewWrapper,
-  ReactNodeViewRenderer,
-  useEditor,
-} from "@tiptap/react";
-import { TableKit } from "@tiptap/extension-table";
-import { GapCursor } from "@tiptap/pm/gapcursor";
-import { TaskItem } from "@tiptap/extension-task-item";
-import { TaskList } from "@tiptap/extension-task-list";
-import bash from "highlight.js/lib/languages/bash";
-import css from "highlight.js/lib/languages/css";
-import javascript from "highlight.js/lib/languages/javascript";
-import json from "highlight.js/lib/languages/json";
-import markdownLanguage from "highlight.js/lib/languages/markdown";
-import plaintext from "highlight.js/lib/languages/plaintext";
-import python from "highlight.js/lib/languages/python";
-import rust from "highlight.js/lib/languages/rust";
-import sql from "highlight.js/lib/languages/sql";
-import typescript from "highlight.js/lib/languages/typescript";
-import xml from "highlight.js/lib/languages/xml";
-import { createLowlight } from "lowlight";
-import StarterKit from "@tiptap/starter-kit";
-import { Markdown } from "@tiptap/markdown";
-import {
-  CanvasView,
   canvasTitle,
   isCanvasPath,
   type CanvasCommandAction,
@@ -95,8 +63,6 @@ import {
   cleanVaultAssetReference,
   displayPath,
   displayVaultRelativePath,
-  escapeMarkdownImageText,
-  escapeMarkdownUrl,
   fileNameWithoutMarkdownExtension,
   parentDirectory,
 } from "./lib/paths";
@@ -125,8 +91,6 @@ import {
 import {
   defaultMetaDelimiter,
   composeMarkdown,
-  frontmatterScalarValue,
-  frontmatterListValues,
   markdownHeadings,
   splitMetaHeader,
   type MarkdownParts,
@@ -192,7 +156,97 @@ import {
   writePersistedWorkspace,
 } from "./lib/settings";
 import { richLinkMarkdown } from "./lib/rich-links";
-import { renderToolbarIcon, type ToolbarIconName } from "./toolbar-icons";
+import { jumpToHeadingInEditor } from "./editor/code-block-renderers";
+import {
+  alignCurrentTableColumn,
+  currentCursorContext,
+  currentSelectionText,
+  formatSelectionWithMark,
+  insertMarkdownAtCursor,
+  selectedGalleryImages,
+} from "./editor/commands";
+import { EditorPane, type ToolbarAction } from "./editor/EditorPane";
+import {
+  useWikiLinkState,
+  wikiLinkDisplayName,
+} from "./app-state/wikilinks";
+import {
+  clearEditorContent,
+  createEditorGroups,
+  createEmptyEditorGroups,
+  createUntitledTab,
+  hasNoOpenDocumentTabs,
+  joinVaultAssetPath,
+  joinVaultImagePath,
+  pageNameForFileName,
+  setEditorMarkdownContent,
+  tabTitle,
+} from "./app-state/documents";
+import {
+  commandPaletteSelectionPluginKey,
+  isEditorReady,
+  usePageSearch,
+  type PageSearchMatch,
+} from "./search/page-search";
+import { visibleVaultSearchResults } from "./search/vault-search";
+import {
+  ExcalidrawCreateDialog,
+  ExcalidrawDialog,
+  emptyExcalidrawScene,
+  excalidrawPreviewRefreshEvent,
+  excalidrawSceneToSvgMarkup,
+  isExcalidrawTarget,
+  parseExcalidrawScene,
+  restoredExcalidrawScene,
+  type ExcalidrawDialogState,
+} from "./excalidraw/editor";
+import { createGlypharyEditorOptions } from "./editor/editor-options";
+import {
+  commandPalettePlaceholder,
+  commandPaletteScopeTitle,
+  filterCommandPaletteCommands,
+  isCommandPaletteMenuCommand,
+  selectedCommandPaletteCommand,
+  shouldReportCommandPaletteStatus,
+  type CommandPaletteCommand,
+  type CommandPaletteScope,
+} from "./command-palette/commands";
+import { CommandPaletteDialog } from "./command-palette/CommandPaletteDialog";
+import {
+  activeFileWithRelativePath,
+  rebasePathAfterDirectoryRename,
+  relativePathFileName,
+} from "./vault/file-flow";
+import { VaultFolderTree } from "./vault/VaultFolderTree";
+import { FolderIcon, VaultFileIcon } from "./vault/VaultIcons";
+import {
+  allowVaultAssets,
+  createCanvasInDirectory,
+  createDirectoryInDirectory,
+  createExcalidrawFile,
+  createNoteInDirectory,
+  createVaultMarkdownFile,
+  deleteVaultFile,
+  listVaultDir,
+  listVaultMarkdownFiles,
+  moveVaultDirectory,
+  moveVaultFile,
+  openCalendarDayFile,
+  openDirectoryShadowFile,
+  readVaultFile,
+  readVaultSettings,
+  renameVaultDirectory,
+  renameVaultFile,
+  searchVaultFiles,
+  writeVaultFile,
+  writeVaultSettings,
+} from "./vault/persistence";
+import {
+  taskResultPresentation,
+  taskSearchPattern,
+  visibleVaultTaskResults,
+} from "./tasks/vault-tasks";
+import { renderToolbarIcon } from "./toolbar-icons";
 import packageJson from "../package.json";
 import type {
   ActiveFile,
@@ -250,13 +304,10 @@ import type {
   VaultAppearanceSettings,
   VaultDrawerItem,
   VaultEntry,
-  VaultFolderTreeNodeState,
-  VaultFolderTreeProps,
   VaultIndexedFile,
   VaultSettings,
   VaultThemeCalloutSettings,
   VaultThemeOptions,
-  WikiLinkPickerState,
 } from "./lib/app-types";
 import "./App.css";
 
@@ -274,51 +325,9 @@ const codeLanguages = [
   { label: "Markdown", value: "markdown" },
 ];
 
-const lowlight = createLowlight();
 const currentAppVersion = packageJson.version;
 const githubLatestReleaseApiUrl =
   "https://api.github.com/repos/glyphary/glyphary/releases/latest";
-
-// Keep lowlight registration explicit so Markdown language names can be
-// serialized directly from fenced code blocks and still highlight on reload.
-lowlight.register("plaintext", plaintext);
-lowlight.register("python", python);
-lowlight.register("sh", bash);
-lowlight.register("shell", bash);
-lowlight.register("bash", bash);
-lowlight.register("javascript", javascript);
-lowlight.register("js", javascript);
-lowlight.register("typescript", typescript);
-lowlight.register("ts", typescript);
-lowlight.register("json", json);
-lowlight.register("rust", rust);
-lowlight.register("rs", rust);
-lowlight.register("sql", sql);
-lowlight.register("html", xml);
-lowlight.register("xml", xml);
-lowlight.register("css", css);
-lowlight.register("markdown", markdownLanguage);
-lowlight.register("md", markdownLanguage);
-// "toc" is a display mode layered over a normal fenced code block. Register it
-// as plain text so the block remains editable and round-trips as ```toc.
-lowlight.register("toc", plaintext);
-lowlight.register("mermaid", plaintext);
-
-let mermaidRenderer: Promise<typeof import("mermaid")["default"]> | null = null;
-
-function loadMermaidRenderer() {
-  mermaidRenderer ??= import("mermaid").then(({ default: mermaid }) => {
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      theme: "default",
-    });
-
-    return mermaid;
-  });
-
-  return mermaidRenderer;
-}
 
 function releaseNotificationFromGitHubRelease(value: unknown) {
   if (!value || typeof value !== "object") {
@@ -352,524 +361,11 @@ function normalizedReleaseVersion(value: string) {
   return value.trim().replace(/^v/i, "");
 }
 
-const RuntimeGapCursor = GapCursor as typeof GapCursor & {
-  valid: (position: ResolvedPos) => boolean;
-};
-
-function codeBlockContainsSelection(selection: Selection, position: number, nodeSize: number) {
-  const contentStart = position + 1;
-  const contentEnd = position + nodeSize - 1;
-
-  return selection.from >= contentStart && selection.to <= contentEnd;
-}
-
-function ancestorDepthByName($position: ResolvedPos, nodeName: string) {
-  for (let depth = $position.depth; depth > 0; depth -= 1) {
-    if ($position.node(depth).type.name === nodeName) {
-      return depth;
-    }
-  }
-
-  return null;
-}
-
-function moveGapCursorTo(view: EditorView, position: number) {
-  const resolvedPosition = view.state.doc.resolve(position);
-
-  if (!RuntimeGapCursor.valid(resolvedPosition)) {
-    return false;
-  }
-
-  view.dispatch(
-    view.state.tr.setSelection(new GapCursor(resolvedPosition)).scrollIntoView(),
-  );
-
-  return true;
-}
-
-function insertParagraphAtGapCursor(view: EditorView) {
-  const { selection, schema } = view.state;
-
-  if (!(selection instanceof GapCursor)) {
-    return false;
-  }
-
-  const paragraph = schema.nodes.paragraph?.createAndFill();
-
-  if (!paragraph) {
-    return false;
-  }
-
-  const transaction = view.state.tr.insert(selection.from, paragraph);
-  transaction.setSelection(TextSelection.create(transaction.doc, selection.from + 1));
-  view.dispatch(transaction.scrollIntoView());
-
-  return true;
-}
-
-function insertParagraphAtPosition(view: EditorView, position: number) {
-  const paragraph = view.state.schema.nodes.paragraph?.createAndFill();
-
-  if (!paragraph) {
-    return false;
-  }
-
-  const transaction = view.state.tr.insert(position, paragraph);
-  transaction.setSelection(TextSelection.create(transaction.doc, position + 1));
-  view.dispatch(transaction.scrollIntoView());
-  view.focus();
-
-  return true;
-}
-
-const blockBoundaryInsertNodeNames = new Set([
-  "table",
-  "htmlBlock",
-  "richLink",
-  "excalidrawEmbed",
-  "gallery",
-]);
-
-function supportsBlockBoundaryInsert(node: ProseMirrorNode) {
-  // AI Builder markers are stored as hidden HTML comments so follow-up prompts
-  // can replace generated regions. They are anchors, not visible widgets, so
-  // they must not receive the margin + insertion controls.
-  if (
-    node.type.name === "htmlBlock" &&
-    typeof node.attrs.rawHtml === "string" &&
-    isAiBuilderMarkerComment(node.attrs.rawHtml)
-  ) {
-    return false;
-  }
-
-  return blockBoundaryInsertNodeNames.has(node.type.name);
-}
-
-function selectedTopLevelWidgetBlock(view: EditorView) {
-  const { selection } = view.state;
-
-  // The insertion affordance is intentionally limited to special, widget-like
-  // blocks. Plain Markdown text already has natural caret positions; showing a
-  // structural + there would add visual noise without solving an editing gap.
-  if (selection instanceof NodeSelection && supportsBlockBoundaryInsert(selection.node)) {
-    return {
-      from: selection.from,
-      to: selection.to,
-      node: selection.node,
-    };
-  }
-
-  if (selection.$from.depth === 0) {
-    return null;
-  }
-
-  const node = selection.$from.node(1);
-
-  // Table cells and custom node views can hold an inner text selection while
-  // still behaving like one top-level widget for surrounding block insertion.
-  // Scope controls to that containing block so only the active block gets them.
-  if (!supportsBlockBoundaryInsert(node)) {
-    return null;
-  }
-
-  return {
-    from: selection.$from.before(1),
-    to: selection.$from.after(1),
-    node,
-  };
-}
-
-function blockBoundaryInsertWidget(position: number, side: -1 | 1) {
-  // Use a decoration instead of permanent document content. The + is a small
-  // hit target for a precise boundary insertion, not a Markdown node.
-  return Decoration.widget(
-    position,
-    (targetView, getPosition) => {
-      const wrapper = document.createElement("div");
-      wrapper.className = "block-boundary-insert";
-      wrapper.contentEditable = "false";
-
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "block-boundary-insert-button";
-      button.setAttribute("aria-label", "Insert paragraph between blocks");
-      button.title = "Insert paragraph";
-      button.textContent = "+";
-      button.addEventListener("mousedown", (event) => {
-        event.preventDefault();
-      });
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-
-        const currentPosition = getPosition();
-
-        if (typeof currentPosition === "number") {
-          insertParagraphAtPosition(targetView, currentPosition);
-        }
-      });
-
-      wrapper.append(button);
-
-      return wrapper;
-    },
-    {
-      key: `block-boundary-insert-${position}-${side}`,
-      side,
-      stopEvent: () => true,
-    },
-  );
-}
-
-function blockBoundaryInsertDecorations(view: EditorView) {
-  const selectedBlock = selectedTopLevelWidgetBlock(view);
-
-  if (!selectedBlock) {
-    return DecorationSet.empty;
-  }
-
-  return DecorationSet.create(view.state.doc, [
-    blockBoundaryInsertWidget(selectedBlock.from, -1),
-    blockBoundaryInsertWidget(selectedBlock.to, 1),
-  ]);
-}
-
-function moveGapCursorAfterTableBoundary(view: EditorView) {
-  const { state } = view;
-
-  if (!state.selection.empty || !view.endOfTextblock("down")) {
-    return false;
-  }
-
-  const { $head } = state.selection;
-  const tableDepth = ancestorDepthByName($head, "table");
-  const rowDepth = ancestorDepthByName($head, "tableRow");
-
-  if (tableDepth === null || rowDepth === null) {
-    return false;
-  }
-
-  const tableNode = $head.node(tableDepth);
-  const rowIndex = $head.index(tableDepth);
-
-  if (rowIndex !== tableNode.childCount - 1) {
-    return false;
-  }
-
-  const afterTable = $head.after(tableDepth);
-  const nodeAfterTable = state.doc.resolve(afterTable).nodeAfter;
-
-  // If a normal paragraph already follows the table, native navigation has a
-  // real caret destination. For adjacent block widgets, move to a gap cursor so
-  // the insertion point is visible without mutating the Markdown source.
-  if (!nodeAfterTable || nodeAfterTable.isTextblock) {
-    return false;
-  }
-
-  return moveGapCursorTo(view, afterTable);
-}
-
-function moveGapCursorBeforeSelectedBlock(view: EditorView) {
-  const { selection } = view.state;
-
-  if (!(selection instanceof NodeSelection) || selection.node.isTextblock) {
-    return false;
-  }
-
-  return moveGapCursorTo(view, selection.from);
-}
-
-function moveGapCursorAfterSelectedBlock(view: EditorView) {
-  const { selection } = view.state;
-
-  if (!(selection instanceof NodeSelection) || selection.node.isTextblock) {
-    return false;
-  }
-
-  const afterSelectedBlock = selection.to;
-  const nodeAfterSelectedBlock = view.state.doc.resolve(afterSelectedBlock).nodeAfter;
-
-  if (!nodeAfterSelectedBlock || nodeAfterSelectedBlock.isTextblock) {
-    return false;
-  }
-
-  return moveGapCursorTo(view, afterSelectedBlock);
-}
-
-function createBlockBoundaryInsertionExtension() {
-  return Extension.create({
-    name: "glypharyBlockBoundaryInsertion",
-    priority: 10000,
-
-    addKeyboardShortcuts() {
-      return {
-        Enter: () =>
-          insertParagraphAtGapCursor(this.editor.view) ||
-          moveGapCursorBeforeSelectedBlock(this.editor.view),
-        ArrowDown: () =>
-          moveGapCursorAfterTableBoundary(this.editor.view) ||
-          moveGapCursorAfterSelectedBlock(this.editor.view),
-        ArrowUp: () => moveGapCursorBeforeSelectedBlock(this.editor.view),
-      };
-    },
-
-    addProseMirrorPlugins() {
-      return [
-        new Plugin({
-          key: new PluginKey("glypharyBlockBoundaryInsertAffordance"),
-          props: {
-            decorations: (_state) => blockBoundaryInsertDecorations(this.editor.view),
-          },
-        }),
-      ];
-    },
-  });
-}
-
-function codeBlockDecorationsContainLanguageControl(
-  decorations: NodeViewProps["decorations"],
-) {
-  return decorations.some((decoration) => {
-    const className = decoration.type.attrs.class;
-
-    return (
-      typeof className === "string" &&
-      className.split(/\s+/).includes("code-block-language-active")
-    );
-  });
-}
-
-function codeBlockDecorationClassNames(decorations: NodeViewProps["decorations"]) {
-  return decorations
-    .map((decoration) => decoration.type.attrs.class)
-    .filter((className): className is string => typeof className === "string");
-}
-
-function CodeBlockNodeView({ decorations, node, updateAttributes }: NodeViewProps) {
-  const language = typeof node.attrs.language === "string" ? node.attrs.language : "";
-  const isLanguageControlActive = codeBlockDecorationsContainLanguageControl(decorations);
-  const isRenderedTableOfContents = language === "toc";
-  const className = [
-    "code-block-node",
-    isLanguageControlActive ? "active" : "",
-    ...codeBlockDecorationClassNames(decorations),
-  ]
-    .filter(Boolean)
-    .join(" ");
-
-  return (
-    <NodeViewWrapper className={className}>
-      {!isRenderedTableOfContents ? (
-        <label className="code-block-language-control" contentEditable={false}>
-          <span>Lang</span>
-          <input
-            aria-label="Code block language"
-            list="code-language-options"
-            onChange={(event) => updateAttributes({ language: event.currentTarget.value })}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            placeholder="plain"
-            spellCheck={false}
-            value={language}
-          />
-        </label>
-      ) : null}
-      <pre>
-        <NodeViewContent<"code"> as="code" />
-      </pre>
-    </NodeViewWrapper>
-  );
-}
-
-// Code block language is a property of the block being edited, not global
-// toolbar state. Rendering it as a node view keeps the control local to the
-// current block while Markdown still round-trips through the normal fence attrs.
-const CodeBlockWithLanguageControl = CodeBlockLowlight.extend({
-  addProseMirrorPlugins() {
-    const codeBlockName = this.name;
-
-    return [
-      ...(this.parent?.() ?? []),
-      new Plugin({
-        key: new PluginKey("codeBlockLanguageControl"),
-        props: {
-          decorations: (state) => {
-            const decorations: Decoration[] = [];
-
-            state.doc.descendants((node, position) => {
-              if (node.type.name !== codeBlockName) {
-                return true;
-              }
-
-              if (codeBlockContainsSelection(state.selection, position, node.nodeSize)) {
-                decorations.push(
-                  Decoration.node(position, position + node.nodeSize, {
-                    class: "code-block-language-active",
-                  }),
-                );
-              }
-
-              return false;
-            });
-
-            return DecorationSet.create(state.doc, decorations);
-          },
-        },
-      }),
-    ];
-  },
-
-  addKeyboardShortcuts() {
-    return {
-      ...this.parent?.(),
-      Tab: () => {
-        if (!this.editor.isActive(this.name)) {
-          return false;
-        }
-
-        return this.editor.commands.insertContent("    ");
-      },
-      "Shift-Tab": () => this.editor.isActive(this.name),
-    };
-  },
-
-  addNodeView() {
-    return ReactNodeViewRenderer(CodeBlockNodeView, {
-      update: ({ updateProps }) => {
-        updateProps();
-        return true;
-      },
-    });
-  },
-});
-
-type WikiLinkResolution = {
-  candidates: VaultIndexedFile[];
-};
-
-type WikiLinkExtensionOptions = {
-  openSearch: () => void;
-  resolveTarget: (target: string) => WikiLinkResolution;
-};
-
-const wikiLinkTokenPattern = /\[\[([^\]\n]+)\]\]/g;
-
-function createWikiLinkExtension(options: WikiLinkExtensionOptions) {
-  return Extension.create({
-    name: "glypharyWikilinks",
-
-    addProseMirrorPlugins() {
-      return [
-        new Plugin({
-          key: new PluginKey("glypharyWikilinks"),
-          props: {
-            decorations: (state) => {
-              const decorations: Decoration[] = [];
-
-              state.doc.descendants((node, position, parent) => {
-                if (!node.isText || !node.text || parent?.type.spec.code) {
-                  return true;
-                }
-
-                for (const match of node.text.matchAll(wikiLinkTokenPattern)) {
-                  const markup = match[1] ?? "";
-                  const target = wikiLinkTargetFromMarkup(markup);
-
-                  if (!target) {
-                    continue;
-                  }
-
-                  const from = position + match.index;
-                  const to = from + match[0].length;
-                  const candidates = options.resolveTarget(target).candidates;
-                  const stateClass =
-                    candidates.length === 0
-                      ? "missing"
-                      : candidates.length === 1
-                        ? "resolved"
-                        : "ambiguous";
-
-                  decorations.push(
-                    Decoration.inline(from, to, {
-                      class: `wikilink wikilink-${stateClass}`,
-                      "data-wikilink-target": target,
-                      title:
-                        candidates.length === 0
-                          ? "No matching note"
-                          : candidates.length === 1
-                            ? candidates[0].relativePath
-                            : `${candidates.length} matching notes`,
-                    }),
-                  );
-
-                  if (state.selection.$from.parent !== parent) {
-                    decorations.push(
-                      Decoration.inline(from, from + 2, { class: "wikilink-hidden-syntax" }),
-                      Decoration.inline(to - 2, to, { class: "wikilink-hidden-syntax" }),
-                    );
-
-                    const pipeIndex = markup.indexOf("|");
-
-                    if (pipeIndex >= 0) {
-                      // Obsidian-style aliases display only the alias outside
-                      // the active line: [[Actual Page|Shown Text]] -> Shown Text.
-                      decorations.push(
-                        Decoration.inline(from + 2, from + 2 + pipeIndex + 1, {
-                          class: "wikilink-hidden-syntax",
-                        }),
-                      );
-                    }
-                  }
-                }
-
-                return true;
-              });
-
-              return DecorationSet.create(state.doc, decorations);
-            },
-            handleTextInput: (view, from, _to, text) => {
-              if (text !== "[") {
-                return false;
-              }
-
-              if (view.state.doc.textBetween(Math.max(0, from - 1), from) !== "[") {
-                return false;
-              }
-
-              window.setTimeout(options.openSearch, 0);
-              return false;
-            },
-          },
-        }),
-      ];
-    },
-  });
-}
-
-type ToolbarAction = {
-  label: string;
-  icon?: ToolbarIconName;
-  title: string;
-  isActive: () => boolean;
-  isEnabled?: () => boolean;
-  run: () => void;
-};
-
-type CommandPaletteCommand = {
-  id: string;
-  title: string;
-  description: string;
-  run: () => void | Promise<void>;
-};
-
 type TableContextMenuState = {
   groupId: EditorGroupId;
   x: number;
   y: number;
 };
-
-type TableColumnAlignment = "left" | "center" | "right";
 
 type ReleaseNotification = {
   name: string;
@@ -877,37 +373,6 @@ type ReleaseNotification = {
   publishedAt: string;
   tagName: string;
   url: string;
-};
-
-type PageSearchMatch = {
-  from: number;
-  to: number;
-};
-
-type PageSearchPluginState = {
-  activeIndex: number;
-  matches: PageSearchMatch[];
-};
-
-type CommandPaletteSelectionState = {
-  ranges: PageSearchMatch[];
-};
-
-// The command palette is intentionally shallow at the root. Heavy command
-// families live in scopes so the root stays useful for fuzzy search.
-type CommandPaletteScope = "root" | "ai" | "insert" | "format" | "table";
-
-type ExcalidrawSceneData = {
-  type?: string;
-  elements?: readonly ExcalidrawElement[];
-  appState?: Partial<AppState>;
-  files?: BinaryFiles;
-};
-
-type ExcalidrawDialogState = {
-  relativePath: string;
-  name: string;
-  initialData: ExcalidrawSceneData;
 };
 
 type ImagePreviewState = {
@@ -936,12 +401,6 @@ const aiPageBuilderMarkdownContextLimit = 12000;
 const maxAiBuilderHistoryTurnsPerFile = 20;
 const maxAiBuilderPromptHistoryTurns = 5;
 
-const ExcalidrawCanvas = lazy(async () => {
-  const module = await import("@excalidraw/excalidraw");
-
-  return { default: module.Excalidraw };
-});
-
 type WasmPluginResponse =
   | {
       id: string;
@@ -962,1201 +421,8 @@ type RichLinkMetadata = {
   siteName: string;
 };
 
-function jumpToHeadingInEditor(
-  targetEditor: Editor | null,
-  entry: TocEntry,
-  onStatus: (message: string) => void,
-) {
-  if (!targetEditor) {
-    return;
-  }
-
-  let matchCount = 0;
-  let targetPosition: number | null = null;
-
-  targetEditor.state.doc.descendants((node, position) => {
-    if (targetPosition !== null || node.type.name !== "heading") {
-      return true;
-    }
-
-    if (node.attrs.level === entry.level && node.textContent.trim() === entry.title) {
-      matchCount += 1;
-
-      if (matchCount === entry.occurrence) {
-        targetPosition = position;
-        return false;
-      }
-    }
-
-    return true;
-  });
-
-  if (targetPosition === null) {
-    onStatus(`Could not find heading ${entry.title}`);
-    return;
-  }
-
-  targetEditor.chain().focus().setTextSelection(targetPosition + 1).scrollIntoView().run();
-  onStatus(`Jumped to ${entry.title}`);
-}
-
-function tocEntriesFromEditorDoc(doc: ProseMirrorNode): TocEntry[] {
-  const headings: TocEntry[] = [];
-  const occurrences = new Map<string, number>();
-
-  doc.descendants((node) => {
-    if (node.type.name !== "heading") {
-      return true;
-    }
-
-    const title = node.textContent.trim();
-
-    if (!title) {
-      return false;
-    }
-
-    const level = Number(node.attrs.level);
-    const key = `${level}:${title}`;
-    const occurrence = (occurrences.get(key) ?? 0) + 1;
-
-    occurrences.set(key, occurrence);
-    headings.push({
-      id: `${key}:${occurrence}`,
-      level,
-      title,
-      occurrence,
-    });
-
-    return false;
-  });
-
-  return headings;
-}
-
-function createTocCodeWidget(headings: TocEntry[], blockPosition: number) {
-  const render = document.createElement("div");
-  render.className = "toc-code-render toc-code-widget";
-  render.contentEditable = "false";
-  render.dataset.tocBlockPosition = String(blockPosition);
-
-  const header = document.createElement("div");
-  header.className = "toc-code-header";
-
-  const title = document.createElement("strong");
-  title.textContent = "Table of contents";
-  header.appendChild(title);
-
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.dataset.tocEdit = "true";
-  editButton.textContent = "Edit";
-  header.appendChild(editButton);
-  render.appendChild(header);
-
-  if (headings.length === 0) {
-    const empty = document.createElement("p");
-    empty.className = "toc-code-empty";
-    empty.textContent = "No headings in this document.";
-    render.appendChild(empty);
-    return render;
-  }
-
-  const list = document.createElement("div");
-  list.className = "toc-code-list";
-  list.setAttribute("role", "list");
-
-  headings.forEach((entry) => {
-    const button = document.createElement("button");
-    const level = document.createElement("span");
-    const titleElement = document.createElement("strong");
-
-    button.type = "button";
-    button.className = `toc-code-entry level-${entry.level}`;
-    button.dataset.tocEntryId = entry.id;
-    level.textContent = `H${entry.level}`;
-    titleElement.textContent = entry.title;
-    button.append(level, titleElement);
-    list.appendChild(button);
-  });
-
-  render.appendChild(list);
-  return render;
-}
-
-function shortHash(value: string) {
-  let hash = 0;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash * 31 + value.charCodeAt(index)) | 0;
-  }
-
-  return Math.abs(hash).toString(36);
-}
-
-function renderMermaidDiagram(render: HTMLElement, source: string, renderId: string) {
-  render.dataset.mermaidRenderId = renderId;
-
-  const body = render.querySelector<HTMLElement>(".mermaid-code-body");
-
-  if (!body) {
-    return;
-  }
-
-  if (!source.trim()) {
-    body.textContent = "Empty Mermaid diagram.";
-    return;
-  }
-
-  body.textContent = "Rendering diagram...";
-
-  void loadMermaidRenderer()
-    .then((mermaid) => mermaid.render(renderId, source))
-    .then(({ svg, bindFunctions }) => {
-      if (render.dataset.mermaidRenderId !== renderId) {
-        return;
-      }
-
-      body.innerHTML = svg;
-      bindFunctions?.(body);
-    })
-    .catch((error: unknown) => {
-      if (render.dataset.mermaidRenderId !== renderId) {
-        return;
-      }
-
-      body.textContent = error instanceof Error ? error.message : String(error);
-    });
-}
-
-function createMermaidCodeWidget(source: string, blockPosition: number) {
-  const render = document.createElement("div");
-  const renderId = `glyphary-mermaid-${blockPosition}-${shortHash(source)}`;
-  render.className = "mermaid-code-render mermaid-code-widget";
-  render.contentEditable = "false";
-  render.dataset.mermaidBlockPosition = String(blockPosition);
-
-  const header = document.createElement("div");
-  header.className = "mermaid-code-header";
-
-  const title = document.createElement("strong");
-  title.textContent = "Mermaid";
-  header.appendChild(title);
-
-  const editButton = document.createElement("button");
-  editButton.type = "button";
-  editButton.dataset.mermaidEdit = "true";
-  editButton.textContent = "Edit";
-  header.appendChild(editButton);
-  render.appendChild(header);
-
-  const body = document.createElement("div");
-  body.className = "mermaid-code-body";
-  render.appendChild(body);
-
-  renderMermaidDiagram(render, source, renderId);
-  return render;
-}
-
-const TocCodeBlockRenderer = Extension.create({
-  name: "tocCodeBlockRenderer",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("tocCodeBlockRenderer"),
-        props: {
-          decorations: (state) => {
-            const decorations: Decoration[] = [];
-            const headings = tocEntriesFromEditorDoc(state.doc);
-
-            state.doc.descendants((node, position) => {
-              if (node.type.name !== "codeBlock") {
-                return true;
-              }
-
-              if (node.attrs.language !== "toc") {
-                return false;
-              }
-
-              const selected =
-                state.selection.from >= position &&
-                state.selection.to <= position + node.nodeSize;
-
-              decorations.push(
-                Decoration.node(position, position + node.nodeSize, {
-                  class: selected ? "toc-code-block editing" : "toc-code-block rendered",
-                }),
-              );
-
-              if (!selected) {
-                decorations.push(
-                  Decoration.widget(
-                    position + node.nodeSize,
-                    () => createTocCodeWidget(headings, position),
-                    {
-                      key: `toc-code:${position}:${headings.map((entry) => entry.id).join("|")}`,
-                      side: -1,
-                    },
-                  ),
-                );
-              }
-
-              return false;
-            });
-
-            return DecorationSet.create(state.doc, decorations);
-          },
-        },
-      }),
-    ];
-  },
-});
-
-const MermaidCodeBlockRenderer = Extension.create({
-  name: "mermaidCodeBlockRenderer",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin({
-        key: new PluginKey("mermaidCodeBlockRenderer"),
-        props: {
-          decorations: (state) => {
-            const decorations: Decoration[] = [];
-
-            state.doc.descendants((node, position) => {
-              if (node.type.name !== "codeBlock") {
-                return true;
-              }
-
-              if (node.attrs.language !== "mermaid") {
-                return false;
-              }
-
-              const selected = codeBlockContainsSelection(
-                state.selection,
-                position,
-                node.nodeSize,
-              );
-              const source = node.textContent;
-
-              decorations.push(
-                Decoration.node(position, position + node.nodeSize, {
-                  class: selected ? "mermaid-code-block editing" : "mermaid-code-block rendered",
-                }),
-              );
-
-              if (!selected) {
-                decorations.push(
-                  Decoration.widget(
-                    position + node.nodeSize,
-                    () => createMermaidCodeWidget(source, position),
-                    {
-                      key: `mermaid-code:${position}:${shortHash(source)}`,
-                      side: -1,
-                    },
-                  ),
-                );
-              }
-
-              return false;
-            });
-
-            return DecorationSet.create(state.doc, decorations);
-          },
-        },
-      }),
-    ];
-  },
-});
-
-function isEditorReady(editor: Editor | null | undefined): editor is Editor {
-  return Boolean(editor && !editor.isDestroyed);
-}
-
-function pageSearchMatches(targetEditor: Editor | null, query: string): PageSearchMatch[] {
-  const needle = query.trim().toLowerCase();
-
-  if (!targetEditor || !needle) {
-    return [];
-  }
-
-  const chars: string[] = [];
-  const positions: number[] = [];
-
-  targetEditor.state.doc.descendants((node, position) => {
-    if (!node.isText || !node.text) {
-      return true;
-    }
-
-    if (chars.length > 0) {
-      chars.push("\n");
-      positions.push(-1);
-    }
-
-    for (let index = 0; index < node.text.length; index += 1) {
-      chars.push(node.text[index]);
-      positions.push(position + 1 + index);
-    }
-
-    return true;
-  });
-
-  const haystack = chars.join("").toLowerCase();
-  const matches: PageSearchMatch[] = [];
-  let index = haystack.indexOf(needle);
-
-  while (index >= 0) {
-    const from = positions[index];
-    const endPosition = positions[index + needle.length - 1];
-
-    if (from >= 0 && endPosition >= 0) {
-      matches.push({ from, to: endPosition + 1 });
-    }
-
-    index = haystack.indexOf(needle, index + Math.max(needle.length, 1));
-  }
-
-  return matches;
-}
-
-const pageSearchPluginKey = new PluginKey<PageSearchPluginState>("pageSearch");
-
-const PageSearchRenderer = Extension.create({
-  name: "pageSearchRenderer",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin<PageSearchPluginState>({
-        key: pageSearchPluginKey,
-        state: {
-          init: () => ({ activeIndex: -1, matches: [] }),
-          apply(transaction, previous) {
-            return transaction.getMeta(pageSearchPluginKey) ?? previous;
-          },
-        },
-        props: {
-          decorations(state) {
-            const search = pageSearchPluginKey.getState(state);
-
-            if (!search || search.matches.length === 0) {
-              return DecorationSet.empty;
-            }
-
-            const decorations = search.matches.map((match, index) =>
-              Decoration.inline(match.from, match.to, {
-                class:
-                  index === search.activeIndex
-                    ? "page-search-match active"
-                    : "page-search-match",
-              }),
-            );
-
-            return DecorationSet.create(state.doc, decorations);
-          },
-        },
-      }),
-    ];
-  },
-});
-
-const commandPaletteSelectionPluginKey = new PluginKey<CommandPaletteSelectionState>(
-  "commandPaletteSelection",
-);
-
-const CommandPaletteSelectionRenderer = Extension.create({
-  name: "commandPaletteSelectionRenderer",
-
-  addProseMirrorPlugins() {
-    return [
-      new Plugin<CommandPaletteSelectionState>({
-        key: commandPaletteSelectionPluginKey,
-        state: {
-          init: () => ({ ranges: [] }),
-          apply(transaction, previous) {
-            return transaction.getMeta(commandPaletteSelectionPluginKey) ?? previous;
-          },
-        },
-        props: {
-          decorations(state) {
-            const selection = commandPaletteSelectionPluginKey.getState(state);
-
-            if (!selection || selection.ranges.length === 0) {
-              return DecorationSet.empty;
-            }
-
-            return DecorationSet.create(
-              state.doc,
-              selection.ranges.map((range) =>
-                Decoration.inline(range.from, range.to, {
-                  class: "command-palette-preserved-selection",
-                }),
-              ),
-            );
-          },
-        },
-      }),
-    ];
-  },
-});
-
-function isVimNormalMode(editor: Editor) {
-  const storage = editor.storage as unknown as {
-    glypharyVimMode?: { state?: { mode?: string } };
-  };
-
-  return storage.glypharyVimMode?.state?.mode === "normal";
-}
-
-function setVimMode(editor: Editor, mode: "insert" | "normal") {
-  const storage = editor.storage as unknown as {
-    glypharyVimMode?: { state?: { mode?: string } };
-  };
-
-  if (storage.glypharyVimMode?.state) {
-    storage.glypharyVimMode.state.mode = mode;
-  }
-}
-
-type VimPendingCommand = {
-  key: "c" | "d" | "g" | "y";
-  expires: number;
-};
-
-type VimCopyBuffer = {
-  text: string;
-  linewise: boolean;
-};
-
-function createGlypharyVimMode(reportStatus: (message: string) => void) {
-  let pendingCommand: VimPendingCommand | null = null;
-  let copyBuffer: VimCopyBuffer = { text: "", linewise: false };
-
-  return Extension.create({
-    name: "glypharyVimMode",
-
-    // Glyphary owns Vim handling locally instead of delegating to an external
-    // keymap. That keeps multi-key commands deterministic and prevents broad
-    // Normal-mode catchalls from swallowing the second key in commands like gg.
-    priority: 10000,
-
-    addStorage() {
-      return {
-        state: {
-          mode: "insert",
-        },
-      };
-    },
-
-    addProseMirrorPlugins() {
-      const pendingIs = (key: VimPendingCommand["key"]) => {
-        if (!pendingCommand || pendingCommand.expires <= Date.now()) {
-          pendingCommand = null;
-          return false;
-        }
-
-        return pendingCommand.key === key;
-      };
-
-      const waitForNextKey = (key: VimPendingCommand["key"]) => {
-        // Multi-key Vim commands are short-lived so an abandoned prefix like
-        // `g` does not unexpectedly affect a later unrelated keypress.
-        pendingCommand = { key, expires: Date.now() + 700 };
-        return true;
-      };
-
-      const currentTextblockRange = () => {
-        const { $head } = this.editor.state.selection;
-
-        return {
-          start: $head.start(),
-          end: $head.end(),
-          text: $head.parent.textContent,
-          offset: $head.parentOffset,
-          before: $head.before($head.depth),
-          after: $head.after($head.depth),
-        };
-      };
-
-      const writeCopyBuffer = (buffer: VimCopyBuffer) => {
-        copyBuffer = buffer;
-
-        // Keep a local Vim register as the source of truth. The system clipboard
-        // write is best-effort because webviews may reject it outside secure or
-        // explicitly permissioned clipboard contexts.
-        if (navigator.clipboard?.writeText) {
-          void navigator.clipboard.writeText(buffer.text).catch(() => undefined);
-        }
-      };
-
-      const setSelection = (position: number) => {
-        const { state, view } = this.editor;
-        const nextPosition = Math.max(0, Math.min(state.doc.content.size, position));
-
-        view.dispatch(
-          state.tr
-            .setSelection(TextSelection.create(state.doc, nextPosition))
-            .scrollIntoView(),
-        );
-        return true;
-      };
-
-      const enterInsertMode = () => {
-        setVimMode(this.editor, "insert");
-        reportStatus("Vim insert mode");
-      };
-
-      const wordRangeAtOrAfterCursor = () => {
-        const { start, text, offset } = currentTextblockRange();
-        let wordStart = Math.min(offset, text.length);
-
-        while (wordStart < text.length && /\s/.test(text[wordStart])) {
-          wordStart += 1;
-        }
-
-        if (wordStart >= text.length) {
-          return null;
-        }
-
-        while (wordStart > 0 && !/\s/.test(text[wordStart - 1])) {
-          wordStart -= 1;
-        }
-
-        let wordEnd = wordStart;
-
-        while (wordEnd < text.length && !/\s/.test(text[wordEnd])) {
-          wordEnd += 1;
-        }
-
-        return {
-          from: start + wordStart,
-          to: start + wordEnd,
-          text: text.slice(wordStart, wordEnd),
-        };
-      };
-
-      const moveBy = (delta: number) => {
-        pendingCommand = null;
-        return setSelection(this.editor.state.selection.from + delta);
-      };
-
-      const moveLine = (direction: -1 | 1) => {
-        const { state, view } = this.editor;
-        const start = view.coordsAtPos(state.selection.from);
-        const lineHeight = parseInt(getComputedStyle(view.dom).lineHeight, 10) || 20;
-        // ProseMirror positions are document offsets, not visual rows. Use
-        // coordinate mapping for j/k so wrapped lines behave like editor lines.
-        const target = view.posAtCoords({
-          left: start.left,
-          top: start.top + direction * lineHeight,
-        });
-
-        pendingCommand = null;
-
-        if (!target) {
-          return true;
-        }
-
-        return setSelection(target.pos);
-      };
-
-      const moveToNextWordStart = () => {
-        const { start, text, offset } = currentTextblockRange();
-        let nextOffset = Math.min(offset, text.length);
-
-        while (nextOffset < text.length && !/\s/.test(text[nextOffset])) {
-          nextOffset += 1;
-        }
-
-        while (nextOffset < text.length && /\s/.test(text[nextOffset])) {
-          nextOffset += 1;
-        }
-
-        pendingCommand = null;
-        return setSelection(start + nextOffset);
-      };
-
-      const moveToPreviousWordStart = () => {
-        const { start, text, offset } = currentTextblockRange();
-        let previousOffset = Math.max(0, Math.min(offset - 1, text.length - 1));
-
-        while (previousOffset > 0 && /\s/.test(text[previousOffset])) {
-          previousOffset -= 1;
-        }
-
-        while (previousOffset > 0 && !/\s/.test(text[previousOffset - 1])) {
-          previousOffset -= 1;
-        }
-
-        pendingCommand = null;
-        return setSelection(start + previousOffset);
-      };
-
-      const moveToFileStart = () => {
-        const { state, view } = this.editor;
-
-        pendingCommand = null;
-        view.dispatch(
-          state.tr
-            .setSelection(Selection.atStart(state.doc))
-            .scrollIntoView(),
-        );
-        return true;
-      };
-
-      const moveToLastTextblock = () => {
-        let lastTextblockPosition = 0;
-
-        this.editor.state.doc.descendants((node, position) => {
-          if (node.isTextblock) {
-            lastTextblockPosition = position + 1;
-          }
-
-          return true;
-        });
-
-        pendingCommand = null;
-        return setSelection(lastTextblockPosition);
-      };
-
-      const moveToFirstNonBlank = () => {
-        const { start, text } = currentTextblockRange();
-        const firstNonBlank = text.search(/\S/);
-
-        pendingCommand = null;
-        return setSelection(start + (firstNonBlank === -1 ? 0 : firstNonBlank));
-      };
-
-      const moveToMatchingPair = () => {
-        const { start, text, offset } = currentTextblockRange();
-        const pairs: Record<string, string> = {
-          "(": ")",
-          "[": "]",
-          "{": "}",
-        };
-        const reversePairs: Record<string, string> = {
-          ")": "(",
-          "]": "[",
-          "}": "{",
-        };
-        const character = text[offset];
-
-        if (pairs[character]) {
-          let depth = 0;
-
-          for (let index = offset; index < text.length; index += 1) {
-            if (text[index] === character) {
-              depth += 1;
-            } else if (text[index] === pairs[character]) {
-              depth -= 1;
-
-              if (depth === 0) {
-                pendingCommand = null;
-                return setSelection(start + index);
-              }
-            }
-          }
-        }
-
-        if (reversePairs[character]) {
-          let depth = 0;
-
-          for (let index = offset; index >= 0; index -= 1) {
-            if (text[index] === character) {
-              depth += 1;
-            } else if (text[index] === reversePairs[character]) {
-              depth -= 1;
-
-              if (depth === 0) {
-                pendingCommand = null;
-                return setSelection(start + index);
-              }
-            }
-          }
-        }
-
-        pendingCommand = null;
-        return true;
-      };
-
-      const deleteCurrentLine = () => {
-        const { state, view } = this.editor;
-        const { start, end, text } = currentTextblockRange();
-        const transaction = state.tr.delete(start, end);
-        const selectionPosition = Math.min(start, transaction.doc.content.size);
-
-        writeCopyBuffer({ text, linewise: true });
-        pendingCommand = null;
-        view.dispatch(
-          transaction
-            .setSelection(TextSelection.create(transaction.doc, selectionPosition))
-            .scrollIntoView(),
-        );
-        reportStatus("Yanked and deleted line");
-        return true;
-      };
-
-      const deleteWordUnderCursor = () => {
-        const { state, view } = this.editor;
-        const range = wordRangeAtOrAfterCursor();
-
-        pendingCommand = null;
-
-        if (!range) {
-          return true;
-        }
-
-        const transaction = state.tr.delete(range.from, range.to);
-
-        writeCopyBuffer({ text: range.text, linewise: false });
-        view.dispatch(
-          transaction
-            .setSelection(TextSelection.create(transaction.doc, range.from))
-            .scrollIntoView(),
-        );
-        reportStatus("Deleted word");
-        return true;
-      };
-
-      const yankCurrentLine = () => {
-        writeCopyBuffer({ text: currentTextblockRange().text, linewise: true });
-        pendingCommand = null;
-        reportStatus("Yanked line");
-        return true;
-      };
-
-      const yankWordUnderCursor = () => {
-        const range = wordRangeAtOrAfterCursor();
-
-        pendingCommand = null;
-
-        if (range) {
-          writeCopyBuffer({ text: range.text, linewise: false });
-          reportStatus("Yanked word");
-        }
-
-        return true;
-      };
-
-      const deleteCharacterUnderCursor = () => {
-        const { state, view } = this.editor;
-        const { end } = currentTextblockRange();
-        const from = state.selection.from;
-        const to = Math.min(from + 1, end);
-
-        if (from >= to) {
-          return true;
-        }
-
-        writeCopyBuffer({
-          text: state.doc.textBetween(from, to, "\n", "\n"),
-          linewise: false,
-        });
-        const transaction = state.tr.delete(from, to);
-
-        view.dispatch(
-          transaction
-            .setSelection(TextSelection.create(transaction.doc, from))
-            .scrollIntoView(),
-        );
-        return true;
-      };
-
-      const deleteCharacterAndInsert = () => {
-        deleteCharacterUnderCursor();
-        enterInsertMode();
-        return true;
-      };
-
-      const deleteLineAndInsert = () => {
-        const { state, view } = this.editor;
-        const { start, end, text } = currentTextblockRange();
-        const transaction = state.tr.delete(start, end);
-        const selectionPosition = Math.min(start, transaction.doc.content.size);
-
-        writeCopyBuffer({ text, linewise: true });
-        pendingCommand = null;
-        view.dispatch(
-          transaction
-            .setSelection(TextSelection.create(transaction.doc, selectionPosition))
-            .scrollIntoView(),
-        );
-        enterInsertMode();
-        return true;
-      };
-
-      const changeWordUnderCursor = () => {
-        deleteWordUnderCursor();
-        enterInsertMode();
-        return true;
-      };
-
-      const pasteCopyBuffer = (beforeCursor: boolean) => {
-        if (!copyBuffer.text) {
-          return true;
-        }
-
-        if (copyBuffer.linewise) {
-          const { state, view } = this.editor;
-          const { before, after } = currentTextblockRange();
-          const position = beforeCursor ? before : after;
-          // The local register stores plain text; inserting it as a paragraph
-          // preserves a linewise paste without importing arbitrary HTML/schema
-          // content from the system clipboard.
-          const paragraph = state.schema.nodes.paragraph.create(
-            null,
-            copyBuffer.text ? state.schema.text(copyBuffer.text) : undefined,
-          );
-
-          view.dispatch(state.tr.insert(position, paragraph).scrollIntoView());
-          return true;
-        }
-
-        const { state, view } = this.editor;
-        const position = beforeCursor
-          ? state.selection.from
-          : Math.min(state.selection.from + 1, state.doc.content.size);
-
-        view.dispatch(state.tr.insertText(copyBuffer.text, position).scrollIntoView());
-        return true;
-      };
-
-      const commandForKey = (event: KeyboardEvent) => {
-        if (event.ctrlKey && !event.metaKey && !event.altKey && event.key.toLowerCase() === "r") {
-          return redo(this.editor.state, (transaction) => this.editor.view.dispatch(transaction));
-        }
-
-        if (event.ctrlKey || event.metaKey || event.altKey) {
-          return false;
-        }
-
-        switch (event.key === " " ? "Space" : event.key) {
-          case "i":
-            enterInsertMode();
-            return true;
-          case "A":
-            setSelection(currentTextblockRange().end);
-            enterInsertMode();
-            return true;
-          case "u":
-            pendingCommand = null;
-            return undo(this.editor.state, (transaction) => this.editor.view.dispatch(transaction));
-          case "0":
-            pendingCommand = null;
-            return setSelection(currentTextblockRange().start);
-          case "$":
-            pendingCommand = null;
-            return setSelection(currentTextblockRange().end);
-          case "^":
-            return moveToFirstNonBlank();
-          case "Space":
-            pendingCommand = null;
-            return setSelection(this.editor.state.selection.from + 1);
-          case "%":
-            return moveToMatchingPair();
-          case "h":
-            return moveBy(-1);
-          case "l":
-            return moveBy(1);
-          case "j":
-            return moveLine(1);
-          case "k":
-            return moveLine(-1);
-          case "G":
-            return moveToLastTextblock();
-          case "g":
-            if (!pendingIs("g")) {
-              return waitForNextKey("g");
-            }
-            // `gg` is implemented explicitly here rather than through a generic
-            // movement helper because earlier keymap attempts treated the
-            // second `g` as a normal character or end-of-document movement.
-            return moveToFileStart();
-          case "d":
-            if (pendingIs("d")) {
-              return deleteCurrentLine();
-            }
-            return waitForNextKey("d");
-          case "c":
-            return waitForNextKey("c");
-          case "w":
-            if (pendingIs("c")) {
-              return changeWordUnderCursor();
-            }
-            if (pendingIs("d")) {
-              return deleteWordUnderCursor();
-            }
-            if (pendingIs("y")) {
-              return yankWordUnderCursor();
-            }
-            return moveToNextWordStart();
-          case "b":
-            return moveToPreviousWordStart();
-          case "x":
-            pendingCommand = null;
-            return deleteCharacterUnderCursor();
-          case "s":
-            pendingCommand = null;
-            return deleteCharacterAndInsert();
-          case "S":
-            pendingCommand = null;
-            return deleteLineAndInsert();
-          case "p":
-            pendingCommand = null;
-            return pasteCopyBuffer(false);
-          case "O":
-            pendingCommand = null;
-            return pasteCopyBuffer(true);
-          case "y":
-            if (pendingIs("y")) {
-              return yankCurrentLine();
-            }
-            return waitForNextKey("y");
-          default:
-            if (event.key.length === 1) {
-              return true;
-            }
-            return false;
-        }
-      };
-
-      return [
-        new Plugin({
-          key: new PluginKey("glypharyVimMode"),
-          props: {
-            handleKeyDown: (_view, event) => {
-              if (!isEditorReady(this.editor)) {
-                return false;
-              }
-
-              if (event.key === "Escape") {
-                setVimMode(this.editor, "normal");
-                setSelection(this.editor.state.selection.from - 1);
-                reportStatus("Vim normal mode");
-                event.preventDefault();
-                return true;
-              }
-
-              if (!isVimNormalMode(this.editor)) {
-                return false;
-              }
-
-              const handled = commandForKey(event);
-
-              if (!handled) {
-                return false;
-              }
-
-              event.preventDefault();
-              return true;
-            },
-            handleTextInput: () => {
-              return isEditorReady(this.editor) && isVimNormalMode(this.editor);
-            },
-          },
-        }),
-      ];
-    },
-  });
-}
-
-function FolderIcon({ className = "vault-entry-icon folder-icon" }: { className?: string }) {
-  return (
-    <svg aria-hidden="true" className={className} viewBox="0 0 32 32">
-      <path
-        className="folder-tab"
-        d="M3.5 8.2c0-1.3 1-2.2 2.3-2.2h7.1c.8 0 1.5.3 2 .9l1.7 2h9.6c1.3 0 2.3 1 2.3 2.3v1.4h-25z"
-      />
-      <path
-        className="folder-back"
-        d="M2.5 10.6c0-1.4 1.1-2.5 2.5-2.5h22c1.4 0 2.5 1.1 2.5 2.5v13.1c0 1.4-1.1 2.5-2.5 2.5h-22c-1.4 0-2.5-1.1-2.5-2.5z"
-      />
-      <path
-        className="folder-front"
-        d="M3.2 13.1h25.6l-2.2 10.8c-.3 1.4-1.5 2.3-2.9 2.3h-19c-1.5 0-2.7-1.1-2.9-2.6z"
-      />
-      <path className="folder-shine" d="M5.1 14.3h21.8l-.4 1.6h-21.1z" />
-    </svg>
-  );
-}
-
-function MarkdownFileIcon() {
-  return (
-    <svg aria-hidden="true" className="vault-entry-icon markdown-icon" viewBox="0 0 32 32">
-      <path className="document-page" d="M8.5 3.8h10.9l4.1 4.2v20.2h-15z" />
-      <path className="document-fold" d="M19.2 3.9v4.4h4.2z" />
-      <path className="document-line" d="M11.3 11.8h9.3" />
-      <path className="document-line" d="M11.3 14.7h9.3" />
-      <rect className="markdown-badge" x="9.9" y="18.3" width="12.2" height="6.1" rx="1.8" />
-      <text x="16" y="22.8" textAnchor="middle">
-        md
-      </text>
-    </svg>
-  );
-}
-
-function CanvasFileIcon() {
-  return (
-    <svg aria-hidden="true" className="vault-entry-icon canvas-file-icon" viewBox="0 0 32 32">
-      <path className="document-page" d="M8.5 3.8h10.9l4.1 4.2v20.2h-15z" />
-      <path className="document-fold" d="M19.2 3.9v4.4h4.2z" />
-      <circle className="canvas-node-dot primary" cx="13" cy="13" r="2.2" />
-      <circle className="canvas-node-dot" cx="20.2" cy="12.2" r="2" />
-      <circle className="canvas-node-dot" cx="16.8" cy="21.2" r="2.1" />
-      <path className="canvas-edge-line" d="M14.8 12.6 18.3 12.3M13.9 14.7l2 4.5M19.5 14l-1.8 5.3" />
-    </svg>
-  );
-}
-
-function VaultFileIcon({ relativePath }: { relativePath: string }) {
-  return isCanvasPath(relativePath) ? <CanvasFileIcon /> : <MarkdownFileIcon />;
-}
-
-function isMoveFolderDestinationDisabled(relativePath: string, movingEntry?: VaultEntry | null) {
-  if (!movingEntry?.isDir) {
-    return false;
-  }
-
-  return (
-    relativePath === movingEntry.relativePath ||
-    relativePath.startsWith(`${movingEntry.relativePath}/`)
-  );
-}
-
 function isMoveAction(action: FolderActionKind) {
   return action === "move-file" || action === "move-folder";
-}
-
-function VaultFolderTree({
-  root,
-  selectedPath,
-  movingEntry = null,
-  onSelect,
-  onStatus,
-}: VaultFolderTreeProps) {
-  const [nodes, setNodes] = useState<Record<string, VaultFolderTreeNodeState>>({});
-  const [expandedPaths, setExpandedPaths] = useState<string[]>([""]);
-
-  async function loadChildren(relativePath: string, force = false) {
-    const existing = nodes[relativePath];
-
-    if (!force && (existing?.loaded || existing?.loading)) {
-      return;
-    }
-
-    setNodes((current) => ({
-      ...current,
-      [relativePath]: {
-        children: current[relativePath]?.children ?? [],
-        error: null,
-        loaded: false,
-        loading: true,
-      },
-    }));
-
-    try {
-      const children = await invoke<VaultEntry[]>("list_vault_dir", {
-        root,
-        relative: relativePath,
-      });
-
-      setNodes((current) => ({
-        ...current,
-        [relativePath]: {
-          children: children.filter((entry) => entry.isDir),
-          error: null,
-          loaded: true,
-          loading: false,
-        },
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-
-      setNodes((current) => ({
-        ...current,
-        [relativePath]: {
-          children: current[relativePath]?.children ?? [],
-          error: message,
-          loaded: false,
-          loading: false,
-        },
-      }));
-      onStatus(message);
-    }
-  }
-
-  useEffect(() => {
-    setNodes({});
-    setExpandedPaths([""]);
-    void loadChildren("", true);
-  }, [root]);
-
-  function toggleExpanded(relativePath: string) {
-    setExpandedPaths((paths) =>
-      paths.includes(relativePath)
-        ? paths.filter((path) => path !== relativePath)
-        : [...paths, relativePath],
-    );
-    void loadChildren(relativePath);
-  }
-
-  function renderNode(relativePath: string, name: string, depth: number) {
-    const state = nodes[relativePath];
-    const isExpanded = expandedPaths.includes(relativePath);
-    const isSelected = selectedPath === relativePath;
-    const isDisabled = isMoveFolderDestinationDisabled(relativePath, movingEntry);
-    const children = state?.children ?? [];
-
-    return (
-      <div className="vault-folder-tree-node" key={relativePath || "vault-root"} role="none">
-        <div
-          className="vault-folder-tree-row"
-          role="treeitem"
-          aria-expanded={isExpanded}
-          aria-selected={isSelected}
-          style={{ "--folder-tree-depth": depth } as CSSProperties}
-        >
-          <button
-            className="folder-tree-expander"
-            type="button"
-            aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
-            onClick={() => toggleExpanded(relativePath)}
-          >
-            <svg aria-hidden="true" viewBox="0 0 16 16">
-              <path d={isExpanded ? "M4 6h8l-4 4z" : "M6 4l4 4-4 4z"} />
-            </svg>
-          </button>
-          <button
-            className={isSelected ? "folder-tree-select active" : "folder-tree-select"}
-            disabled={isDisabled}
-            type="button"
-            onClick={() => onSelect(relativePath)}
-          >
-            <FolderIcon />
-            <span>{name}</span>
-          </button>
-        </div>
-        {state?.loading ? <p className="vault-folder-tree-note">Loading...</p> : null}
-        {state?.error ? <p className="vault-folder-tree-note error">{state.error}</p> : null}
-        {isExpanded && children.length > 0 ? (
-          <div role="group">
-            {children.map((entry) => renderNode(entry.relativePath, entry.name, depth + 1))}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
-  return (
-    <div className="vault-folder-tree-picker">
-      <div className="folder-picker-header">
-        <span>Destination folder</span>
-        <strong>{displayPath(selectedPath)}</strong>
-      </div>
-      <div className="vault-folder-tree" role="tree" aria-label="Vault folders">
-        {renderNode("", "Vault root", 0)}
-      </div>
-    </div>
-  );
 }
 
 const defaultThemeOptions: VaultThemeOptions = {
@@ -3005,1639 +1271,12 @@ function sameThemeTokens(
   );
 }
 
-function wikiLinkDisplayName(file: VaultIndexedFile) {
-  return fileNameWithoutMarkdownExtension(file.name);
-}
-
-function normalizeWikiLinkText(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function wikiLinkTargetFromMarkup(value: string) {
-  return value.split("|")[0]?.split("#")[0]?.trim() ?? "";
-}
-
-function indexedFileKey(file: VaultIndexedFile) {
-  return file.relativePath;
-}
-
 function moveSelectableIndex(currentIndex: number, itemCount: number, delta: -1 | 1) {
   if (itemCount <= 0) {
     return 0;
   }
 
   return (currentIndex + delta + itemCount) % itemCount;
-}
-
-function addIndexedFile(files: VaultIndexedFile[], file: ActiveFile | OpenedFile) {
-  if (!file.name.toLowerCase().endsWith(".md")) {
-    return files;
-  }
-
-  const indexed = {
-    name: file.name,
-    relativePath: file.relativePath,
-  };
-  const withoutExisting = files.filter((candidate) => candidate.relativePath !== indexed.relativePath);
-
-  return [...withoutExisting, indexed].sort((left, right) =>
-    wikiLinkDisplayName(left)
-      .toLowerCase()
-      .localeCompare(wikiLinkDisplayName(right).toLowerCase()) ||
-    left.relativePath.localeCompare(right.relativePath),
-  );
-}
-
-function removeIndexedFile(files: VaultIndexedFile[], relativePath: string) {
-  return files.filter((file) => file.relativePath !== relativePath);
-}
-
-function replaceIndexedFile(
-  files: VaultIndexedFile[],
-  oldRelativePath: string,
-  nextFile: ActiveFile | OpenedFile,
-) {
-  return addIndexedFile(removeIndexedFile(files, oldRelativePath), nextFile);
-}
-
-function tabTitle(tab: DocumentTab) {
-  return tab.pageName || tab.activeFile?.name || "Untitled note";
-}
-
-function pageNameForFileName(name: string) {
-  return isCanvasPath(name) ? canvasTitle(name) : fileNameWithoutMarkdownExtension(name);
-}
-
-function createUntitledTab(markdown = initialMarkdown): DocumentTab {
-  return {
-    id: `untitled:${Date.now()}:${Math.random().toString(36).slice(2)}`,
-    kind: "markdown",
-    activeFile: null,
-    pageName: "Untitled note",
-    metaHeader: "",
-    metaDelimiter: defaultMetaDelimiter,
-    markdown,
-    markdownDraft: markdown,
-    dirty: false,
-  };
-}
-
-function createEditorGroups(tab = createUntitledTab()): Record<EditorGroupId, EditorGroupState> {
-  return {
-    primary: {
-      id: "primary",
-      tabs: [tab],
-      activeTabId: tab.id,
-    },
-    secondary: {
-      id: "secondary",
-      tabs: [],
-      activeTabId: "",
-    },
-  };
-}
-
-function createEmptyEditorGroups(): Record<EditorGroupId, EditorGroupState> {
-  return {
-    primary: {
-      id: "primary",
-      tabs: [],
-      activeTabId: "",
-    },
-    secondary: {
-      id: "secondary",
-      tabs: [],
-      activeTabId: "",
-    },
-  };
-}
-
-function setEditorMarkdownContent(targetEditor: Editor, markdown: string) {
-  if (markdown.trim()) {
-    targetEditor.commands.setContent(markdown, { contentType: "markdown" });
-    return;
-  }
-
-  // Calendar notes and newly created files are allowed to be truly empty on
-  // disk. Tiptap still needs a valid ProseMirror document to render and focus,
-  // so empty Markdown is hydrated as one empty paragraph without changing the
-  // saved Markdown value.
-  targetEditor.commands.setContent({
-    type: "doc",
-    content: [{ type: "paragraph" }],
-  });
-}
-
-function clearEditorContent(targetEditor: Editor | null) {
-  if (targetEditor) {
-    setEditorMarkdownContent(targetEditor, "");
-  }
-}
-
-function hasNoOpenDocumentTabs(groups: Record<EditorGroupId, EditorGroupState>) {
-  return groups.primary.tabs.length === 0 && groups.secondary.tabs.length === 0;
-}
-
-function joinVaultAssetPath(root: string, assetDirectory: string, reference: string) {
-  const cleanReference = cleanVaultAssetReference(reference);
-
-  if (!root || !cleanReference) {
-    return "";
-  }
-
-  return convertFileSrc(`${root}/${assetDirectory || defaultVaultAssetDirectory}/${cleanReference}`);
-}
-
-function joinVaultImagePath(root: string, reference: string) {
-  const cleanReference = cleanVaultAssetReference(reference);
-
-  if (!root || !cleanReference) {
-    return "";
-  }
-
-  return convertFileSrc(`${root}/${defaultVaultImageDirectory}/${cleanReference}`);
-}
-
-function joinVaultRelativeImagePath(root: string, reference: string) {
-  const wikilinkMatch = reference.match(/^!\[\[([^\]\n]+)\]\]$/);
-  const cleanReference = cleanVaultAssetReference(wikilinkMatch?.[1] ?? reference);
-
-  if (!root || !cleanReference) {
-    return "";
-  }
-
-  if (!cleanReference.includes("/")) {
-    return joinVaultImagePath(root, cleanReference);
-  }
-
-  return convertFileSrc(`${root}/${cleanReference}`);
-}
-
-type ContainerMarkdownLexer = {
-  blockTokens: (src: string) => MarkdownToken[];
-};
-
-type ContainerOpening = {
-  length: number;
-  attrs?: Record<string, unknown>;
-};
-
-function createMarkdownContainerToken(
-  src: string,
-  type: string,
-  opening: ContainerOpening | null,
-  lexer: ContainerMarkdownLexer,
-) {
-  if (!opening) {
-    return undefined;
-  }
-
-  const openingLength = opening.length;
-  const body = src.slice(openingLength);
-  const markerPattern = /^:::[^\S\n]*([\w-]+)?[^\n\r]*$/gm;
-  let depth = 1;
-  let markerMatch: RegExpExecArray | null = null;
-
-  while ((markerMatch = markerPattern.exec(body))) {
-    const [, nestedType] = markerMatch;
-
-    // The container syntax reuses a bare ::: closing marker for every type.
-    // Track nested named openings so a child column/callout close does not
-    // terminate its parent columns container.
-    if (nestedType) {
-      depth += 1;
-    } else {
-      depth -= 1;
-    }
-
-    if (depth === 0) {
-      const innerMarkdown = body.slice(0, markerMatch.index);
-      const closingLength = markerMatch[0].length;
-
-      // Marked tokenizers receive the remaining source from the current
-      // position. Returning only through the matching closing fence lets the
-      // normal block parser continue with the markdown that follows.
-      return {
-        type,
-        raw: src.slice(0, openingLength + markerMatch.index + closingLength),
-        ...opening.attrs,
-        content: innerMarkdown,
-        tokens: lexer.blockTokens(innerMarkdown),
-      };
-    }
-  }
-
-  return undefined;
-}
-
-function namedContainerOpening(src: string, type: string) {
-  const match = src.match(new RegExp(`^:::[^\\S\\n]*${type}[^\\S\\n]*\\r?\\n`));
-
-  return match ? { length: match[0].length } : null;
-}
-
-function unescapeCalloutTitle(title: string) {
-  return title.replace(/\\(["\\])/g, "$1");
-}
-
-function escapeCalloutTitle(title: string) {
-  return title.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-}
-
-function calloutContainerOpening(src: string) {
-  const match = src.match(
-    /^:::[^\S\n]*callout(?:[^\S\n]+(?:(\w[\w-]*)|"((?:\\.|[^"\\])*)"))?(?:[^\S\n]+"((?:\\.|[^"\\])*)")?[^\S\n]*\r?\n/,
-  );
-
-  if (!match) {
-    return null;
-  }
-
-  const [, kind, titleWithoutKind, titleWithKind] = match;
-  const title = titleWithKind ?? titleWithoutKind ?? "";
-
-  // Support both `::: callout "Title"` and
-  // `::: callout warning "Title"` so older notes can omit a visual kind.
-  return {
-    length: match[0].length,
-    attrs: {
-      kind: kind ?? "note",
-      title: title ? unescapeCalloutTitle(title) : null,
-    },
-  };
-}
-
-function collapseContainerOpening(src: string) {
-  const match = src.match(
-    /^:::[^\S\n]*collapse(?:[^\S\n]+(?:"((?:\\.|[^"\\])*)"|([^\r\n]*?)))?(?:[^\S\n]+(open))?[^\S\n]*\r?\n/,
-  );
-
-  if (!match) {
-    return null;
-  }
-
-  const [, quotedTitle, plainTitle, openFlag] = match;
-  const plainParts = plainTitle?.trim().split(/\s+/).filter(Boolean) ?? [];
-  const plainTitleIncludesOpenFlag =
-    !quotedTitle && plainParts[plainParts.length - 1]?.toLowerCase() === "open";
-  const title = quotedTitle
-    ? unescapeCalloutTitle(quotedTitle)
-    : plainTitleIncludesOpenFlag
-      ? plainParts.slice(0, -1).join(" ")
-      : plainTitle?.trim() ?? "";
-
-  return {
-    length: match[0].length,
-    attrs: {
-      title: title || "Details",
-      defaultOpen: Boolean(openFlag) || plainTitleIncludesOpenFlag,
-    },
-  };
-}
-
-const htmlBlockTags = new Set([
-  "address",
-  "article",
-  "aside",
-  "base",
-  "basefont",
-  "blockquote",
-  "body",
-  "caption",
-  "center",
-  "col",
-  "colgroup",
-  "dd",
-  "details",
-  "dialog",
-  "dir",
-  "div",
-  "dl",
-  "dt",
-  "fieldset",
-  "figcaption",
-  "figure",
-  "footer",
-  "form",
-  "frame",
-  "frameset",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "head",
-  "header",
-  "hr",
-  "html",
-  "iframe",
-  "legend",
-  "li",
-  "link",
-  "main",
-  "menu",
-  "menuitem",
-  "nav",
-  "noframes",
-  "ol",
-  "optgroup",
-  "option",
-  "p",
-  "param",
-  "pre",
-  "section",
-  "script",
-  "summary",
-  "table",
-  "tbody",
-  "td",
-  "tfoot",
-  "th",
-  "thead",
-  "title",
-  "tr",
-  "track",
-  "style",
-  "textarea",
-  "ul",
-]);
-const htmlVoidBlockTags = new Set([
-  "base",
-  "br",
-  "col",
-  "hr",
-  "img",
-  "input",
-  "link",
-  "meta",
-  "param",
-  "track",
-]);
-const blockedHtmlPreviewSelector = [
-  "base",
-  "embed",
-  "iframe",
-  "link",
-  "math",
-  "meta",
-  "object",
-  "script",
-  "style",
-  "svg",
-  "template",
-].join(",");
-
-// HTML blocks are preserved as raw Markdown source but previewed through a
-// conservative sanitizer. This keeps notes compatible with Markdown renderers
-// that allow raw HTML without letting a synced vault execute arbitrary code.
-function htmlBlockStartIndex(src: string) {
-  const commentIndex = src.search(/^<!--/m);
-  const tagIndex = src.search(/^<\/?[A-Za-z][\w:-]*(?:\s|>|\/>)/m);
-  const indexes = [commentIndex, tagIndex].filter((index) => index >= 0);
-
-  return indexes.length ? Math.min(...indexes) : -1;
-}
-
-function lineLength(src: string) {
-  const newlineIndex = src.search(/\r?\n/);
-
-  return newlineIndex >= 0
-    ? newlineIndex + (src[newlineIndex] === "\r" ? 2 : 1)
-    : src.length;
-}
-
-function trailingLineEndingLength(src: string, index: number) {
-  const match = src.slice(index).match(/^[ \t]*(?:\r?\n|$)/);
-
-  return match ? match[0].length : 0;
-}
-
-function htmlBlockMarkdownToken(src: string) {
-  const commentMatch = src.match(/^<!--[\s\S]*?-->/);
-
-  if (commentMatch) {
-    const raw = src.slice(
-      0,
-      commentMatch[0].length + trailingLineEndingLength(src, commentMatch[0].length),
-    );
-
-    return {
-      type: "htmlBlock",
-      raw,
-      rawHtml: raw.trimEnd(),
-    };
-  }
-
-  const tagMatch = src.match(/^<([A-Za-z][\w:-]*)(?:\s[^>]*)?>/);
-
-  if (!tagMatch) {
-    return undefined;
-  }
-
-  const tagName = tagMatch[1].toLowerCase();
-
-  if (!htmlBlockTags.has(tagName)) {
-    return undefined;
-  }
-
-  const isSelfClosing = /\/>\s*$/.test(tagMatch[0]) || htmlVoidBlockTags.has(tagName);
-  let rawLength = lineLength(src);
-
-  if (!isSelfClosing) {
-    const closePattern = new RegExp(`</${tagName}\\s*>`, "i");
-    const closeMatch = closePattern.exec(src.slice(tagMatch[0].length));
-
-    if (closeMatch) {
-      const closeEnd = tagMatch[0].length + closeMatch.index + closeMatch[0].length;
-      rawLength = closeEnd + trailingLineEndingLength(src, closeEnd);
-    }
-  }
-
-  const raw = src.slice(0, rawLength);
-
-  return {
-    type: "htmlBlock",
-    raw,
-    rawHtml: raw.trimEnd(),
-  };
-}
-
-function isAiBuilderMarkerComment(rawHtml: string) {
-  return /^<!--\s*glyphary-ai-builder:(?:start|end)\s+[^>]+-->$/.test(rawHtml.trim());
-}
-
-function safeHtmlAttributeValue(name: string, value: string) {
-  if (/^on/i.test(name) || name.toLowerCase() === "srcdoc") {
-    return false;
-  }
-
-  if (["href", "src", "xlink:href", "formaction"].includes(name.toLowerCase())) {
-    return !/^\s*(?:javascript|data|vbscript):/i.test(value);
-  }
-
-  if (name.toLowerCase() === "style") {
-    return !/(?:expression\s*\(|url\s*\(\s*['"]?\s*(?:javascript|data|vbscript):)/i.test(
-      value,
-    );
-  }
-
-  return true;
-}
-
-function sanitizeHtmlBlock(rawHtml: string) {
-  if (typeof document === "undefined") {
-    return "";
-  }
-
-  const template = document.createElement("template");
-  template.innerHTML = rawHtml;
-  template.content.querySelectorAll(blockedHtmlPreviewSelector).forEach((element) => {
-    element.remove();
-  });
-
-  const walker = document.createTreeWalker(template.content, NodeFilter.SHOW_ELEMENT);
-  const elements: Element[] = [];
-
-  while (walker.nextNode()) {
-    if (walker.currentNode instanceof Element) {
-      elements.push(walker.currentNode);
-    }
-  }
-
-  for (const element of elements) {
-    for (const attribute of Array.from(element.attributes)) {
-      if (!safeHtmlAttributeValue(attribute.name, attribute.value)) {
-        element.removeAttribute(attribute.name);
-      }
-    }
-  }
-
-  return template.innerHTML;
-}
-
-function HtmlBlockNodeView({ node, selected, updateAttributes }: NodeViewProps) {
-  const rawHtml = typeof node.attrs.rawHtml === "string" ? node.attrs.rawHtml : "";
-
-  if (isAiBuilderMarkerComment(rawHtml)) {
-    // AI Builder markers are invisible replacement anchors. Keeping them in
-    // the document preserves clean follow-up replacement without displaying
-    // implementation comments as editable HTML widgets.
-    return (
-      <NodeViewWrapper
-        className="markdown-html-block markdown-html-block-hidden"
-        contentEditable={false}
-      />
-    );
-  }
-
-  return (
-    <NodeViewWrapper className="markdown-html-block" contentEditable={false}>
-      <div
-        className="markdown-html-preview"
-        dangerouslySetInnerHTML={{ __html: sanitizeHtmlBlock(rawHtml) }}
-      />
-      {selected ? (
-        <label className="markdown-html-source">
-          <span>HTML source</span>
-          <textarea
-            aria-label="HTML block source"
-            onChange={(event) => updateAttributes({ rawHtml: event.currentTarget.value })}
-            onClick={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-            onMouseDown={(event) => event.stopPropagation()}
-            spellCheck={false}
-            value={rawHtml}
-          />
-        </label>
-      ) : null}
-    </NodeViewWrapper>
-  );
-}
-
-function createHtmlBlockExtension() {
-  return Node.create({
-    name: "htmlBlock",
-    group: "block",
-    atom: true,
-    selectable: true,
-
-    addAttributes() {
-      return {
-        rawHtml: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-raw-html") || element.innerHTML,
-          renderHTML: () => ({}),
-        },
-      };
-    },
-
-    parseHTML() {
-      return [{ tag: "div[data-glyphary-html-block]" }];
-    },
-
-    renderHTML({ node }) {
-      const rawHtml = typeof node.attrs.rawHtml === "string" ? node.attrs.rawHtml : "";
-
-      return [
-        "div",
-        {
-          "data-glyphary-html-block": "true",
-          "data-raw-html": rawHtml,
-          class: "markdown-html-block",
-        },
-        ["div", { class: "markdown-html-preview" }, sanitizeHtmlBlock(rawHtml)],
-      ];
-    },
-
-    markdownTokenName: "htmlBlock",
-
-    markdownTokenizer: {
-      name: "htmlBlock",
-      level: "block",
-      start: htmlBlockStartIndex,
-      tokenize: htmlBlockMarkdownToken,
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const rawHtml = typeof token.rawHtml === "string" ? token.rawHtml : String(token.raw ?? "");
-
-      if (!rawHtml.trim()) {
-        return [];
-      }
-
-      return helpers.createNode("htmlBlock", { rawHtml });
-    },
-
-    renderMarkdown: (node: JSONContent) => {
-      const rawHtml = typeof node.attrs?.rawHtml === "string" ? node.attrs.rawHtml.trimEnd() : "";
-
-      return rawHtml;
-    },
-
-    addNodeView() {
-      return ReactNodeViewRenderer(HtmlBlockNodeView);
-    },
-  });
-}
-
-function createKeyboardKeyExtension() {
-  return Mark.create({
-    name: "keyboardKey",
-
-    parseHTML() {
-      return [{ tag: "kbd" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return ["kbd", mergeAttributes(HTMLAttributes), 0];
-    },
-
-    markdownOptions: {
-      htmlReopen: { open: "<kbd>", close: "</kbd>" },
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) =>
-      `<kbd>${helpers.renderChildren(node.content ?? [])}</kbd>`,
-  });
-}
-
-function createDelimitedMarkdownMarkExtension({
-  delimiter,
-  name,
-  start,
-  tag,
-  tokenPattern,
-}: {
-  delimiter: string;
-  name: string;
-  start: string | ((src: string) => number);
-  tag: string;
-  tokenPattern: RegExp;
-}) {
-  return Mark.create({
-    name,
-
-    parseHTML() {
-      return [{ tag }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return [tag, mergeAttributes(HTMLAttributes), 0];
-    },
-
-    markdownTokenizer: {
-      name,
-      level: "inline",
-      start,
-      tokenize(src, _tokens, lexer) {
-        const match = src.match(tokenPattern);
-
-        if (!match) {
-          return;
-        }
-
-        const text = match[1];
-
-        return {
-          type: name,
-          raw: match[0],
-          text,
-          tokens: lexer.inlineTokens(text),
-        };
-      },
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) =>
-      helpers.applyMark(name, helpers.parseInline(token.tokens ?? [])),
-
-    renderMarkdown: (node: JSONContent, helpers) =>
-      `${delimiter}${helpers.renderChildren(node.content ?? [])}${delimiter}`,
-  });
-}
-
-function findSingleTildeDelimiter(src: string) {
-  for (let index = 0; index < src.length; index += 1) {
-    if (src[index] === "~" && src[index - 1] !== "~" && src[index + 1] !== "~") {
-      return index;
-    }
-  }
-
-  return -1;
-}
-
-function CollapseNodeView({ node }: NodeViewProps) {
-  const title =
-    typeof node.attrs.title === "string" && node.attrs.title.trim()
-      ? node.attrs.title.trim()
-      : "Details";
-  const [open, setOpen] = useState(Boolean(node.attrs.defaultOpen));
-
-  return (
-    <NodeViewWrapper className={`markdown-collapse ${open ? "open" : "closed"}`}>
-      <button
-        aria-expanded={open}
-        className="markdown-collapse-summary"
-        contentEditable={false}
-        type="button"
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          setOpen((value) => !value);
-        }}
-        onMouseDown={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        }}
-      >
-        {title}
-      </button>
-      <NodeViewContent
-        className="markdown-collapse-body"
-        style={{ display: open ? undefined : "none" }}
-      />
-    </NodeViewWrapper>
-  );
-}
-
-function emptyParagraphNode(helpers: {
-  createNode: (type: string, attrs?: Record<string, unknown>, content?: JSONContent[]) => JSONContent;
-}) {
-  return helpers.createNode("paragraph");
-}
-
-function createColumnExtension() {
-  return Node.create({
-    name: "column",
-    content: "block+",
-    defining: true,
-
-    parseHTML() {
-      return [{ tag: "div[data-glyphary-column]" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return [
-        "div",
-        mergeAttributes(HTMLAttributes, {
-          "data-glyphary-column": "true",
-          class: "markdown-column",
-        }),
-        0,
-      ];
-    },
-
-    markdownTokenName: "column",
-
-    markdownTokenizer: {
-      name: "column",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*column[^\S\n]*$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "column", namedContainerOpening(src, "column"), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const content = helpers.parseBlockChildren
-        ? helpers.parseBlockChildren(token.tokens ?? [])
-        : helpers.parseChildren(token.tokens ?? []);
-
-      return helpers.createNode("column", {}, content.length ? content : [emptyParagraphNode(helpers)]);
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) => {
-      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
-
-      return `::: column\n${body}\n:::`;
-    },
-  });
-}
-
-function createColumnsExtension() {
-  return Node.create({
-    name: "columns",
-    group: "block",
-    content: "column+",
-    defining: true,
-
-    parseHTML() {
-      return [{ tag: "div[data-glyphary-columns]" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return [
-        "div",
-        mergeAttributes(HTMLAttributes, {
-          "data-glyphary-columns": "true",
-          class: "markdown-columns",
-        }),
-        0,
-      ];
-    },
-
-    markdownTokenName: "columns",
-
-    markdownTokenizer: {
-      name: "columns",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*columns[^\S\n]*$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "columns", namedContainerOpening(src, "columns"), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      // Only direct column children are preserved. Loose markdown inside a
-      // columns container is ambiguous to render, so malformed input falls back
-      // to a single empty column instead of silently reshaping content.
-      const columns = helpers
-        .parseChildren(token.tokens ?? [])
-        .filter((node) => node.type === "column");
-
-      return helpers.createNode(
-        "columns",
-        {},
-        columns.length
-          ? columns
-          : [helpers.createNode("column", {}, [emptyParagraphNode(helpers)])],
-      );
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) => {
-      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
-
-      return `::: columns\n${body}\n:::`;
-    },
-  });
-}
-
-function createGalleryExtension() {
-  return Node.create({
-    name: "gallery",
-    group: "block",
-    // Galleries accept block content rather than image-only content because
-    // Markdown image tokens can arrive wrapped in paragraphs, and this leaves
-    // room for future captions without changing the persisted container syntax.
-    content: "block+",
-    defining: true,
-
-    parseHTML() {
-      return [{ tag: "div[data-glyphary-gallery]" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return [
-        "div",
-        mergeAttributes(HTMLAttributes, {
-          "data-glyphary-gallery": "true",
-          class: "markdown-gallery",
-        }),
-        0,
-      ];
-    },
-
-    markdownTokenName: "gallery",
-
-    markdownTokenizer: {
-      name: "gallery",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*gallery[^\S\n]*$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "gallery", namedContainerOpening(src, "gallery"), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const content = helpers.parseBlockChildren
-        ? helpers.parseBlockChildren(token.tokens ?? [])
-        : helpers.parseChildren(token.tokens ?? []);
-
-      return helpers.createNode("gallery", {}, content.length ? content : [emptyParagraphNode(helpers)]);
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) => {
-      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
-
-      return `::: gallery\n${body}\n:::`;
-    },
-  });
-}
-
-function createCalloutExtension() {
-  return Node.create({
-    name: "callout",
-    group: "block",
-    content: "block+",
-    defining: true,
-
-    addAttributes() {
-      return {
-        kind: {
-          default: "note",
-          parseHTML: (element) => element.getAttribute("data-callout-kind") || "note",
-          renderHTML: () => ({}),
-        },
-        title: {
-          default: null,
-          parseHTML: (element) => element.getAttribute("data-callout-title"),
-          renderHTML: () => ({}),
-        },
-      };
-    },
-
-    parseHTML() {
-      return [{ tag: "aside[data-glyphary-callout]" }];
-    },
-
-    renderHTML({ node, HTMLAttributes }) {
-      const kind = typeof node.attrs.kind === "string" ? node.attrs.kind : "note";
-      const title = typeof node.attrs.title === "string" ? node.attrs.title : null;
-
-      return [
-        "aside",
-        mergeAttributes(HTMLAttributes, {
-          "data-glyphary-callout": "true",
-          "data-callout-kind": kind,
-          ...(title ? { "data-callout-title": title } : {}),
-          class: `markdown-callout markdown-callout-${kind}`,
-        }),
-        ["div", { class: "markdown-callout-title", contenteditable: "false" }, title || kind],
-        ["div", { class: "markdown-callout-body" }, 0],
-      ];
-    },
-
-    markdownTokenName: "callout",
-
-    markdownTokenizer: {
-      name: "callout",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*callout(?:[^\n\r]*)?$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "callout", calloutContainerOpening(src), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const calloutToken = token as MarkdownToken & { kind?: unknown; title?: unknown };
-      const content = helpers.parseBlockChildren
-        ? helpers.parseBlockChildren(token.tokens ?? [])
-        : helpers.parseChildren(token.tokens ?? []);
-
-      return helpers.createNode(
-        "callout",
-        {
-          kind: typeof calloutToken.kind === "string" ? calloutToken.kind : "note",
-          title: typeof calloutToken.title === "string" ? calloutToken.title : null,
-        },
-        content.length ? content : [emptyParagraphNode(helpers)],
-      );
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) => {
-      const attrs = node.attrs ?? {};
-      const kind = typeof attrs.kind === "string" && attrs.kind ? attrs.kind : "note";
-      const title = typeof attrs.title === "string" && attrs.title ? attrs.title : "";
-      const titlePart = title ? ` "${escapeCalloutTitle(title)}"` : "";
-      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
-
-      return `::: callout ${kind}${titlePart}\n${body}\n:::`;
-    },
-  });
-}
-
-function createCollapseExtension() {
-  return Node.create({
-    name: "collapse",
-    group: "block",
-    content: "block+",
-    defining: true,
-
-    addAttributes() {
-      return {
-        title: {
-          default: "Details",
-          parseHTML: (element) =>
-            element.getAttribute("data-collapse-title") ||
-            element.querySelector("summary")?.textContent?.trim() ||
-            "Details",
-          renderHTML: () => ({}),
-        },
-        defaultOpen: {
-          default: false,
-          parseHTML: (element) => element.hasAttribute("open"),
-          renderHTML: () => ({}),
-        },
-      };
-    },
-
-    parseHTML() {
-      return [
-        { tag: "details[data-glyphary-collapse]" },
-        { tag: "details" },
-      ];
-    },
-
-    renderHTML({ node, HTMLAttributes }) {
-      const title =
-        typeof node.attrs.title === "string" && node.attrs.title.trim()
-          ? node.attrs.title.trim()
-          : "Details";
-
-      return [
-        "details",
-        mergeAttributes(HTMLAttributes, {
-          "data-glyphary-collapse": "true",
-          "data-collapse-title": title,
-          class: "markdown-collapse",
-          ...(node.attrs.defaultOpen ? { open: "true" } : {}),
-        }),
-        ["summary", { class: "markdown-collapse-summary", contenteditable: "false" }, title],
-        ["div", { class: "markdown-collapse-body" }, 0],
-      ];
-    },
-
-    markdownTokenName: "collapse",
-
-    markdownTokenizer: {
-      name: "collapse",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*collapse(?:[^\n\r]*)?$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "collapse", collapseContainerOpening(src), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const collapseToken = token as MarkdownToken & {
-        title?: unknown;
-        defaultOpen?: unknown;
-      };
-      const content = helpers.parseBlockChildren
-        ? helpers.parseBlockChildren(token.tokens ?? [])
-        : helpers.parseChildren(token.tokens ?? []);
-
-      return helpers.createNode(
-        "collapse",
-        {
-          title: typeof collapseToken.title === "string" ? collapseToken.title : "Details",
-          defaultOpen: collapseToken.defaultOpen === true,
-        },
-        content.length ? content : [emptyParagraphNode(helpers)],
-      );
-    },
-
-    renderMarkdown: (node: JSONContent, helpers) => {
-      const attrs = node.attrs ?? {};
-      const title = typeof attrs.title === "string" && attrs.title ? attrs.title : "Details";
-      const openPart = attrs.defaultOpen === true ? " open" : "";
-      const body = helpers.renderChildren(node.content ?? [], "\n\n").trim();
-
-      return `::: collapse "${escapeCalloutTitle(title)}"${openPart}\n${body}\n:::`;
-    },
-
-    addNodeView() {
-      return ReactNodeViewRenderer(CollapseNodeView);
-    },
-  });
-}
-
-function parseRichLinkMarkdownFields(markdown: string) {
-  return markdown
-    .split(/\r?\n/)
-    .reduce<Record<string, string>>((fields, line) => {
-      const match = line.match(/^([A-Za-z][A-Za-z0-9_-]*):\s*(.*)$/);
-
-      if (!match) {
-        return fields;
-      }
-
-      const [, key, value] = match;
-      fields[key] = value.trim();
-      return fields;
-    }, {});
-}
-
-function createRichLinkExtension() {
-  return Node.create({
-    name: "richLink",
-    group: "block",
-    atom: true,
-    selectable: true,
-    draggable: true,
-
-    addAttributes() {
-      return {
-        url: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-rich-link-url") || "",
-          renderHTML: () => ({}),
-        },
-        title: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-rich-link-title") || "",
-          renderHTML: () => ({}),
-        },
-        description: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-rich-link-description") || "",
-          renderHTML: () => ({}),
-        },
-        image: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-rich-link-image") || "",
-          renderHTML: () => ({}),
-        },
-        siteName: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-rich-link-site-name") || "",
-          renderHTML: () => ({}),
-        },
-      };
-    },
-
-    parseHTML() {
-      return [{ tag: "div[data-glyphary-rich-link]" }];
-    },
-
-    renderHTML({ node }) {
-      const url = typeof node.attrs.url === "string" ? node.attrs.url : "";
-      const title = typeof node.attrs.title === "string" ? node.attrs.title : url;
-      const description =
-        typeof node.attrs.description === "string" ? node.attrs.description : "";
-      const image = typeof node.attrs.image === "string" ? node.attrs.image : "";
-      const siteName = typeof node.attrs.siteName === "string" ? node.attrs.siteName : "";
-
-      const content = [
-          "div",
-          { class: "rich-link-content" },
-          siteName ? ["span", { class: "rich-link-site" }, siteName] : ["span", { class: "rich-link-site" }, "Link"],
-          ["strong", {}, title || url],
-          description ? ["p", {}, description] : ["p", {}, url],
-          ["span", { class: "rich-link-url" }, url],
-        ];
-
-      return image
-        ? [
-            "div",
-            {
-              "data-glyphary-rich-link": "true",
-              "data-rich-link-url": url,
-              "data-rich-link-title": title,
-              "data-rich-link-description": description,
-              "data-rich-link-image": image,
-              "data-rich-link-site-name": siteName,
-              class: "rich-link-card",
-              contenteditable: "false",
-            },
-            content,
-            ["img", { class: "rich-link-image", src: image, alt: "" }],
-          ]
-        : [
-            "div",
-            {
-              "data-glyphary-rich-link": "true",
-              "data-rich-link-url": url,
-              "data-rich-link-title": title,
-              "data-rich-link-description": description,
-              "data-rich-link-image": image,
-              "data-rich-link-site-name": siteName,
-              class: "rich-link-card rich-link-card-no-image",
-              contenteditable: "false",
-            },
-            content,
-          ];
-    },
-
-    markdownTokenName: "rich-link",
-
-    markdownTokenizer: {
-      name: "rich-link",
-      level: "block",
-      start: (src: string) => src.search(/^:::[^\S\n]*rich-link[^\S\n]*$/m),
-      tokenize: (src: string, _tokens: MarkdownToken[], lexer: ContainerMarkdownLexer) =>
-        createMarkdownContainerToken(src, "rich-link", namedContainerOpening(src, "rich-link"), lexer),
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const richLinkToken = token as MarkdownToken & { content?: string };
-      const fields = parseRichLinkMarkdownFields(richLinkToken.content ?? "");
-      const url = fields.url ?? "";
-
-      // A rich-link container without a URL cannot be opened or refreshed, so
-      // dropping it is safer than rendering a permanent inert preview card.
-      if (!url) {
-        return [];
-      }
-
-      return helpers.createNode("richLink", {
-        url,
-        title: fields.title ?? url,
-        description: fields.description ?? "",
-        image: fields.image ?? "",
-        siteName: fields.siteName ?? "",
-      });
-    },
-
-    renderMarkdown: (node: JSONContent) => {
-      const attrs = node.attrs ?? {};
-      const url = typeof attrs.url === "string" ? attrs.url : "";
-
-      return richLinkMarkdown({
-        url,
-        title: typeof attrs.title === "string" ? attrs.title : "",
-        description: typeof attrs.description === "string" ? attrs.description : "",
-        image: typeof attrs.image === "string" ? attrs.image : "",
-        siteName: typeof attrs.siteName === "string" ? attrs.siteName : "",
-      });
-    },
-  });
-}
-
-function emptyExcalidrawScene(): ExcalidrawSceneData {
-  return {
-    type: "excalidraw",
-    elements: [],
-    appState: {},
-    files: {},
-  };
-}
-
-function parseExcalidrawScene(content: string): ExcalidrawSceneData {
-  if (!content.trim()) {
-    return emptyExcalidrawScene();
-  }
-
-  try {
-    const parsed = JSON.parse(content) as ExcalidrawSceneData;
-
-    return {
-      type: parsed.type || "excalidraw",
-      elements: Array.isArray(parsed.elements) ? parsed.elements : [],
-      appState:
-        parsed.appState && typeof parsed.appState === "object" ? parsed.appState : {},
-      files: parsed.files && typeof parsed.files === "object" ? parsed.files : {},
-    };
-  } catch {
-    return emptyExcalidrawScene();
-  }
-}
-
-async function restoredExcalidrawScene(scene: ExcalidrawSceneData) {
-  const { restore } = await import("@excalidraw/excalidraw");
-
-  return restore(
-    {
-      elements: scene.elements ?? [],
-      appState: scene.appState ?? {},
-      files: scene.files ?? {},
-    },
-    null,
-    null,
-  );
-}
-
-async function excalidrawSceneToSvgMarkup(scene: ExcalidrawSceneData) {
-  const { exportToSvg } = await import("@excalidraw/excalidraw");
-  const restored = await restoredExcalidrawScene(scene);
-  const visibleElements = restored.elements.filter((element) => !element.isDeleted);
-
-  if (visibleElements.length === 0) {
-    return "";
-  }
-
-  const svg = await exportToSvg({
-    elements: visibleElements,
-    appState: {
-      ...restored.appState,
-      exportWithDarkMode: false,
-    },
-    files: restored.files,
-    exportPadding: 18,
-  });
-
-  return new XMLSerializer().serializeToString(svg);
-}
-
-function isExcalidrawTarget(target: string) {
-  return target.toLowerCase().endsWith(".excalidraw");
-}
-
-type ExcalidrawEmbedOptions = {
-  openDrawing: (target: string) => void;
-  loadPreview: (target: string) => Promise<string>;
-};
-
-const excalidrawPreviewRefreshEvent = "glyphary-excalidraw-preview-refresh";
-
-function ExcalidrawEmbedView(props: NodeViewProps) {
-  const target = String(props.node.attrs.target ?? "");
-  const [previewSvg, setPreviewSvg] = useState("");
-  const [previewState, setPreviewState] = useState<"loading" | "ready" | "empty" | "error">(
-    "loading",
-  );
-  const options = props.extension.options as ExcalidrawEmbedOptions;
-
-  useEffect(() => {
-    if (!isExcalidrawTarget(target)) {
-      setPreviewSvg("");
-      setPreviewState("error");
-      return;
-    }
-
-    let cancelled = false;
-    const loadPreview = () => {
-      setPreviewState("loading");
-      setPreviewSvg("");
-      options
-        .loadPreview(target)
-        .then((markup) => {
-          if (cancelled) {
-            return;
-          }
-
-          setPreviewSvg(markup);
-          setPreviewState(markup ? "ready" : "empty");
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setPreviewState("error");
-          }
-        });
-    };
-    const refreshPreview = (event: Event) => {
-      if (!(event instanceof CustomEvent) || event.detail?.target !== target) {
-        return;
-      }
-
-      loadPreview();
-    };
-
-    loadPreview();
-    window.addEventListener(excalidrawPreviewRefreshEvent, refreshPreview);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener(excalidrawPreviewRefreshEvent, refreshPreview);
-    };
-  }, [options, target]);
-
-  if (!isExcalidrawTarget(target)) {
-    return <NodeViewWrapper as="span" className="excalidraw-embed-invalid" />;
-  }
-
-  return (
-    <NodeViewWrapper
-      as="figure"
-      className="excalidraw-embed"
-      data-excalidraw-target={target}
-      onDoubleClick={() => options.openDrawing(target)}
-    >
-      <div className="excalidraw-embed-preview">
-        {previewState === "ready" ? (
-          <div
-            className="excalidraw-embed-svg"
-            dangerouslySetInnerHTML={{ __html: previewSvg }}
-          />
-        ) : (
-          <div className="excalidraw-embed-empty">
-            {previewState === "loading"
-              ? "Loading drawing..."
-              : previewState === "error"
-                ? "Drawing preview unavailable"
-                : "No saved drawing elements"}
-          </div>
-        )}
-      </div>
-      <figcaption>
-        <span>{target.split("/").pop() ?? target}</span>
-        <small>Double-click to edit</small>
-      </figcaption>
-    </NodeViewWrapper>
-  );
-}
-
-function createExcalidrawEmbedExtension(options: ExcalidrawEmbedOptions) {
-  return Node.create({
-    name: "excalidrawEmbed",
-    priority: 1100,
-    group: "block",
-    atom: true,
-    draggable: true,
-
-    addOptions() {
-      return options;
-    },
-
-    addAttributes() {
-      return {
-        target: {
-          default: "",
-          parseHTML: (element) => element.getAttribute("data-excalidraw-target") ?? "",
-        },
-      };
-    },
-
-    parseHTML() {
-      return [{ tag: "figure[data-excalidraw-target]" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      return [
-        "figure",
-        mergeAttributes(HTMLAttributes, {
-          "data-excalidraw-target": HTMLAttributes.target,
-          class: "excalidraw-embed",
-        }),
-      ];
-    },
-
-    addNodeView() {
-      return ReactNodeViewRenderer(ExcalidrawEmbedView);
-    },
-
-    markdownTokenName: "excalidrawEmbed",
-
-    markdownTokenizer: {
-      name: "excalidrawEmbed",
-      level: "block",
-      start: (src: string) => {
-        const index = src.search(/!\[\[[^\]\n]+\.excalidraw\]\]/i);
-
-        return index >= 0 ? index : src.length;
-      },
-      tokenize: (src: string) => {
-        const match = src.match(/^!\[\[([^\]\n]+\.excalidraw)\]\][ \t]*(?:\n|$)/i);
-
-        if (!match) {
-          return undefined;
-        }
-
-        const target = cleanVaultAssetReference(match[1]);
-
-        if (!target || !isExcalidrawTarget(target)) {
-          return undefined;
-        }
-
-        return {
-          type: "excalidrawEmbed",
-          raw: match[0],
-          target,
-        };
-      },
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      const target = cleanVaultAssetReference(String(token.target ?? ""));
-
-      if (!target || !isExcalidrawTarget(target)) {
-        return [];
-      }
-
-      return helpers.createNode("excalidrawEmbed", { target });
-    },
-
-    renderMarkdown: (node: JSONContent) => {
-      const target =
-        typeof node.attrs?.target === "string"
-          ? cleanVaultAssetReference(node.attrs.target)
-          : null;
-
-      return target && isExcalidrawTarget(target) ? `![[${target}]]` : "";
-    },
-  });
-}
-
-function createVaultImageExtension(
-  resolveVaultImageSrc: (target: string) => string,
-  resolveVaultAssetSrc: (target: string) => string,
-) {
-  return Node.create({
-    name: "image",
-    priority: 1000,
-    group: "block",
-    atom: true,
-    draggable: true,
-
-    addAttributes() {
-      return {
-        src: {
-          default: "",
-        },
-        alt: {
-          default: "",
-        },
-        title: {
-          default: null,
-        },
-        vaultTarget: {
-          default: null,
-          parseHTML: (element) => element.getAttribute("data-vault-target"),
-          renderHTML: () => ({}),
-        },
-        assetReference: {
-          default: null,
-          parseHTML: (element) => element.getAttribute("data-asset-reference"),
-          renderHTML: () => ({}),
-        },
-      };
-    },
-
-    parseHTML() {
-      return [{ tag: "img[src]" }];
-    },
-
-    renderHTML({ HTMLAttributes }) {
-      const { vaultTarget, ...renderedAttributes } = HTMLAttributes;
-
-      // vaultTarget is an editor-only marker used to round-trip ![[asset]]
-      // syntax. It must not leak into the rendered DOM; src already points to
-      // the Tauri asset URL that the webview can display.
-      return ["img", mergeAttributes(renderedAttributes)];
-    },
-
-    markdownTokenName: "image",
-
-    markdownTokenizer: {
-      name: "vaultImage",
-      level: "inline",
-      start: (src: string) => src.indexOf("![["),
-      tokenize: (src: string) => {
-        const match = src.match(/^!\[\[([^\]\n]+)\]\]/);
-
-        if (!match) {
-          return undefined;
-        }
-
-        const vaultTarget = cleanVaultAssetReference(match[1]);
-
-        if (!vaultTarget) {
-          return undefined;
-        }
-
-        return {
-          type: "image",
-          raw: match[0],
-          href: resolveVaultAssetSrc(vaultTarget),
-          text: vaultTarget,
-          title: null,
-          vaultTarget,
-        };
-      },
-    },
-
-    parseMarkdown: (token: MarkdownToken, helpers) => {
-      // Tiptap's image token also receives normal markdown images. If the href
-      // is a safe local asset reference, resolve it against the vault asset
-      // directory while preserving enough metadata to write markdown back.
-      const vaultTarget = token.vaultTarget
-        ? cleanVaultAssetReference(String(token.vaultTarget))
-        : null;
-      const href = String(token.href ?? token.src ?? "");
-      const assetReference = !vaultTarget ? cleanVaultAssetReference(href) : null;
-      const src = vaultTarget
-        ? resolveVaultImageSrc(vaultTarget)
-        : assetReference
-          ? resolveVaultAssetSrc(assetReference)
-          : href;
-
-      if (!src && !vaultTarget && !assetReference) {
-        return [];
-      }
-
-      return helpers.createNode("image", {
-        src,
-        alt: String(token.text ?? token.alt ?? vaultTarget ?? ""),
-        title: token.title ?? null,
-        vaultTarget,
-        assetReference,
-      });
-    },
-
-    renderMarkdown: (node: JSONContent) => {
-      const attrs = node.attrs ?? {};
-      const vaultTarget =
-        typeof attrs.vaultTarget === "string"
-          ? cleanVaultAssetReference(attrs.vaultTarget)
-          : null;
-
-      if (vaultTarget) {
-        return `![[${vaultTarget}]]`;
-      }
-
-      const alt = typeof attrs.alt === "string" ? attrs.alt : "";
-      const assetReference =
-        typeof attrs.assetReference === "string"
-          ? cleanVaultAssetReference(attrs.assetReference)
-          : null;
-      const src = assetReference ?? (typeof attrs.src === "string" ? attrs.src : "");
-      const title = typeof attrs.title === "string" ? attrs.title : "";
-      const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : "";
-
-      return `![${escapeMarkdownImageText(alt)}](${escapeMarkdownUrl(src)}${titlePart})`;
-    },
-  });
-}
-
-function imageNodeMarkdown(node: ProseMirrorNode) {
-  // Gallery layout operates on selected ProseMirror image nodes. Reconstruct
-  // the same markdown form that the image extension would emit so local vault
-  // embeds remain ![[...]] instead of being rewritten to resolved webview URLs.
-  const attrs = node.attrs ?? {};
-  const vaultTarget =
-    typeof attrs.vaultTarget === "string"
-      ? cleanVaultAssetReference(attrs.vaultTarget)
-      : null;
-
-  if (vaultTarget) {
-    return `![[${vaultTarget}]]`;
-  }
-
-  const alt = typeof attrs.alt === "string" ? attrs.alt : "";
-  const assetReference =
-    typeof attrs.assetReference === "string"
-      ? cleanVaultAssetReference(attrs.assetReference)
-      : null;
-  const src = assetReference ?? (typeof attrs.src === "string" ? attrs.src : "");
-  const title = typeof attrs.title === "string" ? attrs.title : "";
-  const titlePart = title ? ` "${title.replace(/"/g, '\\"')}"` : "";
-
-  return `![${escapeMarkdownImageText(alt)}](${escapeMarkdownUrl(src)}${titlePart})`;
 }
 
 function App() {
@@ -4748,9 +1387,6 @@ function App() {
     useState<CommandPaletteScope>("root");
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteSelectedIndex, setCommandPaletteSelectedIndex] = useState(0);
-  const [pageSearchOpen, setPageSearchOpen] = useState(false);
-  const [pageSearchQuery, setPageSearchQuery] = useState("");
-  const [pageSearchIndex, setPageSearchIndex] = useState(0);
   const [canvasCommandRequest, setCanvasCommandRequest] =
     useState<CanvasCommandRequest | null>(null);
   const [richLinkDialogOpen, setRichLinkDialogOpen] = useState(false);
@@ -4783,13 +1419,31 @@ function App() {
   const [taskListQuery, setTaskListQuery] = useState("");
   const [taskSort, setTaskSort] = useState<TaskSort>("name");
   const [recentFiles, setRecentFiles] = useState<ActiveFile[]>([]);
-  const [wikiLinkIndex, setWikiLinkIndex] = useState<VaultIndexedFile[]>([]);
-  const [wikiLinkIndexVersion, setWikiLinkIndexVersion] = useState(0);
-  const [wikiLinkSearchOpen, setWikiLinkSearchOpen] = useState(false);
-  const [wikiLinkSearchQuery, setWikiLinkSearchQuery] = useState("");
-  const [wikiLinkSearchSelectedIndex, setWikiLinkSearchSelectedIndex] = useState(0);
-  const [wikiLinkPicker, setWikiLinkPicker] = useState<WikiLinkPickerState | null>(null);
-  const [wikiLinkPickerSelectedIndex, setWikiLinkPickerSelectedIndex] = useState(0);
+  const {
+    addFileToWikiLinkIndex,
+    closeWikiLinkSearch,
+    filteredWikiLinkFiles,
+    openWikiLinkSearch: openWikiLinkSearchState,
+    openWikiLinkSearchRef,
+    openWikiLinkTargetRef,
+    removeFileFromWikiLinkIndex,
+    replaceFileInWikiLinkIndex,
+    resolveWikiLinkTarget,
+    resolveWikiLinkTargetRef,
+    selectedWikiLinkFile,
+    selectedWikiLinkSearchIndex,
+    setWikiLinkIndexAndRef,
+    setWikiLinkPicker,
+    setWikiLinkPickerSelectedIndex,
+    setWikiLinkSearchQuery,
+    setWikiLinkSearchSelectedIndex,
+    wikiLinkIndexVersion,
+    wikiLinkPicker,
+    wikiLinkPickerSelectedIndex,
+    wikiLinkSearchInputRef,
+    wikiLinkSearchOpen,
+    wikiLinkSearchQuery,
+  } = useWikiLinkState();
   const [excalidrawDialog, setExcalidrawDialog] = useState<ExcalidrawDialogState | null>(null);
   const [excalidrawDirty, setExcalidrawDirty] = useState(false);
   const [imagePreview, setImagePreview] = useState<ImagePreviewState | null>(null);
@@ -4806,7 +1460,6 @@ function App() {
   const currentDirRef = useRef("");
   const recentFilesRef = useRef<ActiveFile[]>([]);
   const aiBuilderHistoryRef = useRef<AiBuilderHistoryStore>({ entries: {} });
-  const wikiLinkIndexRef = useRef<VaultIndexedFile[]>([]);
   const suppressDirectoryClickRef = useRef(false);
   const editorGroupsRef = useRef<Record<EditorGroupId, EditorGroupState>>(editorGroups);
   const activeGroupIdRef = useRef<EditorGroupId>("primary");
@@ -4818,12 +1471,10 @@ function App() {
     ranges: PageSearchMatch[];
     selection: unknown;
   } | null>(null);
-  const pageSearchInputRef = useRef<HTMLInputElement | null>(null);
   const canvasCommandRequestIdRef = useRef(0);
   // Keyboard navigation moves a virtual selection through scrollable results;
   // this ref lets the selected option be kept visible without stealing focus.
   const commandPaletteResultsRef = useRef<HTMLDivElement | null>(null);
-  const wikiLinkSearchInputRef = useRef<HTMLInputElement | null>(null);
   const richLinkInputRef = useRef<HTMLInputElement | null>(null);
   const excalidrawCreateInputRef = useRef<HTMLInputElement | null>(null);
   const pageNameRef = useRef("Untitled note");
@@ -4846,13 +1497,6 @@ function App() {
   const resetDocumentRef = useRef<() => void>(() => undefined);
   const openConfiguredNewTabRef = useRef<() => void>(() => undefined);
   const openPageSearchRef = useRef<() => void>(() => undefined);
-  const openWikiLinkSearchRef = useRef<() => void>(() => undefined);
-  const resolveWikiLinkTargetRef = useRef<(target: string) => WikiLinkResolution>(() => ({
-    candidates: [],
-  }));
-  const openWikiLinkTargetRef = useRef<
-    (target: string, event?: MouseEvent | ReactMouseEvent<HTMLElement>) => void
-  >(() => undefined);
   const openExcalidrawDrawingRef = useRef<(target: string) => void>(() => undefined);
   const loadExcalidrawPreviewRef = useRef<(target: string) => Promise<string>>(async () => "");
   const excalidrawApiRef = useRef<ExcalidrawImperativeAPI | null>(null);
@@ -5918,10 +2562,7 @@ function App() {
       return "";
     }
 
-    const file = await invoke<OpenedFile>("read_vault_file", {
-      root,
-      relative: target,
-    });
+    const file = await readVaultFile(root, target);
 
     return excalidrawSceneToSvgMarkup(parseExcalidrawScene(file.content));
   }
@@ -5935,10 +2576,7 @@ function App() {
     }
 
     try {
-      const file = await invoke<OpenedFile>("read_vault_file", {
-        root,
-        relative: target,
-      });
+      const file = await readVaultFile(root, target);
       const scene = parseExcalidrawScene(file.content);
       const restored = await restoredExcalidrawScene(scene);
 
@@ -5979,11 +2617,7 @@ function App() {
       const files = api?.getFiles() ?? excalidrawSceneRef.current.files;
       const content = serializeAsJSON(elements, appState, files, "local");
 
-      await invoke("write_vault_file", {
-        root: vaultRootRef.current,
-        relative: excalidrawDialog.relativePath,
-        content,
-      });
+      await writeVaultFile(vaultRootRef.current, excalidrawDialog.relativePath, content);
       window.dispatchEvent(
         new CustomEvent(excalidrawPreviewRefreshEvent, {
           detail: { target: excalidrawDialog.relativePath },
@@ -6042,13 +2676,13 @@ function App() {
       const relative = `${excalidrawDrawingDirectory()}/${excalidrawFileNameForTitle(
         excalidrawCreateNameDraft,
       )}`;
-      const file = await invoke<OpenedFile>("create_excalidraw_file", {
-        root: vaultRoot,
+      const file = await createExcalidrawFile(
+        vaultRoot,
         relative,
-        content: JSON.stringify(emptyExcalidrawScene(), null, 2),
-      });
+        JSON.stringify(emptyExcalidrawScene(), null, 2),
+      );
 
-      insertMarkdownAtCursor(`![[${file.relativePath}]]`);
+      insertMarkdownAtCursor(editor, `![[${file.relativePath}]]`);
       await loadEntries(vaultRoot, currentDir);
       setExcalidrawCreateDialogOpen(false);
       await openExcalidrawDrawing(file.relativePath);
@@ -6106,192 +2740,45 @@ function App() {
   }
 
   function createEditorOptions(groupId: EditorGroupId) {
-    return {
-      extensions: [
-        StarterKit.configure({
-          codeBlock: false,
-        }),
-        TaskList,
-        TaskItem.configure({
-          nested: true,
-        }),
-        // Custom block extensions must be registered before Markdown so their
-        // tokenizers participate in markdown parse/serialize round-trips.
-        CodeBlockWithLanguageControl.configure({
-          lowlight,
-        }),
-        PageSearchRenderer,
-        CommandPaletteSelectionRenderer,
-        TocCodeBlockRenderer,
-        MermaidCodeBlockRenderer,
-        createWikiLinkExtension({
-          openSearch: () => openWikiLinkSearchRef.current(),
-          resolveTarget: (target) => resolveWikiLinkTargetRef.current(target),
-        }),
-        ...(editorBehavior.vimMode ? [createGlypharyVimMode(setStatus)] : []),
-        createColumnExtension(),
-        createColumnsExtension(),
-        createGalleryExtension(),
-        createCalloutExtension(),
-        createCollapseExtension(),
-        createHtmlBlockExtension(),
-        createKeyboardKeyExtension(),
-        createDelimitedMarkdownMarkExtension({
-          name: "highlight",
-          tag: "mark",
-          delimiter: "==",
-          start: "==",
-          tokenPattern: /^==(?![=])([^=\n]+?)==(?!=)/,
-        }),
-        createDelimitedMarkdownMarkExtension({
-          name: "superscript",
-          tag: "sup",
-          delimiter: "^",
-          start: "^",
-          tokenPattern: /^\^([^\^\n]+?)\^/,
-        }),
-        createDelimitedMarkdownMarkExtension({
-          name: "subscript",
-          tag: "sub",
-          delimiter: "~",
-          start: findSingleTildeDelimiter,
-          tokenPattern: /^~(?!~)([^~\n]+?)~(?!~)/,
-        }),
-        createRichLinkExtension(),
-        createExcalidrawEmbedExtension({
-          openDrawing: (target) => openExcalidrawDrawingRef.current(target),
-          loadPreview: (target) => loadExcalidrawPreviewRef.current(target),
-        }),
-        // Vault images resolve late through refs because the same editor
-        // instance can survive vault changes; bare ![[image.png]] embeds are
-        // always backed by _assets_/images.
-        createVaultImageExtension(
-          (target) => joinVaultImagePath(vaultRootRef.current, target),
-          (target) =>
-            joinVaultAssetPath(
-              vaultRootRef.current,
-              vaultSettingsRef.current.assetDirectory,
-              target,
-            ),
+    return createGlypharyEditorOptions({
+      activateEditorGroup,
+      getActiveFileName: () => activeFileRef.current?.name ?? null,
+      getActiveGroupId: () => activeGroupIdRef.current,
+      getEditorGroup: () => editorGroupsRef.current[groupId],
+      groupId,
+      isHydrating: () => hydratingEditor.current[groupId],
+      loadExcalidrawPreview: (target) => loadExcalidrawPreviewRef.current(target),
+      openExcalidrawDrawing: (target) => openExcalidrawDrawingRef.current(target),
+      openWikiLinkSearch: () => openWikiLinkSearchRef.current(),
+      queueImageImport,
+      resolveVaultAssetSrc: (target) =>
+        joinVaultAssetPath(
+          vaultRootRef.current,
+          vaultSettingsRef.current.assetDirectory,
+          target,
         ),
-        createBlockBoundaryInsertionExtension(),
-        TableKit.configure({
-          table: {
-            resizable: true,
-          },
-        }),
-        Markdown.configure({
-          markedOptions: { gfm: true },
-        }),
-      ],
-      content: initialMarkdown,
-      contentType: "markdown" as const,
-      editorProps: {
-        attributes: {
-          "aria-label": "Markdown document editor",
-          spellcheck: "false",
-        },
-        handleDrop: (_view: unknown, event: DragEvent) => {
-          if (!queueImageImport(event.dataTransfer?.files)) {
-            return false;
-          }
-
-          event.preventDefault();
-          return true;
-        },
-        handlePaste: (_view: unknown, event: ClipboardEvent) => {
-          if (!queueImageImport(event.clipboardData?.files)) {
-            return false;
-          }
-
-          event.preventDefault();
-          return true;
-        },
-        handleKeyDown: (view: EditorView, event: KeyboardEvent) => {
-          if (!(event.shiftKey && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "v")) {
-            return false;
-          }
-
-          if (!navigator.clipboard?.readText) {
-            setStatus("Plain paste is not available in this webview");
-            return true;
-          }
-
-          event.preventDefault();
-          void navigator.clipboard
-            .readText()
-            .then((text) => {
-              if (text) {
-                view.pasteText(text);
-              }
-            })
-            .catch(() => setStatus("Could not read clipboard for plain paste"));
-
-          return true;
-        },
-      },
-      onUpdate: ({ editor }: { editor: Editor }) => {
-        const group = editorGroupsRef.current[groupId];
-        const tabId = group.activeTabId;
-        const tab = group.tabs.find((documentTab) => documentTab.id === tabId);
-
-        if (!tab || tab.kind !== "markdown") {
-          return;
-        }
-
-        const nextMarkdown = editor.getMarkdown();
-        const isActiveGroup = activeGroupIdRef.current === groupId;
-
-        updateGroupTab(groupId, tabId, {
-          markdown: nextMarkdown,
-          markdownDraft: nextMarkdown,
-          dirty: hydratingEditor.current[groupId]
-            ? tab.dirty
-            : true,
-        });
-
-        if (isActiveGroup) {
-          setMarkdown(nextMarkdown);
-          setMarkdownDraft(nextMarkdown);
-          syncEditorState(editor);
-        }
-
-        if (!hydratingEditor.current[groupId]) {
-          // Programmatic hydration calls setContent too; only user edits should
-          // dirty the tab and surface an unsaved-change status.
-          if (isActiveGroup) {
-            setDirty(true);
-          }
-          setStatus(
-            isActiveGroup && activeFileRef.current
-              ? `Unsaved changes in ${activeFileRef.current.name}`
-              : "Unsaved changes in untitled note",
-          );
-        }
-      },
-      onSelectionUpdate: ({ editor }: { editor: Editor }) => {
-        if (activeGroupIdRef.current === groupId) {
-          syncEditorState(editor);
-        }
-      },
-      onFocus: ({ editor }: { editor: Editor }) => {
-        activateEditorGroup(groupId);
-        setEditorFocused(true);
-        syncEditorState(editor);
-      },
-      onBlur: ({ editor }: { editor: Editor }) => {
-        if (activeGroupIdRef.current === groupId) {
-          setEditorFocused(false);
-          syncEditorState(editor);
-        }
-      },
-    };
+      resolveVaultImageSrc: (target) => joinVaultImagePath(vaultRootRef.current, target),
+      resolveWikiLinkTarget: (target) => resolveWikiLinkTargetRef.current(target),
+      setDirty,
+      setEditorFocused,
+      setMarkdown,
+      setMarkdownDraft,
+      setStatus,
+      syncEditorState,
+      updateGroupTab,
+      vimMode: editorBehavior.vimMode,
+    });
   }
 
   const primaryEditor = useEditor(createEditorOptions("primary"), [editorBehavior.vimMode]);
   const secondaryEditor = useEditor(createEditorOptions("secondary"), [editorBehavior.vimMode]);
   const activeEditor = activeGroupId === "secondary" ? secondaryEditor : primaryEditor;
   const editor = isEditorReady(activeEditor) ? activeEditor : null;
+  const activeDocumentTab =
+    editorGroups[activeGroupId]?.tabs.find(
+      (tab) => tab.id === editorGroups[activeGroupId]?.activeTabId,
+    ) ?? null;
+  const activeDocumentIsCanvas = activeDocumentTab?.kind === "canvas";
   activeEditorRef.current = editor;
 
   function captureCommandPaletteSelection() {
@@ -6331,93 +2818,16 @@ function App() {
     }
   }
 
-  const pageSearchResults = useMemo(
-    () => pageSearchMatches(editor, pageSearchQuery),
-    [editor, pageSearchQuery, markdown],
-  );
-  const pageSearchActiveIndex =
-    pageSearchResults.length > 0 ? Math.min(pageSearchIndex, pageSearchResults.length - 1) : -1;
-
-  function selectPageSearchMatch(index: number) {
-    if (pageSearchResults.length === 0) {
-      return;
-    }
-
-    const nextIndex = (index + pageSearchResults.length) % pageSearchResults.length;
-
-    setPageSearchIndex(nextIndex);
-  }
-
-  function openPageSearch() {
-    if (!editor || activeDocumentIsCanvas) {
-      setStatus("Open a note before searching in page");
-      return;
-    }
-
-    setPageSearchOpen(true);
-    window.requestAnimationFrame(() => {
-      pageSearchInputRef.current?.focus();
-      pageSearchInputRef.current?.select();
-    });
-  }
-
-  function closePageSearch() {
-    setPageSearchOpen(false);
-    setPageSearchQuery("");
-    setPageSearchIndex(0);
-    editor?.commands.focus();
-  }
-
-  function movePageSearch(direction: 1 | -1) {
-    selectPageSearchMatch(pageSearchActiveIndex + direction);
-  }
-
-  openPageSearchRef.current = openPageSearch;
-
-  useEffect(() => {
-    if (!pageSearchOpen || !pageSearchQuery.trim()) {
-      return;
-    }
-
-    if (pageSearchResults.length === 0) {
-      setPageSearchIndex(0);
-      return;
-    }
-
-    if (pageSearchActiveIndex < 0) {
-      setPageSearchIndex(0);
-    }
-  }, [pageSearchOpen, pageSearchQuery, pageSearchResults.length]);
-
-  useEffect(() => {
-    [primaryEditor, secondaryEditor].forEach((targetEditor) => {
-      if (!isEditorReady(targetEditor)) {
-        return;
-      }
-
-      const state =
-        targetEditor === editor && pageSearchOpen
-          ? { activeIndex: pageSearchActiveIndex, matches: pageSearchResults }
-          : { activeIndex: -1, matches: [] };
-
-      targetEditor.view.dispatch(targetEditor.state.tr.setMeta(pageSearchPluginKey, state));
-    });
-
-    if (editor && pageSearchOpen && pageSearchResults.length > 0) {
-      window.requestAnimationFrame(() => {
-        editor.view.dom
-          .querySelector(".page-search-match.active")
-          ?.scrollIntoView({ block: "center", inline: "nearest" });
-      });
-    }
-  }, [
+  const pageSearch = usePageSearch({
+    activeDocumentIsCanvas,
     editor,
-    pageSearchActiveIndex,
-    pageSearchOpen,
-    pageSearchResults,
+    markdown,
     primaryEditor,
     secondaryEditor,
-  ]);
+    setStatus,
+  });
+
+  openPageSearchRef.current = pageSearch.openSearch;
 
   useEffect(() => {
     const saved = commandPaletteSelectionRef.current;
@@ -6589,10 +2999,10 @@ function App() {
         await rebuildWikiLinkIndex(workspace.vaultRoot);
 
         if (workspace.activeFile) {
-          const file = await invoke<OpenedFile>("read_vault_file", {
-            root: workspace.vaultRoot,
-            relative: workspace.activeFile.relativePath,
-          });
+          const file = await readVaultFile(
+            workspace.vaultRoot,
+            workspace.activeFile.relativePath,
+          );
           const tab = createDocumentTabFromFile(file);
 
           replaceEditorGroupsWithPrimaryTab(tab);
@@ -7119,9 +3529,7 @@ function App() {
     // The model never receives arbitrary vault access. Glyphary first performs
     // bounded local searches, then sends only the matching snippets/excerpts.
     for (const query of queries) {
-      const results = await invoke<SearchResult[]>("search_vault", {
-        root: vaultRootRef.current,
-        query: escapeRegExp(query),
+      const results = await searchVaultFiles(vaultRootRef.current, escapeRegExp(query), {
         includeContent: true,
         markdownOnly: true,
         excludeDotPaths: true,
@@ -7142,10 +3550,7 @@ function App() {
 
     return Promise.all(
       files.map(async ([relativePath, snippets]) => {
-        const file = await invoke<OpenedFile>("read_vault_file", {
-          root: vaultRootRef.current,
-          relative: relativePath,
-        });
+        const file = await readVaultFile(vaultRootRef.current, relativePath);
         const parts = splitMetaHeader(file.content);
 
         return {
@@ -7162,9 +3567,7 @@ function App() {
       return [];
     }
 
-    const results = await invoke<SearchResult[]>("search_vault", {
-      root: vaultRootRef.current,
-      query: taskSearchPattern("incomplete"),
+    const results = await searchVaultFiles(vaultRootRef.current, taskSearchPattern("incomplete"), {
       includeContent: true,
       markdownOnly: true,
       excludeDotPaths: true,
@@ -7231,10 +3634,7 @@ function App() {
   }
 
   async function loadEntries(root: string, relative: string) {
-    const nextEntries = await invoke<VaultEntry[]>("list_vault_dir", {
-      root,
-      relative,
-    });
+    const nextEntries = await listVaultDir(root, relative);
 
     setEntries(nextEntries);
   }
@@ -7262,56 +3662,6 @@ function App() {
     }
   }
 
-  function setWikiLinkIndexAndRef(files: VaultIndexedFile[]) {
-    wikiLinkIndexRef.current = files;
-    setWikiLinkIndex(files);
-    setWikiLinkIndexVersion((version) => version + 1);
-  }
-
-  function addFileToWikiLinkIndex(file: ActiveFile | OpenedFile) {
-    setWikiLinkIndexAndRef(addIndexedFile(wikiLinkIndexRef.current, file));
-  }
-
-  function removeFileFromWikiLinkIndex(relativePath: string) {
-    setWikiLinkIndexAndRef(removeIndexedFile(wikiLinkIndexRef.current, relativePath));
-  }
-
-  function replaceFileInWikiLinkIndex(oldRelativePath: string, file: ActiveFile | OpenedFile) {
-    setWikiLinkIndexAndRef(
-      replaceIndexedFile(wikiLinkIndexRef.current, oldRelativePath, file),
-    );
-  }
-
-  function resolveWikiLinkTarget(target: string): WikiLinkResolution {
-    const cleanTarget = wikiLinkTargetFromMarkup(target);
-    const normalizedTarget = normalizeWikiLinkText(cleanTarget);
-
-    if (!normalizedTarget) {
-      return { candidates: [] };
-    }
-
-    const files = wikiLinkIndexRef.current;
-    const pathMatches = files.filter((file) => {
-      const pathWithoutExtension = fileNameWithoutMarkdownExtension(file.relativePath);
-      const normalizedPath = normalizeWikiLinkText(file.relativePath);
-
-      return (
-        normalizedPath === normalizedTarget ||
-        normalizeWikiLinkText(pathWithoutExtension) === normalizedTarget
-      );
-    });
-
-    if (pathMatches.length > 0) {
-      return { candidates: pathMatches };
-    }
-
-    return {
-      candidates: files.filter(
-        (file) => normalizeWikiLinkText(wikiLinkDisplayName(file)) === normalizedTarget,
-      ),
-    };
-  }
-
   async function rebuildWikiLinkIndex(root: string) {
     if (!isTauri()) {
       setWikiLinkIndexAndRef([]);
@@ -7319,25 +3669,13 @@ function App() {
     }
 
     setStatus("Indexing...");
-    const files = await invoke<VaultIndexedFile[]>("list_vault_markdown_files", { root });
+    const files = await listVaultMarkdownFiles(root);
 
     setWikiLinkIndexAndRef(files);
   }
 
   function openWikiLinkSearch() {
-    if (!vaultRootRef.current) {
-      return;
-    }
-
-    setWikiLinkSearchQuery("");
-    setWikiLinkSearchSelectedIndex(0);
-    setWikiLinkSearchOpen(true);
-  }
-
-  function closeWikiLinkSearch() {
-    setWikiLinkSearchOpen(false);
-    setWikiLinkSearchQuery("");
-    setWikiLinkSearchSelectedIndex(0);
+    openWikiLinkSearchState(Boolean(vaultRootRef.current));
   }
 
   function handleWikiLinkSearchKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
@@ -7492,7 +3830,7 @@ function App() {
 
   async function loadVaultSettings(root: string) {
     const settings = isTauri()
-      ? await invoke<VaultSettings>("read_vault_settings", { root })
+      ? await readVaultSettings(root)
         : {
           assetDirectory: defaultVaultAssetDirectory,
           newTabFile: defaultNewTabFile,
@@ -7580,14 +3918,8 @@ function App() {
     if (isTauri()) {
       // Tauri's asset protocol is deny-by-default. Re-allow the configured
       // asset directory whenever a vault is opened or settings change.
-      await invoke("allow_vault_assets", {
-        root,
-        assetDirectory: settings.assetDirectory,
-      });
-      await invoke("allow_vault_assets", {
-        root,
-        assetDirectory: defaultVaultImageDirectory,
-      });
+      await allowVaultAssets(root, settings.assetDirectory);
+      await allowVaultAssets(root, defaultVaultImageDirectory);
     }
 
     await refreshCssSnippets(root, cssSnippets);
@@ -7602,9 +3934,7 @@ function App() {
     }
 
     try {
-      const settings = await invoke<VaultSettings>("write_vault_settings", {
-        root: vaultRoot,
-        settings: {
+      const settings = await writeVaultSettings(vaultRoot, {
           assetDirectory: settingsDraft,
           newTabFile: normalizeNewTabFile(newTabFileDraft),
           frontmatterPills: normalizeFrontmatterPillSettings(frontmatterPillDraft),
@@ -7629,7 +3959,6 @@ function App() {
                 options: normalizeThemeOptions(themeOptionsDraft),
               }
             : null,
-        },
       });
       const themeTokens = normalizeThemeTokens(settings.theme?.tokens);
       const themePresetId = normalizeThemePresetId(settings.theme?.presetId);
@@ -7701,14 +4030,8 @@ function App() {
       setThemeDraft(themeTokens);
       setThemeOptionsDraft(themeOptions);
       setThemeCalloutDraft(themeCallouts);
-      await invoke("allow_vault_assets", {
-        root: vaultRoot,
-        assetDirectory: settings.assetDirectory,
-      });
-      await invoke("allow_vault_assets", {
-        root: vaultRoot,
-        assetDirectory: defaultVaultImageDirectory,
-      });
+      await allowVaultAssets(vaultRoot, settings.assetDirectory);
+      await allowVaultAssets(vaultRoot, defaultVaultImageDirectory);
       await refreshCssSnippets(vaultRoot, cssSnippets);
       await refreshPlugins(vaultRoot, plugins);
       await loadEntries(vaultRoot, currentDir);
@@ -7740,11 +4063,7 @@ function App() {
       // with the file-relative-path convention.
       const previousTabId = editorGroupsRef.current[groupId].activeTabId;
       const previousRelativePath = file.relativePath;
-      const renamed = await invoke<OpenedFile>("rename_vault_file", {
-        root: vaultRoot,
-        relative: file.relativePath,
-        nextName: requestedName,
-      });
+      const renamed = await renameVaultFile(vaultRoot, file.relativePath, requestedName);
 
       file = {
         name: renamed.name,
@@ -7790,11 +4109,7 @@ function App() {
             editor.getMarkdown(),
           );
 
-    await invoke("write_vault_file", {
-      root: vaultRoot,
-      relative: file.relativePath,
-      content,
-    });
+    await writeVaultFile(vaultRoot, file.relativePath, content);
     const savedMarkdown = activeTab?.kind === "canvas" ? markdownDraft : editor.getMarkdown();
     const savedDraft = markdownDraft;
     const activeTabIdForGroup = editorGroupsRef.current[groupId].activeTabId;
@@ -8345,10 +4660,7 @@ function App() {
         return;
       }
 
-      const file = await invoke<OpenedFile>("read_vault_file", {
-        root: vaultRoot,
-        relative: relativePath,
-      });
+      const file = await readVaultFile(vaultRoot, relativePath);
       const tab = createDocumentTabFromFile(file);
 
       if (hasNoOpenDocumentTabs(editorGroupsRef.current)) {
@@ -8405,11 +4717,11 @@ function App() {
     }
 
     try {
-      const file = await invoke<OpenedFile>("open_calendar_day_file", {
-        root: vaultRoot,
-        relative: relativePath,
-        title: calendarDayTitle(date),
-      });
+      const file = await openCalendarDayFile(
+        vaultRoot,
+        relativePath,
+        calendarDayTitle(date),
+      );
       const tab = createDocumentTabFromFile(file);
 
       addTabToGroup(tab);
@@ -8433,10 +4745,7 @@ function App() {
 
     try {
       snapshotActiveTab();
-      const file = await invoke<OpenedFile>("open_directory_shadow_file", {
-        root: vaultRoot,
-        relative: relativePath,
-      });
+      const file = await openDirectoryShadowFile(vaultRoot, relativePath);
       const existing = findOpenFileTab(file.relativePath);
 
       if (existing) {
@@ -8460,42 +4769,6 @@ function App() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     }
-  }
-
-  function relativePathFileName(relativePath: string) {
-    return relativePath.split("/").pop() || relativePath;
-  }
-
-  function rebasePathAfterDirectoryRename(
-    relativePath: string,
-    oldDirectory: VaultEntry,
-    newDirectory: RenamedDirectory,
-  ) {
-    const oldDirectoryPath = oldDirectory.relativePath;
-    const newDirectoryPath = newDirectory.relativePath;
-    const oldShadowPath = `${oldDirectoryPath}/${oldDirectory.name}.md`;
-    const newShadowPath = `${newDirectoryPath}/${newDirectory.name}.md`;
-
-    if (relativePath === oldShadowPath) {
-      return newShadowPath;
-    }
-
-    if (relativePath === oldDirectoryPath) {
-      return newDirectoryPath;
-    }
-
-    if (relativePath.startsWith(`${oldDirectoryPath}/`)) {
-      return `${newDirectoryPath}${relativePath.slice(oldDirectoryPath.length)}`;
-    }
-
-    return relativePath;
-  }
-
-  function activeFileWithRelativePath(relativePath: string): ActiveFile {
-    return {
-      name: relativePathFileName(relativePath),
-      relativePath,
-    };
   }
 
   function applyRenamedDirectoryToOpenState(
@@ -8836,11 +5109,7 @@ function App() {
     }
 
     try {
-      const file = await invoke<OpenedFile>("create_note_in_directory", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-        noteName,
-      });
+      const file = await createNoteInDirectory(vaultRoot, entry.relativePath, noteName);
       const tab = createDocumentTabFromFile(file);
 
       snapshotActiveTab();
@@ -8865,11 +5134,7 @@ function App() {
     }
 
     try {
-      const file = await invoke<OpenedFile>("create_canvas_in_directory", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-        canvasName,
-      });
+      const file = await createCanvasInDirectory(vaultRoot, entry.relativePath, canvasName);
       const tab = createDocumentTabFromFile(file);
 
       snapshotActiveTab();
@@ -8893,11 +5158,11 @@ function App() {
     }
 
     try {
-      const directory = await invoke<RenamedDirectory>("create_directory_in_directory", {
-        root: vaultRoot,
-        relative: entry.relativePath,
+      const directory = await createDirectoryInDirectory(
+        vaultRoot,
+        entry.relativePath,
         directoryName,
-      });
+      );
 
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Created folder ${directory.relativePath}`);
@@ -8916,11 +5181,7 @@ function App() {
     }
 
     try {
-      const renamed = await invoke<RenamedDirectory>("rename_vault_directory", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-        nextName,
-      });
+      const renamed = await renameVaultDirectory(vaultRoot, entry.relativePath, nextName);
 
       applyRenamedDirectoryToOpenState(entry, renamed);
       await loadEntries(
@@ -8945,11 +5206,7 @@ function App() {
 
     try {
       snapshotActiveTab();
-      const renamed = await invoke<OpenedFile>("rename_vault_file", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-        nextName,
-      });
+      const renamed = await renameVaultFile(vaultRoot, entry.relativePath, nextName);
       const renamedFile = {
         name: renamed.name,
         relativePath: renamed.relativePath,
@@ -8976,11 +5233,11 @@ function App() {
 
     try {
       snapshotActiveTab();
-      const moved = await invoke<RenamedDirectory>("move_vault_directory", {
-        root: vaultRoot,
-        relative: entry.relativePath,
+      const moved = await moveVaultDirectory(
+        vaultRoot,
+        entry.relativePath,
         destinationDirectory,
-      });
+      );
       const nextCurrentDir = rebasePathAfterDirectoryRename(currentDir, entry, moved);
 
       applyRenamedDirectoryToOpenState(entry, moved);
@@ -8999,11 +5256,7 @@ function App() {
 
     try {
       snapshotActiveTab();
-      const moved = await invoke<OpenedFile>("move_vault_file", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-        destinationDirectory,
-      });
+      const moved = await moveVaultFile(vaultRoot, entry.relativePath, destinationDirectory);
       const movedFile = {
         name: moved.name,
         relativePath: moved.relativePath,
@@ -9025,10 +5278,7 @@ function App() {
 
     try {
       snapshotActiveTab();
-      await invoke("delete_vault_file", {
-        root: vaultRoot,
-        relative: entry.relativePath,
-      });
+      await deleteVaultFile(vaultRoot, entry.relativePath);
 
       removeDeletedFileFromOpenState(entry.relativePath);
       removeFileFromWikiLinkIndex(entry.relativePath);
@@ -9168,56 +5418,6 @@ function App() {
     }
   }
 
-  function alignCurrentTableColumn(targetEditor: Editor | null, alignment: TableColumnAlignment) {
-    if (!targetEditor) {
-      return;
-    }
-
-    const { state, view } = targetEditor;
-    const restorePosition = state.selection.from;
-    const tableDepth = ancestorDepthByName(state.selection.$from, "table");
-    const cellDepth =
-      ancestorDepthByName(state.selection.$from, "tableCell") ??
-      ancestorDepthByName(state.selection.$from, "tableHeader");
-
-    if (tableDepth === null || cellDepth === null) {
-      return;
-    }
-
-    const table = state.selection.$from.node(tableDepth);
-    const tableStart = state.selection.$from.start(tableDepth);
-    const map = TableMap.get(table);
-    const cellOffset = state.selection.$from.before(cellDepth) - tableStart;
-    const column = map.colCount(cellOffset);
-    const tr = state.tr;
-
-    // Avoid CellSelection here: ProseMirror records it in undo history, so
-    // Cmd+Z would restore a visible whole-column selection after undoing align.
-    for (const cellPosition of map.cellsInRect({
-      left: column,
-      right: column + 1,
-      top: 0,
-      bottom: map.height,
-    })) {
-      const cell = table.nodeAt(cellPosition);
-
-      if (cell && cell.attrs.align !== alignment) {
-        tr.setNodeMarkup(tableStart + cellPosition, undefined, {
-          ...cell.attrs,
-          align: alignment,
-        });
-      }
-    }
-
-    if (tr.docChanged) {
-      tr.setSelection(TextSelection.create(tr.doc, restorePosition));
-      view.dispatch(tr);
-      view.focus();
-    }
-
-    setTableContextMenu(null);
-  }
-
   function resetDocument() {
     snapshotActiveTab();
     const tab = createUntitledTab();
@@ -9297,56 +5497,8 @@ function App() {
     editor.chain().focus().insertContent(emptyColumnsMarkdown, { contentType: "markdown" }).run();
   }
 
-  function formatSelectionWithMark(markType: string, label: string) {
-    if (!editor) {
-      return;
-    }
-
-    const { doc, selection } = editor.state;
-
-    if (selection.empty) {
-      setStatus(`Select text before formatting it as ${label}`);
-      return;
-    }
-
-    const selectedText = doc.textBetween(selection.from, selection.to, "\n", "\n");
-
-    editor
-      .chain()
-      .focus()
-      .insertContent({
-        type: "text",
-        text: selectedText,
-        marks: [{ type: markType }],
-      })
-      .run();
-  }
-
   function formatSelectionAsKeyboardKey() {
-    formatSelectionWithMark("keyboardKey", "a keyboard key");
-  }
-
-  function selectedGalleryImages(targetEditor: Editor) {
-    const { doc, selection } = targetEditor.state;
-    const images: string[] = [];
-    let from = selection.from;
-    let to = selection.to;
-
-    // The command should behave like a layout operation over the current
-    // selection. Expanding the replacement range to whole image nodes avoids
-    // leaving behind atom boundaries when the user selects by drag.
-    doc.nodesBetween(selection.from, selection.to, (node, pos) => {
-      if (node.type.name !== "image") {
-        return true;
-      }
-
-      images.push(imageNodeMarkdown(node));
-      from = Math.min(from, pos);
-      to = Math.max(to, pos + node.nodeSize);
-      return false;
-    });
-
-    return { images, from, to };
+    formatSelectionWithMark(editor, "keyboardKey", "a keyboard key", setStatus);
   }
 
   function wrapSelectedImagesInGallery() {
@@ -9415,46 +5567,6 @@ function App() {
         contentType: "markdown",
       })
       .run();
-  }
-
-  function insertMarkdownAtCursor(content: string) {
-    if (!editor || !content.trim()) {
-      return;
-    }
-
-    editor.chain().focus().insertContent(content, { contentType: "markdown" }).run();
-  }
-
-  function currentSelectionText() {
-    if (!editor) {
-      return "";
-    }
-
-    const { state } = editor;
-
-    return state.doc.textBetween(state.selection.from, state.selection.to, "\n", "\n");
-  }
-
-  function currentCursorContext() {
-    if (!editor) {
-      return "";
-    }
-
-    const { doc, selection } = editor.state;
-    const before = doc.textBetween(0, selection.from, "\n", "\n").trimEnd();
-    const after = doc.textBetween(selection.to, doc.content.size, "\n", "\n").trimStart();
-
-    // The backend transform only sees a string, so cursor-sensitive commands
-    // receive an explicit boundary marker instead of relying on editor state.
-    return [
-      "Text before cursor:",
-      before || "(empty)",
-      "",
-      "[[CURSOR]]",
-      "",
-      "Text after cursor:",
-      after || "(empty)",
-    ].join("\n");
   }
 
   function aiModelOptions() {
@@ -9589,7 +5701,7 @@ function App() {
     instruction: string,
     applyMode: AiReviewState["applyMode"],
   ) {
-    const input = currentSelectionText().trim();
+    const input = currentSelectionText(editor).trim();
 
     if (!input) {
       setStatus("Select text before running this AI command");
@@ -9604,7 +5716,7 @@ function App() {
     instruction: string,
     applyMode: AiReviewState["applyMode"],
   ) {
-    const input = (currentSelectionText().trim() || markdown.trim()).trim();
+    const input = (currentSelectionText(editor).trim() || markdown.trim()).trim();
 
     if (!input) {
       setStatus("Write or select text before running this AI command");
@@ -9615,7 +5727,7 @@ function App() {
   }
 
   async function runAiContinueWritingCommand() {
-    const input = currentCursorContext();
+    const input = currentCursorContext(editor);
 
     await runAiTextCommand(
       "AI: Continue writing",
@@ -9791,7 +5903,7 @@ function App() {
     replacementTurn: AiBuilderHistoryTurn | null,
     vaultContext: string,
   ) {
-    const selectedText = currentSelectionText().trim();
+    const selectedText = currentSelectionText(editor).trim();
     const markdownExcerpt =
       markdown.length > aiPageBuilderMarkdownContextLimit
         ? `${markdown.slice(0, aiPageBuilderMarkdownContextLimit)}\n\n[...note truncated...]`
@@ -9831,7 +5943,7 @@ function App() {
       vaultContext,
       "",
       "Cursor context:",
-      currentCursorContext(),
+      currentCursorContext(editor),
       "",
       "Current Markdown excerpt:",
       markdownExcerpt.trim() || "(empty)",
@@ -10164,7 +6276,7 @@ function App() {
 
     try {
       if (command.insertMarkdown) {
-        insertMarkdownAtCursor(command.insertMarkdown);
+        insertMarkdownAtCursor(editor, command.insertMarkdown);
         setStatus(`Ran plugin command: ${command.title}`);
         return;
       }
@@ -10176,7 +6288,7 @@ function App() {
           template: command.template,
         });
 
-        insertMarkdownAtCursor(template);
+        insertMarkdownAtCursor(editor, template);
         setStatus(`Inserted template from ${plugin.name}`);
         return;
       }
@@ -10188,7 +6300,7 @@ function App() {
           module: command.wasm.module,
         });
         const input =
-          command.wasm.input === "document" ? editor.getMarkdown() : currentSelectionText();
+          command.wasm.input === "document" ? editor.getMarkdown() : currentSelectionText(editor);
         const output = await runWasmPluginTransform(
           plugin.id,
           command.id,
@@ -10203,9 +6315,9 @@ function App() {
           // Insert-at-cursor should append after a selection rather than replace
           // it, so collapse the selection to its end before writing Markdown.
           editor.chain().focus().setTextSelection(editor.state.selection.to).run();
-          insertMarkdownAtCursor(output);
+          insertMarkdownAtCursor(editor, output);
         } else {
-          insertMarkdownAtCursor(output);
+          insertMarkdownAtCursor(editor, output);
         }
 
         setStatus(`Ran WASM plugin command: ${command.title}`);
@@ -10235,10 +6347,7 @@ function App() {
 
     try {
       const relative = expandDateTemplate(tidbitSettings.pathPattern);
-      const file = await invoke<OpenedFile>("create_vault_markdown_file", {
-        root: vaultRoot,
-        relative,
-      });
+      const file = await createVaultMarkdownFile(vaultRoot, relative);
       const tab = createDocumentTabFromFile(file);
 
       snapshotActiveTab();
@@ -10379,11 +6488,6 @@ function App() {
     }
   }
 
-  const activeDocumentTab =
-    editorGroups[activeGroupId]?.tabs.find(
-      (tab) => tab.id === editorGroups[activeGroupId]?.activeTabId,
-    ) ?? null;
-  const activeDocumentIsCanvas = activeDocumentTab?.kind === "canvas";
   const cursorInsideTable =
     !activeDocumentIsCanvas &&
     !!editor &&
@@ -10449,25 +6553,6 @@ function App() {
         run: () => runPluginCommand(plugin, command),
       })),
     );
-  const filteredWikiLinkFiles = wikiLinkIndex
-    .filter((file) => {
-      const query = wikiLinkSearchQuery.trim().toLowerCase();
-
-      return (
-        !query ||
-        wikiLinkDisplayName(file).toLowerCase().includes(query) ||
-        file.relativePath.toLowerCase().includes(query)
-      );
-    })
-    .slice(0, 20);
-  const selectedWikiLinkSearchIndex =
-    filteredWikiLinkFiles.length > 0
-      ? Math.min(wikiLinkSearchSelectedIndex, filteredWikiLinkFiles.length - 1)
-      : -1;
-  const selectedWikiLinkFile =
-    selectedWikiLinkSearchIndex >= 0
-      ? (filteredWikiLinkFiles[selectedWikiLinkSearchIndex] ?? null)
-      : null;
   // AI commands use saved vault settings, not the unsaved settings draft. That
   // prevents palette actions from using an API key or model the user has not
   // explicitly saved for this vault.
@@ -10743,25 +6828,25 @@ function App() {
       id: "format-strikethrough",
       title: "Strikethrough",
       description: "Wrap selected text in ~~ delimiters",
-      run: () => formatSelectionWithMark("strike", "strikethrough"),
+      run: () => formatSelectionWithMark(editor, "strike", "strikethrough", setStatus),
     },
     {
       id: "format-highlight",
       title: "Highlight",
       description: "Wrap selected text in == delimiters",
-      run: () => formatSelectionWithMark("highlight", "a highlight"),
+      run: () => formatSelectionWithMark(editor, "highlight", "a highlight", setStatus),
     },
     {
       id: "format-superscript",
       title: "Superscript",
       description: "Wrap selected text in ^ delimiters",
-      run: () => formatSelectionWithMark("superscript", "superscript"),
+      run: () => formatSelectionWithMark(editor, "superscript", "superscript", setStatus),
     },
     {
       id: "format-subscript",
       title: "Subscript",
       description: "Wrap selected text in ~ delimiters",
-      run: () => formatSelectionWithMark("subscript", "subscript"),
+      run: () => formatSelectionWithMark(editor, "subscript", "subscript", setStatus),
     },
     {
       id: "format-keyboard",
@@ -10855,42 +6940,22 @@ function App() {
         : commandPaletteScope === "table" && !activeDocumentIsCanvas
           ? tableCommandPaletteCommands
           : commandPaletteCommands;
-  const commandPaletteScopeTitle =
-    commandPaletteScope === "ai"
-      ? "AI commands"
-    : commandPaletteScope === "insert"
-        ? activeDocumentIsCanvas
-          ? "Canvas insert commands"
-          : "Insert commands"
-        : commandPaletteScope === "format"
-          ? "Format commands"
-        : commandPaletteScope === "table"
-          ? "Table commands"
-          : "";
-  const commandPalettePlaceholder =
-    commandPaletteScope === "ai"
-      ? "Type an AI command..."
-      : commandPaletteScope === "insert"
-        ? activeDocumentIsCanvas
-          ? "Type a canvas insert command..."
-          : "Type an insert command..."
-        : commandPaletteScope === "format"
-          ? "Type a format command..."
-        : commandPaletteScope === "table"
-          ? "Type a table command..."
-          : "Type a command...";
-  const normalizedCommandPaletteQuery = commandPaletteQuery.trim().toLowerCase();
-  const filteredCommandPaletteCommands = normalizedCommandPaletteQuery
-    ? activeCommandPaletteCommands.filter((command) =>
-        `${command.title} ${command.description}`.toLowerCase().includes(
-          normalizedCommandPaletteQuery,
-        ),
-      )
-    : activeCommandPaletteCommands;
-  const selectedCommandPaletteCommand =
-    filteredCommandPaletteCommands[
-      Math.min(commandPaletteSelectedIndex, filteredCommandPaletteCommands.length - 1)
-    ] ?? null;
+  const activeCommandPaletteScopeTitle = commandPaletteScopeTitle(
+    commandPaletteScope,
+    activeDocumentIsCanvas,
+  );
+  const activeCommandPalettePlaceholder = commandPalettePlaceholder(
+    commandPaletteScope,
+    activeDocumentIsCanvas,
+  );
+  const filteredCommandPaletteCommands = filterCommandPaletteCommands(
+    activeCommandPaletteCommands,
+    commandPaletteQuery,
+  );
+  const selectedPaletteCommand = selectedCommandPaletteCommand(
+    filteredCommandPaletteCommands,
+    commandPaletteSelectedIndex,
+  );
 
   useEffect(() => {
     if (!commandPaletteOpen) {
@@ -10905,19 +6970,19 @@ function App() {
   }, [commandPaletteOpen, filteredCommandPaletteCommands.length]);
 
   useEffect(() => {
-    if (!commandPaletteOpen || !selectedCommandPaletteCommand) {
+    if (!commandPaletteOpen || !selectedPaletteCommand) {
       return;
     }
 
     const results = commandPaletteResultsRef.current;
     const activeOption = document.getElementById(
-      `command-palette-${selectedCommandPaletteCommand.id}`,
+      `command-palette-${selectedPaletteCommand.id}`,
     );
 
     if (results?.contains(activeOption)) {
       activeOption?.scrollIntoView({ block: "nearest" });
     }
-  }, [commandPaletteOpen, commandPaletteSelectedIndex, selectedCommandPaletteCommand]);
+  }, [commandPaletteOpen, commandPaletteSelectedIndex, selectedPaletteCommand]);
 
   function closeCommandPalette() {
     restoreCommandPaletteSelection();
@@ -10971,21 +7036,16 @@ function App() {
       return;
     }
 
-    if (event.key === "Enter" && selectedCommandPaletteCommand) {
+    if (event.key === "Enter" && selectedPaletteCommand) {
       event.preventDefault();
-      runCommandPaletteCommand(selectedCommandPaletteCommand);
+      runCommandPaletteCommand(selectedPaletteCommand);
     }
   }
 
   async function runCommandPaletteCommand(command: CommandPaletteCommand) {
     // Submenu commands are navigational; closing here would make selecting
     // "AI ...", "Insert ...", or "Table ..." look like a no-op.
-    if (
-      command.id === "ai-menu" ||
-      command.id === "insert-menu" ||
-      command.id === "format-menu" ||
-      command.id === "table-menu"
-    ) {
+    if (isCommandPaletteMenuCommand(command)) {
       await command.run();
       return;
     }
@@ -10993,13 +7053,7 @@ function App() {
     closeCommandPalette();
     await command.run();
     setEditorFocused(true);
-    if (
-      command.id !== "insert-rich-link" &&
-      command.id !== "insert-excalidraw" &&
-      command.id !== "create-tidbit" &&
-      !command.id.startsWith("format-") &&
-      !command.id.startsWith("ai-")
-    ) {
+    if (shouldReportCommandPaletteStatus(command)) {
       setStatus(command.title);
     }
   }
@@ -11062,97 +7116,15 @@ function App() {
     return "Find in vault";
   }
 
-  function taskSearchPattern(filter: TaskFilter) {
-    if (filter === "complete") {
-      return "- \\[[xX]\\]";
-    }
+  const visibleTaskResults = useMemo(
+    () => visibleVaultTaskResults(taskResults, taskListQuery, taskSort),
+    [taskListQuery, taskResults, taskSort],
+  );
 
-    if (filter === "all") {
-      return "- \\[( |[xX])\\]";
-    }
-
-    return "- \\[ \\]";
-  }
-
-  function taskResultPresentation(lineText: string | null | undefined) {
-    const line = lineText?.trim() || "Task";
-    const match = line.match(/^- \[([ xX])\]\s*(.*)$/);
-
-    if (!match) {
-      return {
-        label: line,
-        completed: false,
-      };
-    }
-
-    return {
-      label: match[2] || "Task",
-      completed: match[1].toLowerCase() === "x",
-    };
-  }
-
-  const visibleTaskResults = useMemo(() => {
-    const query = taskListQuery.trim().toLowerCase();
-
-    return taskResults
-      .filter((result) => {
-        if (!query) {
-          return true;
-        }
-
-        const task = taskResultPresentation(result.lineText);
-        const searchableText = `${task.label} ${result.relativePath}`.toLowerCase();
-
-        return searchableText.includes(query);
-      })
-      .sort((left, right) => {
-        if (taskSort === "date") {
-          const byDate = (right.modifiedMs ?? 0) - (left.modifiedMs ?? 0);
-
-          if (byDate !== 0) {
-            return byDate;
-          }
-        }
-
-        const leftTask = taskResultPresentation(left.lineText);
-        const rightTask = taskResultPresentation(right.lineText);
-        const byName = leftTask.label.localeCompare(rightTask.label, undefined, {
-          sensitivity: "base",
-        });
-
-        if (byName !== 0) {
-          return byName;
-        }
-
-        return `${left.relativePath}:${left.lineNumber ?? 0}`.localeCompare(
-          `${right.relativePath}:${right.lineNumber ?? 0}`,
-        );
-      });
-  }, [taskListQuery, taskResults, taskSort]);
-
-  const visibleSearchResults = useMemo(() => {
-    const seenPaths = new Set<string>();
-    const matchCounts = searchResults.reduce((counts, result) => {
-      counts.set(result.relativePath, (counts.get(result.relativePath) ?? 0) + 1);
-      return counts;
-    }, new Map<string, number>());
-
-    // The search backend returns one row per match; the drawer presents one row per file.
-    return searchResults
-      .filter((result) => {
-        if (seenPaths.has(result.relativePath)) {
-          return false;
-        }
-
-        seenPaths.add(result.relativePath);
-        return true;
-      })
-      .sort((left, right) => (right.modifiedMs ?? 0) - (left.modifiedMs ?? 0))
-      .map((result) => ({
-        result,
-        matchCount: matchCounts.get(result.relativePath) ?? 1,
-      }));
-  }, [searchResults]);
+  const visibleSearchResults = useMemo(
+    () => visibleVaultSearchResults(searchResults),
+    [searchResults],
+  );
 
   async function refreshTasks(filter = taskFilter) {
     if (!vaultRoot) {
@@ -11162,9 +7134,7 @@ function App() {
 
     try {
       setTasksSearching(true);
-      const results = await invoke<SearchResult[]>("search_vault", {
-        root: vaultRoot,
-        query: taskSearchPattern(filter),
+      const results = await searchVaultFiles(vaultRoot, taskSearchPattern(filter), {
         includeContent: true,
         markdownOnly: true,
         excludeDotPaths: true,
@@ -11194,9 +7164,7 @@ function App() {
 
     try {
       setSearching(true);
-      const results = await invoke<SearchResult[]>("search_vault", {
-        root: vaultRoot,
-        query,
+      const results = await searchVaultFiles(vaultRoot, query, {
         includeContent: searchMode === "content",
       });
 
@@ -11410,271 +7378,43 @@ function App() {
     setStatus("Opened split editor");
   }
 
-  function renderEditorPane(groupId: EditorGroupId, groupEditor: Editor | null) {
-    const group = editorGroups[groupId];
-    const groupActiveTab =
-      group.tabs.find((tab) => tab.id === group.activeTabId) ?? group.tabs[0] ?? null;
-    const isActiveGroup = groupId === activeGroupId;
-    const panePageName = isActiveGroup ? pageName : groupActiveTab?.pageName ?? "Untitled note";
-    const paneMetaHeader = isActiveGroup ? metaHeader : groupActiveTab?.metaHeader ?? "";
-    const paneMarkdown = isActiveGroup ? markdown : groupActiveTab?.markdown ?? "";
-    const paneActiveFile = isActiveGroup ? activeFile : groupActiveTab?.activeFile ?? null;
-    const isCanvasTab = groupActiveTab?.kind === "canvas";
-    const showEditingChrome = documentDisplayMode === "edit";
-    const frontmatterPillSettings = normalizeFrontmatterPillSettings(
-      vaultSettings.frontmatterPills,
-    );
-    const frontmatterPills = frontmatterPillSettings.enabled
-      ? frontmatterListValues(paneMetaHeader, frontmatterPillSettings.headerName)
-      : [];
-    const bannerSrc = !isCanvasTab
-      ? joinVaultRelativeImagePath(vaultRoot, frontmatterScalarValue(paneMetaHeader, "banner"))
-      : "";
-
-    // Only the active pane renders the toolbar. Toolbar actions are tied to the
-    // active editor mirror; hiding inactive toolbars avoids commands landing in
-    // the wrong split.
+  function editorPaneFor(groupId: EditorGroupId, groupEditor: Editor | null) {
     return (
-      <div
-        className={isActiveGroup ? "editor-pane-shell active-group" : "editor-pane-shell"}
-        key={groupId}
-        onMouseDown={() => {
-          if (!isActiveGroup) {
-            activateEditorGroup(groupId);
-          }
-        }}
-      >
-        <div className="document-tabs" role="tablist" aria-label={`${groupId} open documents`}>
-          {group.tabs.map((tab) => (
-            <div
-              className={tab.id === group.activeTabId ? "document-tab active" : "document-tab"}
-              key={tab.id}
-              role="tab"
-              aria-selected={tab.id === group.activeTabId}
-              title={tab.activeFile?.relativePath ?? tabTitle(tab)}
-            >
-              <button
-                className="document-tab-select"
-                type="button"
-                onClick={() => switchToDocumentTab(tab.id, groupId)}
-              >
-                <span>{tabTitle(tab)}</span>
-                {tab.dirty ? <em aria-label="Unsaved changes" /> : null}
-              </button>
-              <button
-                className="document-tab-close"
-                type="button"
-                aria-label={`Close ${tabTitle(tab)}`}
-                title={`Close ${tabTitle(tab)}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  closeDocumentTab(tab.id, groupId);
-                }}
-              >
-                x
-              </button>
-            </div>
-          ))}
-        </div>
-        {!groupActiveTab ? (
-          <div className="editor-pane no-document-pane">
-            <div className="empty-document-placeholder no-document">
-              Open or create a note to start editing.
-            </div>
-          </div>
-        ) : (
-          <div className={isCanvasTab ? "editor-pane canvas-editor-pane" : "editor-pane"}>
-            {bannerSrc ? (
-              <figure className="document-banner">
-                <img alt="" src={bannerSrc} />
-              </figure>
-            ) : null}
-            {!isCanvasTab && showEditingChrome ? (
-              <div className="metadata-shell" aria-label="Metadata editor">
-                <div className="page-name-control">
-                  {pageNameEditing && isActiveGroup ? (
-                    <input
-                      aria-label="Page name"
-                      autoFocus
-                      disabled={!paneActiveFile}
-                      value={pageName}
-                      onBlur={finishPageNameEdit}
-                      onChange={(event) => {
-                        setActivePageName(event.currentTarget.value);
-                        markPageNameDirty();
-                      }}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.currentTarget.blur();
-                        } else if (event.key === "Escape") {
-                          if (activeFileRef.current) {
-                            setActivePageName(
-                              fileNameWithoutMarkdownExtension(activeFileRef.current.name),
-                            );
-                          }
-                          setPageNameEditing(false);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      className="page-name-display"
-                      disabled={!paneActiveFile}
-                      type="button"
-                      title="Double-click to rename on save"
-                      onDoubleClick={() => {
-                        activateEditorGroup(groupId);
-                        if (paneActiveFile) {
-                          setPageNameEditing(true);
-                        }
-                      }}
-                    >
-                      {panePageName || "Untitled note"}
-                    </button>
-                  )}
-                </div>
-                <div className="frontmatter-header">
-                  <button
-                    className={metadataOpen ? "metadata-toggle open" : "metadata-toggle"}
-                    type="button"
-                    aria-expanded={metadataOpen}
-                    aria-controls={`${groupId}-frontmatter-editor`}
-                    aria-label={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
-                    title={metadataOpen ? "Hide frontmatter" : "Show frontmatter"}
-                    onClick={() => setMetadataOpen((open) => !open)}
-                  />
-                  <span>Frontmatter</span>
-                  {frontmatterPills.length > 0 ? (
-                    <div className="frontmatter-pills" aria-label="Frontmatter list values">
-                      {frontmatterPills.map((value) => (
-                        <span className="frontmatter-pill" key={value}>
-                          {value}
-                        </span>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
-                {metadataOpen ? (
-                  <label className="metadata-control" id={`${groupId}-frontmatter-editor`}>
-                    <textarea
-                      disabled={!paneActiveFile}
-                      spellCheck="false"
-                      value={paneMetaHeader}
-                      onChange={(event) => {
-                        activateEditorGroup(groupId);
-                        setActiveMetaHeader(event.currentTarget.value);
-                        if (activeFileRef.current) {
-                          setActiveDocumentDirty(true);
-                          setStatus(`Unsaved changes in ${activeFileRef.current.name}`);
-                        }
-                      }}
-                      placeholder="title: Example&#10;tags: [note]"
-                    />
-                  </label>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isActiveGroup && !isCanvasTab && showEditingChrome ? (
-              <div className="toolbar" aria-label="Formatting toolbar">
-                {toolbarActions.map((action) => (
-                  <button
-                    aria-label={action.title}
-                    className={action.isActive() ? "tool-button active" : "tool-button"}
-                    disabled={action.isEnabled ? !action.isEnabled() : false}
-                    key={action.title}
-                    onClick={() => {
-                      action.run();
-                      setEditorFocused(true);
-                    }}
-                    title={action.title}
-                    type="button"
-                  >
-                    {action.icon ? renderToolbarIcon(action.icon) : action.label}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-
-            {isActiveGroup && !isCanvasTab && pageSearchOpen ? (
-              <div className="page-search-bar" role="search" aria-label="Find in page">
-                <input
-                  ref={pageSearchInputRef}
-                  aria-label="Find in page"
-                  placeholder="Find in page"
-                  spellCheck="false"
-                  value={pageSearchQuery}
-                  onChange={(event) => {
-                    setPageSearchQuery(event.currentTarget.value);
-                    setPageSearchIndex(0);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      closePageSearch();
-                    } else if (event.key === "Enter") {
-                      event.preventDefault();
-                      movePageSearch(event.shiftKey ? -1 : 1);
-                    }
-                  }}
-                />
-                <span>
-                  {pageSearchQuery.trim()
-                    ? pageSearchResults.length > 0
-                      ? `${pageSearchActiveIndex + 1}/${pageSearchResults.length}`
-                      : "0/0"
-                    : "0/0"}
-                </span>
-                <button
-                  type="button"
-                  aria-label="Previous match"
-                  disabled={pageSearchResults.length === 0}
-                  onClick={() => movePageSearch(-1)}
-                >
-                  Up
-                </button>
-                <button
-                  type="button"
-                  aria-label="Next match"
-                  disabled={pageSearchResults.length === 0}
-                  onClick={() => movePageSearch(1)}
-                >
-                  Down
-                </button>
-                <button type="button" aria-label="Close find in page" onClick={closePageSearch}>
-                  Close
-                </button>
-              </div>
-            ) : null}
-
-            {isCanvasTab ? (
-              <CanvasView
-                commandRequest={isActiveGroup ? canvasCommandRequest : null}
-                content={paneMarkdown}
-                name={panePageName}
-                settings={canvasDraft}
-                vaultRoot={vaultRoot}
-                onChange={(nextContent) => updateCanvasDocument(groupId, nextContent)}
-                onOpenFile={openFile}
-              />
-            ) : (
-              <div className="editor-surface-frame">
-                <EditorContent
-                  className="editor-surface markdown-rendered markdown-preview-view"
-                  editor={groupEditor}
-                  onDoubleClick={openImagePreviewFromEditor}
-                  onContextMenu={(event) => handleEditorContextMenu(event, groupEditor, groupId)}
-                />
-                {!paneMarkdown.trim() ? (
-                  <div className="empty-document-placeholder" aria-hidden="true">
-                    Start writing...
-                  </div>
-                ) : null}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      <EditorPane
+        activeFile={activeFile}
+        activeGroupId={activeGroupId}
+        canvasCommandRequest={canvasCommandRequest}
+        canvasSettings={canvasDraft}
+        documentDisplayMode={documentDisplayMode}
+        group={editorGroups[groupId]}
+        groupEditor={groupEditor}
+        groupId={groupId}
+        markdown={markdown}
+        metaHeader={metaHeader}
+        metadataOpen={metadataOpen}
+        onActivateGroup={activateEditorGroup}
+        onCanvasChange={updateCanvasDocument}
+        onCloseTab={closeDocumentTab}
+        onEditorContextMenu={handleEditorContextMenu}
+        onFinishPageNameEdit={finishPageNameEdit}
+        onMarkPageNameDirty={markPageNameDirty}
+        onMetaHeaderChange={setActiveMetaHeader}
+        onOpenFile={openFile}
+        onOpenImagePreview={openImagePreviewFromEditor}
+        onPageNameChange={setActivePageName}
+        onSetActiveDocumentDirty={setActiveDocumentDirty}
+        onSetEditorFocused={setEditorFocused}
+        onSetPageNameEditing={setPageNameEditing}
+        onSetStatus={setStatus}
+        onSwitchTab={switchToDocumentTab}
+        pageName={pageName}
+        pageNameEditing={pageNameEditing}
+        pageSearch={pageSearch}
+        setMetadataOpen={setMetadataOpen}
+        toolbarActions={toolbarActions}
+        vaultRoot={vaultRoot}
+        vaultSettings={vaultSettings}
+      />
     );
   }
 
@@ -12248,8 +7988,8 @@ function App() {
         />
 
         <div className={splitOpen ? "editor-groups split" : "editor-groups"}>
-          {renderEditorPane("primary", primaryEditor)}
-          {splitOpen ? renderEditorPane("secondary", secondaryEditor) : null}
+          {editorPaneFor("primary", primaryEditor)}
+          {splitOpen ? editorPaneFor("secondary", secondaryEditor) : null}
         </div>
 
         <div
@@ -13673,57 +9413,18 @@ function App() {
           </div>
         </div>
       ) : null}
-      {excalidrawDialog ? (
-        <div className="excalidraw-dialog-screen" role="presentation">
-          <section
-            className="excalidraw-dialog-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label={`Edit drawing ${excalidrawDialog.name}`}
-            onMouseDown={(event) => event.stopPropagation()}
-            onKeyDown={(event) => event.stopPropagation()}
-          >
-            <header className="excalidraw-dialog-header">
-              <div>
-                <h2>{excalidrawDialog.name}</h2>
-                <p>{excalidrawDialog.relativePath}</p>
-              </div>
-              <div className="excalidraw-dialog-actions">
-                <button
-                  className="inline-action"
-                  type="button"
-                  onClick={saveExcalidrawDrawing}
-                >
-                  Save Drawing
-                </button>
-                <button className="inline-action" type="button" onClick={closeExcalidrawDialog}>
-                  Close
-                </button>
-              </div>
-            </header>
-            <div className="excalidraw-editor-shell">
-              <Suspense fallback={<div className="excalidraw-loading">Loading drawing editor...</div>}>
-                <ExcalidrawCanvas
-                  key={excalidrawDialog.relativePath}
-                  initialData={excalidrawDialog.initialData}
-                  name={excalidrawDialog.name}
-                  excalidrawAPI={(api) => {
-                    excalidrawApiRef.current = api;
-                  }}
-                  onChange={(elements, appState, files) => {
-                  excalidrawSceneRef.current = {
-                    elements,
-                    appState,
-                    files,
-                  };
-                  setExcalidrawDirty(true);
-                }}
-                />
-              </Suspense>
-            </div>
-          </section>
-        </div>
-      ) : null}
+      <ExcalidrawDialog
+        dialog={excalidrawDialog}
+        onApi={(api) => {
+          excalidrawApiRef.current = api;
+        }}
+        onChange={(elements, appState, files) => {
+          excalidrawSceneRef.current = { elements, appState, files };
+          setExcalidrawDirty(true);
+        }}
+        onClose={closeExcalidrawDialog}
+        onSave={saveExcalidrawDrawing}
+      />
       {imagePreview ? (
         <div
           className="image-preview-screen"
@@ -14004,86 +9705,34 @@ function App() {
           </section>
         </div>
       ) : null}
-      {commandPaletteOpen ? (
-        <div
-          className="command-palette-screen"
-          role="presentation"
-          onMouseDown={closeCommandPalette}
-        >
-          <div
-            className="command-palette-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Quick command"
-            onKeyDown={handleCommandPaletteKeyDown}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            {commandPaletteScope !== "root" ? (
-              <div className="command-palette-scopebar">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCommandPaletteScope("root");
-                    setCommandPaletteQuery("");
-                    setCommandPaletteSelectedIndex(0);
-                    commandPaletteInputRef.current?.focus();
-                  }}
-                >
-                  Back
-                </button>
-                <span>{commandPaletteScopeTitle}</span>
-              </div>
-            ) : null}
-            <input
-              ref={commandPaletteInputRef}
-              aria-activedescendant={
-                selectedCommandPaletteCommand
-                  ? `command-palette-${selectedCommandPaletteCommand.id}`
-                  : undefined
-              }
-              aria-autocomplete="list"
-              aria-controls="command-palette-results"
-              aria-label="Quick command"
-              autoComplete="off"
-              placeholder={commandPalettePlaceholder}
-              role="combobox"
-              spellCheck="false"
-              value={commandPaletteQuery}
-              onChange={(event) => {
-                setCommandPaletteQuery(event.currentTarget.value);
-                setCommandPaletteSelectedIndex(0);
-              }}
-            />
-            <div
-              ref={commandPaletteResultsRef}
-              className="command-palette-results"
-              id="command-palette-results"
-              role="listbox"
-              aria-label="Matching commands"
-            >
-              {filteredCommandPaletteCommands.length > 0 ? (
-                filteredCommandPaletteCommands.map((command, index) => (
-                  <button
-                    className={index === commandPaletteSelectedIndex ? "active" : ""}
-                    id={`command-palette-${command.id}`}
-                    key={command.id}
-                    role="option"
-                    aria-selected={index === commandPaletteSelectedIndex}
-                    type="button"
-                    onClick={() => runCommandPaletteCommand(command)}
-                    onMouseEnter={() => setCommandPaletteSelectedIndex(index)}
-                  >
-                    <span>{command.title}</span>
-                    <small>{command.description}</small>
-                  </button>
-                ))
-              ) : (
-                <p>No commands found</p>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+      <CommandPaletteDialog
+        close={closeCommandPalette}
+        commands={filteredCommandPaletteCommands}
+        handleKeyDown={handleCommandPaletteKeyDown}
+        inputRef={commandPaletteInputRef}
+        onBack={() => {
+          setCommandPaletteScope("root");
+          setCommandPaletteQuery("");
+          setCommandPaletteSelectedIndex(0);
+          commandPaletteInputRef.current?.focus();
+        }}
+        onQueryChange={(nextQuery) => {
+          setCommandPaletteQuery(nextQuery);
+          setCommandPaletteSelectedIndex(0);
+        }}
+        onRunCommand={(command) => {
+          void runCommandPaletteCommand(command);
+        }}
+        onSelectIndex={setCommandPaletteSelectedIndex}
+        open={commandPaletteOpen}
+        placeholder={activeCommandPalettePlaceholder}
+        query={commandPaletteQuery}
+        resultsRef={commandPaletteResultsRef}
+        scope={commandPaletteScope}
+        scopeTitle={activeCommandPaletteScopeTitle}
+        selectedCommand={selectedPaletteCommand}
+        selectedIndex={commandPaletteSelectedIndex}
+      />
       {wikiLinkSearchOpen ? (
         <div
           className="wikilink-search-screen"
@@ -14129,7 +9778,7 @@ function App() {
                   <button
                     className={index === selectedWikiLinkSearchIndex ? "active" : ""}
                     id={`wikilink-search-${index}`}
-                    key={indexedFileKey(file)}
+                    key={file.relativePath}
                     type="button"
                     role="option"
                     aria-selected={index === selectedWikiLinkSearchIndex}
@@ -14147,67 +9796,17 @@ function App() {
           </div>
         </div>
       ) : null}
-      {excalidrawCreateDialogOpen ? (
-        <div
-          className="excalidraw-create-dialog-screen"
-          role="presentation"
-          onMouseDown={() => {
-            if (!excalidrawCreateSubmitting) {
-              setExcalidrawCreateDialogOpen(false);
-            }
-          }}
-        >
-          <form
-            className="excalidraw-create-dialog-card"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Insert Excalidraw drawing"
-            onMouseDown={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault();
-              void insertExcalidrawDrawing();
-            }}
-          >
-            <div className="excalidraw-create-dialog-header">
-              <h2>New Drawing</h2>
-              <span>Name the vault drawing file to embed in this note.</span>
-            </div>
-            <label>
-              <span>Name</span>
-              <input
-                ref={excalidrawCreateInputRef}
-                disabled={excalidrawCreateSubmitting}
-                spellCheck="false"
-                value={excalidrawCreateNameDraft}
-                onChange={(event) => setExcalidrawCreateNameDraft(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && !excalidrawCreateSubmitting) {
-                    event.preventDefault();
-                    setExcalidrawCreateDialogOpen(false);
-                  }
-                }}
-              />
-            </label>
-            <div className="excalidraw-create-dialog-actions">
-              <button
-                className="inline-action"
-                disabled={excalidrawCreateSubmitting}
-                type="button"
-                onClick={() => setExcalidrawCreateDialogOpen(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="inline-action"
-                disabled={excalidrawCreateSubmitting || !excalidrawCreateNameDraft.trim()}
-                type="submit"
-              >
-                {excalidrawCreateSubmitting ? "Creating..." : "Create"}
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
+      <ExcalidrawCreateDialog
+        inputRef={excalidrawCreateInputRef}
+        name={excalidrawCreateNameDraft}
+        onCancel={() => setExcalidrawCreateDialogOpen(false)}
+        onCreate={() => {
+          void insertExcalidrawDrawing();
+        }}
+        onNameChange={setExcalidrawCreateNameDraft}
+        open={excalidrawCreateDialogOpen}
+        submitting={excalidrawCreateSubmitting}
+      />
       {richLinkDialogOpen ? (
         <div
           className="rich-link-dialog-screen"
@@ -14334,7 +9933,7 @@ function App() {
           {wikiLinkPicker.candidates.map((file, index) => (
             <button
               className={index === wikiLinkPickerSelectedIndex ? "active" : ""}
-              key={indexedFileKey(file)}
+              key={file.relativePath}
               type="button"
               role="menuitem"
               onClick={() => openWikiLinkPickerSelection(file)}
@@ -14381,7 +9980,10 @@ function App() {
                   key={alignment}
                   type="button"
                   role="menuitem"
-                  onClick={() => alignCurrentTableColumn(tableContextEditor, alignment)}
+                  onClick={() => {
+                    alignCurrentTableColumn(tableContextEditor, alignment);
+                    setTableContextMenu(null);
+                  }}
                 >
                   {alignment === "left"
                     ? "Left align"

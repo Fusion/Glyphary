@@ -240,20 +240,24 @@ test("dropped image names follow the pasted-image timestamp convention", () => {
 
 test("drag and paste image filtering accepts supported image formats", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
 
   assert.equal(isSupportedImageFile({ name: "photo.png", type: "" }), true);
   assert.equal(isSupportedImageFile({ name: "photo.dat", type: "image/webp" }), true);
   assert.equal(isSupportedImageFile({ name: "notes.txt", type: "text/plain" }), false);
-  assert.match(app, /handlePaste: \(_view: unknown, event: ClipboardEvent\) =>/);
-  assert.match(app, /queueImageImport\(event\.clipboardData\?\.files\)/);
-  assert.match(app, /handleKeyDown: \(view: EditorView, event: KeyboardEvent\) =>/);
-  assert.match(app, /event\.shiftKey && \(event\.metaKey \|\| event\.ctrlKey\) && event\.key\.toLowerCase\(\) === "v"/);
-  assert.match(app, /navigator\.clipboard\?\.readText/);
-  assert.match(app, /view\.pasteText\(text\)/);
+  assert.match(editorOptions, /handlePaste: \(_view: unknown, event: ClipboardEvent\) =>/);
+  assert.match(editorOptions, /queueImageImport\(event\.clipboardData\?\.files\)/);
+  assert.match(editorOptions, /handleKeyDown: \(view: EditorView, event: KeyboardEvent\) =>/);
+  assert.match(editorOptions, /event\.shiftKey && \(event\.metaKey \|\| event\.ctrlKey\) && event\.key\.toLowerCase\(\) === "v"/);
+  assert.match(editorOptions, /navigator\.clipboard\?\.readText/);
+  assert.match(editorOptions, /view\.pasteText\(text\)/);
 });
 
 test("desktop platform detection controls platform-specific window actions", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
+  const vaultTree = readFileSync("src/vault/VaultFolderTree.tsx", "utf8");
+  const vaultIcons = readFileSync("src/vault/VaultIcons.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const capabilities = JSON.parse(readFileSync("src-tauri/capabilities/default.json", "utf8"));
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
@@ -327,17 +331,22 @@ test("markdown headings produce a table of contents and ignore fenced code", () 
 
 test("toc fenced code blocks have an inline renderer while staying markdown code blocks", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const codeBlockLanguage = readFileSync("src/editor/code-block-language.tsx", "utf8");
+  const codeBlockRenderers = readFileSync("src/editor/code-block-renderers.ts", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.doesNotMatch(app, /\{ label: "Table of contents", value: "toc" \}/);
-  assert.match(app, /const isRenderedTableOfContents = language === "toc"/);
-  assert.match(app, /!isRenderedTableOfContents \? \(/);
-  assert.match(app, /function codeBlockDecorationClassNames/);
-  assert.match(app, /\.\.\.codeBlockDecorationClassNames\(decorations\)/);
-  assert.match(app, /lowlight\.register\("toc", plaintext\)/);
-  assert.match(app, /TocCodeBlockRenderer/);
-  assert.match(app, /data-toc-block-position/);
-  assert.match(app, /data-toc-entry-id/);
+  assert.match(codeBlockLanguage, /const isRenderedTableOfContents = language === "toc"/);
+  assert.match(codeBlockLanguage, /!isRenderedTableOfContents \? \(/);
+  assert.match(codeBlockLanguage, /function codeBlockDecorationClassNames/);
+  assert.match(codeBlockLanguage, /\.\.\.codeBlockDecorationClassNames\(decorations\)/);
+  assert.match(editorOptions, /lowlight\.register\("toc", plaintext\)/);
+  assert.match(editorOptions, /TocCodeBlockRenderer/);
+  assert.match(codeBlockRenderers, /Responsibilities:/);
+  assert.match(codeBlockRenderers, /Contracts:/);
+  assert.match(codeBlockRenderers, /dataset\.tocBlockPosition/);
+  assert.match(codeBlockRenderers, /dataset\.tocEntryId/);
   assert.match(css, /pre\.toc-code-block\.rendered/);
   assert.match(css, /\.toc-code-render/);
 });
@@ -349,62 +358,66 @@ test("table insertion seed keeps markdown table support available", () => {
 
 test("block-widget boundaries expose an editable insertion point", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const blockBoundary = readFileSync("src/editor/block-boundary-insertion.ts", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /import \{ GapCursor \} from "@tiptap\/pm\/gapcursor"/);
-  assert.match(app, /function createBlockBoundaryInsertionExtension\(\)/);
-  assert.match(app, /name: "glypharyBlockBoundaryInsertion"/);
-  assert.match(app, /priority: 10000/);
-  assert.match(app, /addKeyboardShortcuts\(\)/);
-  assert.match(app, /function moveGapCursorTo/);
-  assert.match(app, /RuntimeGapCursor\.valid\(resolvedPosition\)/);
-  assert.match(app, /new GapCursor\(resolvedPosition\)/);
-  assert.match(app, /function insertParagraphAtGapCursor/);
-  assert.match(app, /selection instanceof GapCursor/);
-  assert.match(app, /view\.state\.tr\.insert\(selection\.from, paragraph\)/);
-  assert.match(app, /TextSelection\.create\(transaction\.doc, selection\.from \+ 1\)/);
-  assert.match(app, /function insertParagraphAtPosition/);
-  assert.match(app, /const blockBoundaryInsertNodeNames = new Set/);
-  assert.match(app, /"table"/);
-  assert.match(app, /"htmlBlock"/);
-  assert.match(app, /"richLink"/);
-  assert.match(app, /"excalidrawEmbed"/);
-  assert.match(app, /"gallery"/);
-  assert.match(app, /function supportsBlockBoundaryInsert/);
-  assert.match(app, /isAiBuilderMarkerComment\(node\.attrs\.rawHtml\)/);
-  assert.match(app, /function selectedTopLevelWidgetBlock/);
-  assert.match(app, /selection instanceof NodeSelection && supportsBlockBoundaryInsert\(selection\.node\)/);
-  assert.match(app, /selection\.\$from\.node\(1\)/);
-  assert.match(app, /selection\.\$from\.before\(1\)/);
-  assert.match(app, /selection\.\$from\.after\(1\)/);
-  assert.match(app, /function blockBoundaryInsertWidget/);
-  assert.match(app, /function blockBoundaryInsertDecorations/);
-  assert.match(app, /const selectedBlock = selectedTopLevelWidgetBlock\(view\)/);
-  assert.match(app, /DecorationSet\.empty/);
-  assert.match(app, /blockBoundaryInsertWidget\(selectedBlock\.from, -1\)/);
-  assert.match(app, /blockBoundaryInsertWidget\(selectedBlock\.to, 1\)/);
-  assert.doesNotMatch(app, /isBlockBoundaryWidgetCandidate\(previousNode\)/);
-  assert.doesNotMatch(app, /node\.isBlock && !node\.isTextblock/);
-  assert.match(app, /Decoration\.widget\(/);
-  assert.match(app, /className = "block-boundary-insert"/);
-  assert.match(app, /aria-label", "Insert paragraph between blocks"/);
-  assert.match(app, /button\.title = "Insert paragraph"/);
-  assert.match(app, /insertParagraphAtPosition\(targetView, currentPosition\)/);
-  assert.match(app, /glypharyBlockBoundaryInsertAffordance/);
-  assert.match(app, /function moveGapCursorAfterTableBoundary/);
-  assert.match(app, /view\.endOfTextblock\("down"\)/);
-  assert.match(app, /nodeAfterTable\.isTextblock/);
-  assert.match(app, /moveGapCursorTo\(view, afterTable\)/);
-  assert.match(app, /function moveGapCursorBeforeSelectedBlock/);
-  assert.match(app, /function moveGapCursorAfterSelectedBlock/);
-  assert.match(app, /nodeAfterSelectedBlock\.isTextblock/);
-  assert.match(app, /selection instanceof NodeSelection/);
-  assert.match(app, /Enter: \(\) =>/);
-  assert.match(app, /ArrowDown: \(\) =>/);
-  assert.match(app, /ArrowUp: \(\) =>/);
-  assert.match(app, /insertParagraphAtGapCursor\(this\.editor\.view\) \|\|/);
-  assert.doesNotMatch(app, /insertEmptyParagraphAt/);
-  assert.match(app, /createBlockBoundaryInsertionExtension\(\),\s*TableKit\.configure/);
+  assert.match(blockBoundary, /Responsibilities:/);
+  assert.match(blockBoundary, /Contracts:/);
+  assert.match(blockBoundary, /import \{ GapCursor \} from "@tiptap\/pm\/gapcursor"/);
+  assert.match(blockBoundary, /function createBlockBoundaryInsertionExtension\(\)/);
+  assert.match(blockBoundary, /name: "glypharyBlockBoundaryInsertion"/);
+  assert.match(blockBoundary, /priority: 10000/);
+  assert.match(blockBoundary, /addKeyboardShortcuts\(\)/);
+  assert.match(blockBoundary, /function moveGapCursorTo/);
+  assert.match(blockBoundary, /RuntimeGapCursor\.valid\(resolvedPosition\)/);
+  assert.match(blockBoundary, /new GapCursor\(resolvedPosition\)/);
+  assert.match(blockBoundary, /function insertParagraphAtGapCursor/);
+  assert.match(blockBoundary, /selection instanceof GapCursor/);
+  assert.match(blockBoundary, /view\.state\.tr\.insert\(selection\.from, paragraph\)/);
+  assert.match(blockBoundary, /TextSelection\.create\(transaction\.doc, selection\.from \+ 1\)/);
+  assert.match(blockBoundary, /function insertParagraphAtPosition/);
+  assert.match(blockBoundary, /const blockBoundaryInsertNodeNames = new Set/);
+  assert.match(blockBoundary, /"table"/);
+  assert.match(blockBoundary, /"htmlBlock"/);
+  assert.match(blockBoundary, /"richLink"/);
+  assert.match(blockBoundary, /"excalidrawEmbed"/);
+  assert.match(blockBoundary, /"gallery"/);
+  assert.match(blockBoundary, /function supportsBlockBoundaryInsert/);
+  assert.match(blockBoundary, /isAiBuilderMarkerComment\(node\.attrs\.rawHtml\)/);
+  assert.match(blockBoundary, /function selectedTopLevelWidgetBlock/);
+  assert.match(blockBoundary, /selection instanceof NodeSelection && supportsBlockBoundaryInsert\(selection\.node\)/);
+  assert.match(blockBoundary, /selection\.\$from\.node\(1\)/);
+  assert.match(blockBoundary, /selection\.\$from\.before\(1\)/);
+  assert.match(blockBoundary, /selection\.\$from\.after\(1\)/);
+  assert.match(blockBoundary, /function blockBoundaryInsertWidget/);
+  assert.match(blockBoundary, /function blockBoundaryInsertDecorations/);
+  assert.match(blockBoundary, /const selectedBlock = selectedTopLevelWidgetBlock\(view\)/);
+  assert.match(blockBoundary, /DecorationSet\.empty/);
+  assert.match(blockBoundary, /blockBoundaryInsertWidget\(selectedBlock\.from, -1\)/);
+  assert.match(blockBoundary, /blockBoundaryInsertWidget\(selectedBlock\.to, 1\)/);
+  assert.doesNotMatch(blockBoundary, /isBlockBoundaryWidgetCandidate\(previousNode\)/);
+  assert.doesNotMatch(blockBoundary, /node\.isBlock && !node\.isTextblock/);
+  assert.match(blockBoundary, /Decoration\.widget\(/);
+  assert.match(blockBoundary, /className = "block-boundary-insert"/);
+  assert.match(blockBoundary, /aria-label", "Insert paragraph between blocks"/);
+  assert.match(blockBoundary, /button\.title = "Insert paragraph"/);
+  assert.match(blockBoundary, /insertParagraphAtPosition\(targetView, currentPosition\)/);
+  assert.match(blockBoundary, /glypharyBlockBoundaryInsertAffordance/);
+  assert.match(blockBoundary, /function moveGapCursorAfterTableBoundary/);
+  assert.match(blockBoundary, /view\.endOfTextblock\("down"\)/);
+  assert.match(blockBoundary, /nodeAfterTable\.isTextblock/);
+  assert.match(blockBoundary, /moveGapCursorTo\(view, afterTable\)/);
+  assert.match(blockBoundary, /function moveGapCursorBeforeSelectedBlock/);
+  assert.match(blockBoundary, /function moveGapCursorAfterSelectedBlock/);
+  assert.match(blockBoundary, /nodeAfterSelectedBlock\.isTextblock/);
+  assert.match(blockBoundary, /selection instanceof NodeSelection/);
+  assert.match(blockBoundary, /Enter: \(\) =>/);
+  assert.match(blockBoundary, /ArrowDown: \(\) =>/);
+  assert.match(blockBoundary, /ArrowUp: \(\) =>/);
+  assert.match(blockBoundary, /insertParagraphAtGapCursor\(this\.editor\.view\) \|\|/);
+  assert.doesNotMatch(blockBoundary, /insertEmptyParagraphAt/);
+  assert.match(editorOptions, /createBlockBoundaryInsertionExtension\(\),\s*TableKit\.configure/);
   assert.match(css, /\.block-boundary-insert/);
   assert.match(css, /\.block-boundary-insert-button/);
   assert.match(css, /width: 0;/);
@@ -416,17 +429,19 @@ test("block-widget boundaries expose an editable insertion point", () => {
 
 test("columns markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(emptyColumnsMarkdown, /^::: columns/);
   assert.match(emptyColumnsMarkdown, /::: column/);
-  assert.match(app, /function createMarkdownContainerToken/);
-  assert.match(app, /name: "columns"/);
-  assert.match(app, /name: "column"/);
-  assert.match(app, /markdownTokenName: "columns"/);
-  assert.match(app, /markdownTokenName: "column"/);
-  assert.match(app, /createColumnExtension\(\)/);
-  assert.match(app, /createColumnsExtension\(\)/);
+  assert.match(markdownExtensions, /function createMarkdownContainerToken/);
+  assert.match(markdownExtensions, /name: "columns"/);
+  assert.match(markdownExtensions, /name: "column"/);
+  assert.match(markdownExtensions, /markdownTokenName: "columns"/);
+  assert.match(markdownExtensions, /markdownTokenName: "column"/);
+  assert.match(editorOptions, /createColumnExtension\(\)/);
+  assert.match(editorOptions, /createColumnsExtension\(\)/);
   assert.match(app, /appendColumns\(\)/);
   assert.match(app, /insertContent\(emptyColumnsMarkdown, \{ contentType: "markdown" \}\)/);
   assert.doesNotMatch(app, /setEditorBody\(`\$\{markdown\.trimEnd\(\)\}\\n\\n\$\{emptyColumnsMarkdown\}`/);
@@ -436,17 +451,22 @@ test("columns markdown containers are wired into the editor", () => {
 
 test("gallery markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const vaultImages = readFileSync("src/editor/vault-images.ts", "utf8");
+  const editorCommands = readFileSync("src/editor/commands.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const manual = readFileSync("docs-manual/index.html", "utf8");
 
-  assert.match(app, /function createGalleryExtension\(\)/);
-  assert.match(app, /name: "gallery"/);
-  assert.match(app, /markdownTokenName: "gallery"/);
-  assert.match(app, /data-glyphary-gallery/);
-  assert.match(app, /namedContainerOpening\(src, "gallery"\)/);
-  assert.match(app, /createGalleryExtension\(\)/);
-  assert.match(app, /function imageNodeMarkdown/);
-  assert.match(app, /function selectedGalleryImages/);
+  assert.match(markdownExtensions, /function createGalleryExtension\(\)/);
+  assert.match(markdownExtensions, /name: "gallery"/);
+  assert.match(markdownExtensions, /markdownTokenName: "gallery"/);
+  assert.match(markdownExtensions, /data-glyphary-gallery/);
+  assert.match(markdownExtensions, /namedContainerOpening\(src, "gallery"\)/);
+  assert.match(editorOptions, /createGalleryExtension\(\)/);
+  assert.match(vaultImages, /export function imageNodeMarkdown/);
+  assert.match(editorCommands, /export function selectedGalleryImages/);
   assert.match(app, /function wrapSelectedImagesInGallery\(\)/);
   assert.match(app, /id: "gallery-layout"/);
   assert.match(app, /title: "Gallery layout"/);
@@ -456,13 +476,14 @@ test("gallery markdown containers are wired into the editor", () => {
 
 test("editor images can be opened in a full-size preview", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(app, /type ImagePreviewState/);
   assert.match(app, /imagePreview, setImagePreview/);
   assert.match(app, /function openImagePreviewFromEditor/);
   assert.match(app, /target instanceof HTMLImageElement/);
-  assert.match(app, /onDoubleClick=\{openImagePreviewFromEditor\}/);
+  assert.match(editorPane, /onDoubleClick=\{onOpenImagePreview\}/);
   assert.match(app, /closeImagePreviewOnEscape/);
   assert.match(app, /className="image-preview-screen"/);
   assert.match(app, /aria-label="Image preview"/);
@@ -473,16 +494,18 @@ test("editor images can be opened in a full-size preview", () => {
 
 test("callout markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(emptyCalloutMarkdown, /^::: callout note "Note"/);
-  assert.match(app, /function calloutContainerOpening/);
-  assert.match(app, /name: "callout"/);
-  assert.match(app, /markdownTokenName: "callout"/);
-  assert.match(app, /data-glyphary-callout/);
-  assert.match(app, /data-callout-kind/);
-  assert.match(app, /escapeCalloutTitle/);
-  assert.match(app, /createCalloutExtension\(\)/);
+  assert.match(markdownExtensions, /function calloutContainerOpening/);
+  assert.match(markdownExtensions, /name: "callout"/);
+  assert.match(markdownExtensions, /markdownTokenName: "callout"/);
+  assert.match(markdownExtensions, /data-glyphary-callout/);
+  assert.match(markdownExtensions, /data-callout-kind/);
+  assert.match(markdownExtensions, /escapeCalloutTitle/);
+  assert.match(editorOptions, /createCalloutExtension\(\)/);
   assert.match(app, /appendCallout\(\)/);
   assert.match(css, /\.markdown-callout/);
   assert.match(css, /\.markdown-callout-warning/);
@@ -491,26 +514,28 @@ test("callout markdown containers are wired into the editor", () => {
 
 test("collapse markdown containers render as expandable details blocks", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(emptyCollapseMarkdown, /^::: collapse More details/);
-  assert.match(app, /function collapseContainerOpening/);
-  assert.match(app, /function CollapseNodeView/);
-  assert.match(app, /const \[open, setOpen\] = useState\(Boolean\(node\.attrs\.defaultOpen\)\)/);
-  assert.match(app, /name: "collapse"/);
-  assert.match(app, /markdownTokenName: "collapse"/);
-  assert.match(app, /defaultOpen/);
-  assert.match(app, /plainTitleIncludesOpenFlag/);
-  assert.match(app, /data-glyphary-collapse/);
-  assert.match(app, /markdown-collapse-summary/);
-  assert.match(app, /ReactNodeViewRenderer\(CollapseNodeView\)/);
-  assert.match(app, /setOpen\(\(value\) => !value\)/);
-  assert.match(app, /createCollapseExtension\(\)/);
+  assert.match(markdownExtensions, /function collapseContainerOpening/);
+  assert.match(markdownExtensions, /function CollapseNodeView/);
+  assert.match(markdownExtensions, /const \[open, setOpen\] = useState\(Boolean\(node\.attrs\.defaultOpen\)\)/);
+  assert.match(markdownExtensions, /name: "collapse"/);
+  assert.match(markdownExtensions, /markdownTokenName: "collapse"/);
+  assert.match(markdownExtensions, /defaultOpen/);
+  assert.match(markdownExtensions, /plainTitleIncludesOpenFlag/);
+  assert.match(markdownExtensions, /data-glyphary-collapse/);
+  assert.match(markdownExtensions, /markdown-collapse-summary/);
+  assert.match(markdownExtensions, /ReactNodeViewRenderer\(CollapseNodeView\)/);
+  assert.match(markdownExtensions, /setOpen\(\(value\) => !value\)/);
+  assert.match(editorOptions, /createCollapseExtension\(\)/);
   assert.match(app, /insertCollapseBlock\(\)/);
   assert.match(app, /id: "insert-collapse"/);
   assert.match(app, /title: "Insert collapse"/);
   assert.match(app, /insertContent\(emptyCollapseMarkdown, \{ contentType: "markdown" \}\)/);
-  assert.match(app, /const openPart = attrs\.defaultOpen === true \? " open" : ""/);
+  assert.match(markdownExtensions, /const openPart = attrs\.defaultOpen === true \? " open" : ""/);
   assert.match(css, /\.markdown-collapse/);
   assert.match(css, /\.markdown-collapse\.open/);
   assert.match(css, /\.markdown-collapse-summary/);
@@ -519,43 +544,45 @@ test("collapse markdown containers render as expandable details blocks", () => {
 
 test("html blocks are preserved as sanitized editable source blocks", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /const htmlBlockTags = new Set/);
-  assert.match(app, /function htmlBlockMarkdownToken/);
-  assert.match(app, /function sanitizeHtmlBlock/);
-  assert.match(app, /function createKeyboardKeyExtension/);
-  assert.match(app, /blockedHtmlPreviewSelector/);
-  assert.match(app, /safeHtmlAttributeValue/);
-  assert.match(app, /function isAiBuilderMarkerComment/);
-  assert.match(app, /function HtmlBlockNodeView/);
+  assert.match(markdownExtensions, /const htmlBlockTags = new Set/);
+  assert.match(markdownExtensions, /function htmlBlockMarkdownToken/);
+  assert.match(markdownExtensions, /function sanitizeHtmlBlock/);
+  assert.match(markdownExtensions, /function createKeyboardKeyExtension/);
+  assert.match(markdownExtensions, /blockedHtmlPreviewSelector/);
+  assert.match(markdownExtensions, /safeHtmlAttributeValue/);
+  assert.match(markdownExtensions, /function isAiBuilderMarkerComment/);
+  assert.match(markdownExtensions, /function HtmlBlockNodeView/);
   assert.match(emptyHtmlBlockMarkdown, /^<div>/);
-  assert.match(app, /selected, updateAttributes/);
-  assert.match(app, /name: "htmlBlock"/);
-  assert.match(app, /markdownTokenName: "htmlBlock"/);
-  assert.match(app, /data-glyphary-html-block/);
-  assert.match(app, /data-raw-html/);
-  assert.match(app, /rawHtml/);
-  assert.match(app, /dangerouslySetInnerHTML=\{\{ __html: sanitizeHtmlBlock\(rawHtml\) \}\}/);
-  assert.match(app, /selected \? \(/);
-  assert.match(app, /aria-label="HTML block source"/);
-  assert.match(app, /markdown-html-block-hidden/);
-  assert.match(app, /ReactNodeViewRenderer\(HtmlBlockNodeView\)/);
-  assert.match(app, /createHtmlBlockExtension\(\)/);
-  assert.match(app, /name: "keyboardKey"/);
-  assert.match(app, /tag: "kbd"/);
-  assert.match(app, /htmlReopen: \{ open: "<kbd>", close: "<\/kbd>" \}/);
-  assert.match(app, /`<kbd>\$\{helpers\.renderChildren\(node\.content \?\? \[\]\)\}<\/kbd>`/);
-  assert.match(app, /createKeyboardKeyExtension\(\)/);
+  assert.match(markdownExtensions, /selected, updateAttributes/);
+  assert.match(markdownExtensions, /name: "htmlBlock"/);
+  assert.match(markdownExtensions, /markdownTokenName: "htmlBlock"/);
+  assert.match(markdownExtensions, /data-glyphary-html-block/);
+  assert.match(markdownExtensions, /data-raw-html/);
+  assert.match(markdownExtensions, /rawHtml/);
+  assert.match(markdownExtensions, /dangerouslySetInnerHTML=\{\{ __html: sanitizeHtmlBlock\(rawHtml\) \}\}/);
+  assert.match(markdownExtensions, /selected \? \(/);
+  assert.match(markdownExtensions, /aria-label="HTML block source"/);
+  assert.match(markdownExtensions, /markdown-html-block-hidden/);
+  assert.match(markdownExtensions, /ReactNodeViewRenderer\(HtmlBlockNodeView\)/);
+  assert.match(editorOptions, /createHtmlBlockExtension\(\)/);
+  assert.match(markdownExtensions, /name: "keyboardKey"/);
+  assert.match(markdownExtensions, /tag: "kbd"/);
+  assert.match(markdownExtensions, /htmlReopen: \{ open: "<kbd>", close: "<\/kbd>" \}/);
+  assert.match(markdownExtensions, /`<kbd>\$\{helpers\.renderChildren\(node\.content \?\? \[\]\)\}<\/kbd>`/);
+  assert.match(editorOptions, /createKeyboardKeyExtension\(\)/);
   assert.match(app, /function insertHtmlBlock\(\)/);
   assert.match(app, /insertContent\(emptyHtmlBlockMarkdown, \{ contentType: "markdown" \}\)/);
-  assert.match(app, /createCollapseExtension\(\),\s*createHtmlBlockExtension\(\),\s*createKeyboardKeyExtension\(\),[\s\S]*createDelimitedMarkdownMarkExtension\(\{[\s\S]*createRichLinkExtension\(\)/);
-  assert.match(app, /"script"/);
-  assert.match(app, /"style"/);
-  assert.match(app, /"pre"/);
-  assert.match(app, /"iframe"/);
-  assert.match(app, /javascript\|data\|vbscript/);
-  assert.match(app, /\^on\/i/);
+  assert.match(editorOptions, /createCollapseExtension\(\),\s*createHtmlBlockExtension\(\),\s*createKeyboardKeyExtension\(\),[\s\S]*createDelimitedMarkdownMarkExtension\(\{[\s\S]*createRichLinkExtension\(\)/);
+  assert.match(markdownExtensions, /"script"/);
+  assert.match(markdownExtensions, /"style"/);
+  assert.match(markdownExtensions, /"pre"/);
+  assert.match(markdownExtensions, /"iframe"/);
+  assert.match(markdownExtensions, /javascript\|data\|vbscript/);
+  assert.match(markdownExtensions, /\^on\/i/);
   assert.match(css, /\.markdown-html-block/);
   assert.match(css, /\.markdown-html-preview/);
   assert.match(css, /\.markdown-html-source textarea/);
@@ -564,6 +591,7 @@ test("html blocks are preserved as sanitized editable source blocks", () => {
 
 test("rich link markdown containers are wired into the editor", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.equal(
@@ -582,9 +610,9 @@ image: https://example.com/card.png
 siteName: Example Site
 :::`,
   );
-  assert.match(app, /name: "richLink"/);
-  assert.match(app, /markdownTokenName: "rich-link"/);
-  assert.match(app, /data-glyphary-rich-link/);
+  assert.match(markdownExtensions, /name: "richLink"/);
+  assert.match(markdownExtensions, /markdownTokenName: "rich-link"/);
+  assert.match(markdownExtensions, /data-glyphary-rich-link/);
   assert.match(app, /fetch_rich_link_metadata/);
   assert.match(app, /id: "insert-rich-link"/);
   assert.match(app, /openRichLinkDialog/);
@@ -629,6 +657,9 @@ test("startup release checks compare the latest GitHub release tag", () => {
 
 test("excalidraw drawings are embedded as vault files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const excalidrawEditor = readFileSync("src/excalidraw/editor.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
@@ -639,15 +670,15 @@ test("excalidraw drawings are embedded as vault files", () => {
     excalidrawFileNameForTitle("System sketch?.excalidraw", date),
     "System sketch 20230102173741.excalidraw",
   );
-  assert.match(app, /const ExcalidrawCanvas = lazy/);
-  assert.match(app, /function createExcalidrawEmbedExtension/);
-  assert.match(app, /markdownTokenName: "excalidrawEmbed"/);
-  assert.match(app, /src\.search\(/);
-  assert.match(app, /return index >= 0 \? index : src\.length/);
-  assert.match(app, /excalidraw-embed-invalid/);
-  const excalidrawViewStart = app.indexOf("function ExcalidrawEmbedView");
-  const invalidEmbedReturn = app.indexOf("excalidraw-embed-invalid", excalidrawViewStart);
-  const previewEffectHook = app.indexOf("useEffect(() => {", excalidrawViewStart);
+  assert.match(excalidrawEditor, /const ExcalidrawCanvas = lazy/);
+  assert.match(excalidrawEditor, /function createExcalidrawEmbedExtension/);
+  assert.match(excalidrawEditor, /markdownTokenName: "excalidrawEmbed"/);
+  assert.match(excalidrawEditor, /src\.search\(/);
+  assert.match(excalidrawEditor, /return index >= 0 \? index : src\.length/);
+  assert.match(excalidrawEditor, /excalidraw-embed-invalid/);
+  const excalidrawViewStart = excalidrawEditor.indexOf("function ExcalidrawEmbedView");
+  const invalidEmbedReturn = excalidrawEditor.indexOf("excalidraw-embed-invalid", excalidrawViewStart);
+  const previewEffectHook = excalidrawEditor.indexOf("useEffect(() => {", excalidrawViewStart);
   assert.ok(excalidrawViewStart >= 0);
   assert.ok(previewEffectHook > excalidrawViewStart);
   assert.ok(previewEffectHook < invalidEmbedReturn);
@@ -661,14 +692,14 @@ test("excalidraw drawings are embedded as vault files", () => {
   assert.match(app, /visible element/);
   assert.match(app, /api\?\.getAppState\(\)/);
   assert.match(app, /api\?\.getFiles\(\)/);
-  assert.match(app, /excalidrawAPI=\{\(api\) =>/);
-  assert.match(app, /createExcalidrawEmbedExtension\(\{/);
+  assert.match(excalidrawEditor, /excalidrawAPI=\{onApi\}/);
+  assert.match(editorOptions, /createExcalidrawEmbedExtension\(\{/);
   assert.match(app, /id: "insert-excalidraw"/);
   assert.match(app, /title: "Insert Excalidraw drawing"/);
   assert.match(app, /openExcalidrawCreateDialog/);
   assert.match(app, /excalidrawCreateDialogOpen/);
-  assert.match(app, /aria-label="Insert Excalidraw drawing"/);
-  assert.match(app, /create_excalidraw_file/);
+  assert.match(excalidrawEditor, /aria-label="Insert Excalidraw drawing"/);
+  assert.match(vaultPersistence, /create_excalidraw_file/);
   assert.match(app, /serializeAsJSON\(elements, appState, files, "local"\)/);
   assert.match(app, /excalidrawSceneToSvgMarkup/);
   assert.match(css, /\.editor-surface \.excalidraw-embed/);
@@ -684,6 +715,8 @@ test("canvas files open as editable React Flow graph tabs", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const canvasView = readFileSync("src/CanvasView.tsx", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
+  const vaultIcons = readFileSync("src/vault/VaultIcons.tsx", "utf8");
   const canvasNodes = readFileSync("src/canvas/CanvasNodes.tsx", "utf8");
   const canvasDialogs = readFileSync("src/canvas/CanvasDialogs.tsx", "utf8");
   const canvasLogic = readFileSync("src/lib/canvas.ts", "utf8");
@@ -691,17 +724,18 @@ test("canvas files open as editable React Flow graph tabs", () => {
   const settings = readFileSync("src/lib/settings.ts", "utf8");
 
   assert.match(appTypes, /kind: "markdown" \| "canvas"/);
-  assert.match(app, /CanvasView,[\s\S]*canvasTitle,[\s\S]*isCanvasPath,[\s\S]*type CanvasCommandAction,[\s\S]*type CanvasCommandRequest,[\s\S]*from "\.\/CanvasView"/);
+  assert.match(app, /canvasTitle,[\s\S]*isCanvasPath,[\s\S]*type CanvasCommandAction,[\s\S]*type CanvasCommandRequest,[\s\S]*from "\.\/CanvasView"/);
+  assert.match(editorPane, /import \{ CanvasView, type CanvasCommandRequest \} from "\.\.\/CanvasView"/);
   assert.match(app, /if \(isCanvasPath\(file\.relativePath\)\) \{/);
   assert.match(app, /kind: "canvas"/);
   assert.match(app, /tab\?\.kind === "canvas"\s*\?\s*tab\.markdown/);
   assert.match(app, /activeTab\?\.kind !== "canvas"/);
-  assert.match(app, /<CanvasView[\s\S]*commandRequest=\{isActiveGroup \? canvasCommandRequest : null\}[\s\S]*content=\{paneMarkdown\}/);
+  assert.match(editorPane, /<CanvasView[\s\S]*commandRequest=\{isActiveGroup \? canvasCommandRequest : null\}[\s\S]*content=\{paneMarkdown\}/);
   assert.match(app, /Canvas JSON source/);
-  assert.match(app, /function CanvasFileIcon/);
-  assert.match(app, /className="vault-entry-icon canvas-file-icon"/);
-  assert.match(app, /function VaultFileIcon/);
-  assert.match(app, /isCanvasPath\(relativePath\) \? <CanvasFileIcon \/> : <MarkdownFileIcon \/>/);
+  assert.match(vaultIcons, /function CanvasFileIcon/);
+  assert.match(vaultIcons, /className="vault-entry-icon canvas-file-icon"/);
+  assert.match(vaultIcons, /function VaultFileIcon/);
+  assert.match(vaultIcons, /isCanvasPath\(relativePath\) \? <CanvasFileIcon \/> : <MarkdownFileIcon \/>/);
   assert.match(app, /<VaultFileIcon relativePath=\{entry\.relativePath\} \/>/);
   assert.match(app, /<VaultFileIcon relativePath=\{file\.relativePath\} \/>/);
   assert.match(canvasView, /from "@xyflow\/react"/);
@@ -1185,6 +1219,10 @@ test("vault plugins are settings-gated and run commands through safe host paths"
 
 test("wikilinks use the vault filename index for navigation and insertion", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const wikilinks = readFileSync("src/editor/wikilinks.ts", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const wikiLinkState = readFileSync("src/app-state/wikilinks.ts", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
@@ -1199,20 +1237,31 @@ test("wikilinks use the vault filename index for navigation and insertion", () =
   assert.match(vaultTestsBackend, /lists_vault_markdown_files_for_wikilink_index/);
   assert.match(appTypes, /export type VaultIndexedFile/);
   assert.match(appTypes, /export type WikiLinkPickerState/);
-  assert.match(app, /createWikiLinkExtension/);
-  assert.match(app, /wikiLinkTokenPattern/);
-  assert.match(app, /state\.selection\.\$from\.parent !== parent/);
-  assert.match(app, /wikilink-hidden-syntax/);
-  assert.match(app, /markup\.indexOf\("\|"\)/);
-  assert.match(app, /\[\[Actual Page\|Shown Text\]\] -> Shown Text/);
-  assert.match(app, /data-wikilink-target/);
+  assert.match(editorOptions, /createWikiLinkExtension/);
+  assert.match(wikilinks, /Responsibilities:/);
+  assert.match(wikilinks, /Contracts:/);
+  assert.match(wikilinks, /wikiLinkTokenPattern/);
+  assert.match(wikilinks, /state\.selection\.\$from\.parent !== parent/);
+  assert.match(wikilinks, /wikilink-hidden-syntax/);
+  assert.match(wikilinks, /markup\.indexOf\("\|"\)/);
+  assert.match(wikilinks, /\[\[Actual Page\|Shown Text\]\] -> Shown Text/);
+  assert.match(wikilinks, /data-wikilink-target/);
+  assert.match(wikiLinkState, /Responsibilities:/);
+  assert.match(wikiLinkState, /Contracts:/);
+  assert.match(wikiLinkState, /export function useWikiLinkState/);
+  assert.match(wikiLinkState, /wikiLinkSearchSelectedIndex/);
+  assert.match(wikiLinkState, /function addIndexedFile/);
+  assert.match(wikiLinkState, /function replaceIndexedFile/);
+  assert.match(wikiLinkState, /function removeIndexedFile/);
+  assert.match(wikiLinkState, /function resolveWikiLinkTarget/);
+  assert.match(app, /useWikiLinkState\(\)/);
   assert.match(app, /resolveWikiLinkTarget/);
   assert.match(app, /rebuildWikiLinkIndex/);
   assert.match(app, /setStatus\("Indexing\.\.\."\)/);
-  assert.match(app, /invoke<VaultIndexedFile\[]>\("list_vault_markdown_files"/);
+  assert.match(app, /listVaultMarkdownFiles\(root\)/);
+  assert.match(vaultPersistence, /list_vault_markdown_files/);
   assert.match(app, /openWikiLinkSearchRef/);
   assert.match(app, /wikiLinkSearchOpen/);
-  assert.match(app, /wikiLinkSearchSelectedIndex/);
   assert.match(app, /handleWikiLinkSearchKeyDown/);
   assert.match(app, /moveSelectableIndex\(index, filteredWikiLinkFiles\.length, 1\)/);
   assert.match(app, /moveSelectableIndex\(index, filteredWikiLinkFiles\.length, -1\)/);
@@ -1474,6 +1523,9 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
 test("vault drawer exposes files search recent and task views", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
+  const vaultTasks = readFileSync("src/tasks/vault-tasks.ts", "utf8");
+  const vaultSearch = readFileSync("src/search/vault-search.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(appTypes, /export type TaskFilter = "incomplete" \| "complete" \| "all"/);
@@ -1491,12 +1543,12 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(app, /visibleTaskResults/);
   assert.match(app, /setTaskListQuery\(event\.currentTarget\.value\)/);
   assert.match(app, /setTaskSort\(event\.currentTarget\.value as TaskSort\)/);
-  assert.match(app, /right\.modifiedMs \?\? 0/);
-  assert.match(app, /function taskSearchPattern/);
-  assert.match(app, /function taskResultPresentation/);
-  assert.match(app, /line\.match\(\/\^- \\\[/);
-  assert.ok(app.includes('return "- \\\\[[xX]\\\\]";'));
-  assert.ok(app.includes('return "- \\\\[ \\\\]";'));
+  assert.match(vaultTasks, /right\.modifiedMs \?\? 0/);
+  assert.match(vaultTasks, /function taskSearchPattern/);
+  assert.match(vaultTasks, /function taskResultPresentation/);
+  assert.match(vaultTasks, /line\.match\(\/\^- \\\[/);
+  assert.ok(vaultTasks.includes('return "- \\\\[[xX]\\\\]";'));
+  assert.ok(vaultTasks.includes('return "- \\\\[ \\\\]";'));
   assert.match(app, /includeContent: true/);
   assert.match(app, /markdownOnly: true/);
   assert.match(app, /excludeDotPaths: true/);
@@ -1504,13 +1556,13 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(app, /renderToolbarIcon\("refresh"\)/);
   assert.match(app, /renderToolbarIcon\(task\.completed \? "task-done" : "task-open"\)/);
   assert.match(app, /result\.isContentMatch/);
-  assert.match(app, /const visibleSearchResults = useMemo\(\(\) => \{/);
-  assert.match(app, /const seenPaths = new Set<string>\(\)/);
-  assert.match(app, /const matchCounts = searchResults\.reduce/);
-  assert.match(app, /counts\.set\(result\.relativePath, \(counts\.get\(result\.relativePath\) \?\? 0\) \+ 1\)/);
-  assert.match(app, /seenPaths\.has\(result\.relativePath\)/);
-  assert.match(app, /\.sort\(\(left, right\) => \(right\.modifiedMs \?\? 0\) - \(left\.modifiedMs \?\? 0\)\)/);
-  assert.match(app, /matchCount: matchCounts\.get\(result\.relativePath\) \?\? 1/);
+  assert.match(app, /visibleVaultSearchResults\(searchResults\)/);
+  assert.match(vaultSearch, /const seenPaths = new Set<string>\(\)/);
+  assert.match(vaultSearch, /const matchCounts = searchResults\.reduce/);
+  assert.match(vaultSearch, /counts\.set\(result\.relativePath, \(counts\.get\(result\.relativePath\) \?\? 0\) \+ 1\)/);
+  assert.match(vaultSearch, /seenPaths\.has\(result\.relativePath\)/);
+  assert.match(vaultSearch, /\.sort\(\(left, right\) => \(right\.modifiedMs \?\? 0\) - \(left\.modifiedMs \?\? 0\)\)/);
+  assert.match(vaultSearch, /matchCount: matchCounts\.get\(result\.relativePath\) \?\? 1/);
   assert.match(app, /visibleSearchResults\.map\(\(\{ matchCount, result \}, index\) =>/);
   assert.match(app, /matchCount === 1 \? "1 match" : `\$\{matchCount\} matches`/);
   assert.match(app, /async function openFile\(\s*relativePath: string,[\s\S]*revealInVaultDrawer\?: boolean/);
@@ -1526,7 +1578,7 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(css, /\.task-results/);
   assert.doesNotMatch(app, /className="file-context"/);
   assert.match(app, /displayVaultRelativePath\(activeFile\?\.relativePath \?\? currentDir, vaultRoot\)/);
-  assert.match(app, /frontmatterScalarValue\(paneMetaHeader, "banner"\)/);
+  assert.match(editorPane, /frontmatterScalarValue\(paneMetaHeader, "banner"\)/);
   assert.match(app, /useState<"edit" \| "view">\("edit"\)/);
   assert.match(app, /className="view-mode-control"/);
   assert.match(app, /aria-label="Document display mode"/);
@@ -1535,15 +1587,15 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(app, /<svg aria-hidden="true" viewBox="0 0 24 24">/);
   assert.match(app, /setDocumentDisplayMode\("view"\)/);
   assert.match(app, /setDocumentDisplayMode\("edit"\)/);
-  assert.match(app, /const showEditingChrome = documentDisplayMode === "edit"/);
-  assert.match(app, /!isCanvasTab && showEditingChrome/);
-  assert.match(app, /isActiveGroup && !isCanvasTab && showEditingChrome/);
-  assert.match(app, /className="document-banner"/);
-  assert.match(app, /className="document-banner"[\s\S]*className="metadata-shell"/);
-  assert.match(app, /<img alt="" src=\{bannerSrc\} \/>/);
+  assert.match(editorPane, /const showEditingChrome = documentDisplayMode === "edit"/);
+  assert.match(editorPane, /!isCanvasTab && showEditingChrome/);
+  assert.match(editorPane, /isActiveGroup && !isCanvasTab && showEditingChrome/);
+  assert.match(editorPane, /className="document-banner"/);
+  assert.match(editorPane, /className="document-banner"[\s\S]*className="metadata-shell"/);
+  assert.match(editorPane, /<img alt="" src=\{bannerSrc\} \/>/);
   assert.doesNotMatch(app, /vaultDrawerItem === "files"[\s\S]*?return vaultRoot \|\| "No vault selected"/);
   assert.doesNotMatch(app, /aria-label="Close vault drawer"/);
-  assert.match(app, /className=\{isActiveGroup \? "editor-pane-shell active-group" : "editor-pane-shell"\}/);
+  assert.match(editorPane, /className=\{isActiveGroup \? "editor-pane-shell active-group" : "editor-pane-shell"\}/);
   assert.match(css, /\.editor-pane-shell/);
   assert.match(css, /\.view-mode-control/);
   assert.match(css, /\.view-mode-button/);
@@ -1562,6 +1614,9 @@ test("vault drawer exposes files search recent and task views", () => {
 
 test("vault rows expose context menu actions for folders and files", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const vaultTree = readFileSync("src/vault/VaultFolderTree.tsx", "utf8");
+  const vaultIcons = readFileSync("src/vault/VaultIcons.tsx", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
@@ -1587,9 +1642,9 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(app, /moveFolderFromContextMenu/);
   assert.match(app, /moveFileFromContextMenu/);
   assert.match(app, /deleteFileFromContextMenu/);
-  assert.match(app, /function VaultFolderTree/);
-  assert.match(app, /isMoveFolderDestinationDisabled/);
-  assert.match(app, /children\.filter\(\(entry\) => entry\.isDir\)/);
+  assert.match(vaultTree, /function VaultFolderTree/);
+  assert.match(vaultTree, /isMoveFolderDestinationDisabled/);
+  assert.match(vaultTree, /children\.filter\(\(entry\) => entry\.isDir\)/);
   assert.match(app, /folderActionDialog/);
   assert.match(app, /openFolderActionDialog\("create-folder"/);
   assert.match(app, /openFolderActionDialog\("create-canvas"/);
@@ -1598,13 +1653,13 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(app, /openFolderActionDialog\("rename-file"/);
   assert.match(app, /openFolderActionDialog\("delete-file"/);
   assert.match(app, /aria-label=\{folderActionDialogTitle\(folderActionDialog\.action\)\}/);
-  assert.match(app, /"create_note_in_directory"/);
-  assert.match(app, /"create_canvas_in_directory"/);
-  assert.match(app, /"create_directory_in_directory"/);
-  assert.match(app, /"rename_vault_directory"/);
-  assert.match(app, /"move_vault_directory"/);
-  assert.match(app, /"move_vault_file"/);
-  assert.match(app, /"delete_vault_file"/);
+  assert.match(vaultPersistence, /"create_note_in_directory"/);
+  assert.match(vaultPersistence, /"create_canvas_in_directory"/);
+  assert.match(vaultPersistence, /"create_directory_in_directory"/);
+  assert.match(vaultPersistence, /"rename_vault_directory"/);
+  assert.match(vaultPersistence, /"move_vault_directory"/);
+  assert.match(vaultPersistence, /"move_vault_file"/);
+  assert.match(vaultPersistence, /"delete_vault_file"/);
   assert.match(app, /Create Note/);
   assert.match(app, /Create Canvas/);
   assert.match(app, /Create Folder/);
@@ -1614,7 +1669,8 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(app, /Rename Canvas/);
   assert.match(app, /Delete File/);
   assert.match(app, /<VaultFolderTree/);
-  assert.match(app, /<FolderIcon \/>/);
+  assert.match(vaultTree, /<FolderIcon \/>/);
+  assert.match(vaultIcons, /function FolderIcon/);
   assert.match(app, /Rename/);
   assert.match(css, /\.folder-context-menu/);
   assert.match(css, /\.folder-action-dialog-card/);
@@ -1643,6 +1699,9 @@ test("native webview context menu is suppressed so chrome does not show refresh"
 test("app css exposes the Obsidian theme compatibility surface", () => {
   const css = readFileSync("src/App.css", "utf8");
   const app = readFileSync("src/App.tsx", "utf8");
+  const documentsState = readFileSync("src/app-state/documents.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const settings = readFileSync("src/lib/settings.ts", "utf8");
   const config = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
@@ -1669,7 +1728,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(css, /--blockquote-border-color:/);
   assert.match(app, /theme-dark/);
   assert.match(app, /theme-light/);
-  assert.match(app, /markdown-preview-view/);
+  assert.match(editorPane, /markdown-preview-view/);
   assert.match(app, /Theme Builder/);
   assert.match(appTypes, /kind\?: "color" \| "value"/);
   assert.match(app, /defaultThemeLevelOneTokens/);
@@ -1745,13 +1804,15 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(appTypes, /export type TidbitSettings/);
   assert.doesNotMatch(app, /attachmentDirectory: string/);
   assert.doesNotMatch(app, /defaultVaultAttachmentDirectory/);
-  assert.match(app, /function joinVaultImagePath/);
-  assert.match(app, /function joinVaultRelativeImagePath/);
-  assert.match(app, /if \(!cleanReference\.includes\("\/"\)\) \{/);
-  assert.match(app, /return joinVaultImagePath\(root, cleanReference\)/);
-  assert.match(app, /defaultVaultImageDirectory/);
-  assert.match(app, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultImageDirectory\}\/\$\{cleanReference\}`\)/);
-  assert.match(app, /createVaultImageExtension\(\s*\(target\) => joinVaultImagePath/);
+  assert.match(documentsState, /Responsibilities:/);
+  assert.match(documentsState, /Contracts:/);
+  assert.match(documentsState, /function joinVaultImagePath/);
+  assert.match(documentsState, /function joinVaultRelativeImagePath/);
+  assert.match(documentsState, /if \(!cleanReference\.includes\("\/"\)\) \{/);
+  assert.match(documentsState, /return joinVaultImagePath\(root, cleanReference\)/);
+  assert.match(documentsState, /defaultVaultImageDirectory/);
+  assert.match(documentsState, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultImageDirectory\}\/\$\{cleanReference\}`\)/);
+  assert.match(editorOptions, /createVaultImageExtension\(resolveVaultImageSrc, resolveVaultAssetSrc\)/);
   assert.match(app, /assetDirectory: defaultVaultImageDirectory/);
   assert.match(settings, /defaultFileDisplaySettings/);
   assert.match(settings, /showDotfiles: false/);
@@ -1897,56 +1958,63 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
 
 test("vim-style editing is wired behind a settings option", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const vimMode = readFileSync("src/editor/vim-mode.ts", "utf8");
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
 
   assert.equal(pkg.dependencies["@prose-motions/core"], undefined);
-  assert.match(app, /name: "glypharyVimMode"/);
-  assert.match(app, /editorBehavior\.vimMode \? \[createGlypharyVimMode\(setStatus\)\] : \[\]/);
-  assert.match(app, /Vim normal mode/);
-  assert.match(app, /Vim insert mode/);
-  assert.match(app, /case "u":/);
-  assert.match(app, /event\.key\.toLowerCase\(\) === "r"/);
-  assert.match(app, /case "A":/);
-  assert.match(app, /case "0":/);
-  assert.match(app, /case "\$":/);
-  assert.match(app, /case "\^":/);
-  assert.match(app, /case "Space":/);
-  assert.match(app, /case "%":/);
-  assert.match(app, /case "G":/);
-  assert.match(app, /case "g":/);
-  assert.match(app, /moveToFileStart/);
-  assert.match(app, /Selection\.atStart\(state\.doc\)/);
-  assert.match(app, /case "c":/);
-  assert.match(app, /case "d":/);
-  assert.match(app, /case "w":/);
-  assert.match(app, /case "b":/);
-  assert.match(app, /case "x":/);
-  assert.match(app, /case "s":/);
-  assert.match(app, /case "S":/);
-  assert.match(app, /case "p":/);
-  assert.match(app, /case "O":/);
-  assert.match(app, /case "y":/);
-  assert.match(app, /writeCopyBuffer\(\{ text, linewise: true \}\)/);
-  assert.match(app, /deleteWordUnderCursor/);
-  assert.match(app, /yankWordUnderCursor/);
-  assert.match(app, /handleTextInput: \(\) =>/);
+  assert.match(vimMode, /Responsibilities:/);
+  assert.match(vimMode, /Contracts:/);
+  assert.match(vimMode, /name: "glypharyVimMode"/);
+  assert.match(editorOptions, /\.\.\.\(vimMode \? \[createGlypharyVimMode\(setStatus\)\] : \[\]\)/);
+  assert.match(vimMode, /Vim normal mode/);
+  assert.match(vimMode, /Vim insert mode/);
+  assert.match(vimMode, /case "u":/);
+  assert.match(vimMode, /event\.key\.toLowerCase\(\) === "r"/);
+  assert.match(vimMode, /case "A":/);
+  assert.match(vimMode, /case "0":/);
+  assert.match(vimMode, /case "\$":/);
+  assert.match(vimMode, /case "\^":/);
+  assert.match(vimMode, /case "Space":/);
+  assert.match(vimMode, /case "%":/);
+  assert.match(vimMode, /case "G":/);
+  assert.match(vimMode, /case "g":/);
+  assert.match(vimMode, /moveToFileStart/);
+  assert.match(vimMode, /Selection\.atStart\(state\.doc\)/);
+  assert.match(vimMode, /case "c":/);
+  assert.match(vimMode, /case "d":/);
+  assert.match(vimMode, /case "w":/);
+  assert.match(vimMode, /case "b":/);
+  assert.match(vimMode, /case "x":/);
+  assert.match(vimMode, /case "s":/);
+  assert.match(vimMode, /case "S":/);
+  assert.match(vimMode, /case "p":/);
+  assert.match(vimMode, /case "O":/);
+  assert.match(vimMode, /case "y":/);
+  assert.match(vimMode, /writeCopyBuffer\(\{ text, linewise: true \}\)/);
+  assert.match(vimMode, /deleteWordUnderCursor/);
+  assert.match(vimMode, /yankWordUnderCursor/);
+  assert.match(vimMode, /handleTextInput: \(\) =>/);
   assert.match(app, /Use Vim keybindings/);
 });
 
 test("command save shortcut is wrapped in the webview", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const pageSearch = readFileSync("src/search/page-search.ts", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(app, /handleGlobalSaveShortcut/);
   assert.match(app, /handleGlobalCommandPaletteShortcut/);
   assert.match(app, /handleGlobalPageSearchShortcut/);
   assert.match(app, /handleGlobalCloseTabShortcut/);
-  assert.match(app, /function pageSearchMatches/);
-  assert.match(app, /new PluginKey<PageSearchPluginState>\("pageSearch"\)/);
-  assert.match(app, /const PageSearchRenderer = Extension\.create/);
-  assert.match(app, /PageSearchRenderer/);
-  assert.match(app, /const CommandPaletteSelectionRenderer = Extension\.create/);
-  assert.match(app, /CommandPaletteSelectionRenderer/);
+  assert.match(pageSearch, /function pageSearchMatches/);
+  assert.match(pageSearch, /new PluginKey<PageSearchPluginState>\("pageSearch"\)/);
+  assert.match(pageSearch, /const PageSearchRenderer = Extension\.create/);
+  assert.match(editorOptions, /PageSearchRenderer/);
+  assert.match(pageSearch, /const CommandPaletteSelectionRenderer = Extension\.create/);
+  assert.match(editorOptions, /CommandPaletteSelectionRenderer/);
   assert.match(app, /commandPaletteSelectionPluginKey/);
   assert.match(app, /commandPaletteSelectionRef/);
   assert.match(app, /function captureCommandPaletteSelection/);
@@ -1955,16 +2023,16 @@ test("command save shortcut is wrapped in the webview", () => {
   assert.match(app, /saved\.editor\.view\.focus\(\)/);
   assert.match(app, /captureCommandPaletteSelection\(\);\s*setCommandPaletteOpen\(true\)/);
   assert.match(app, /function closeCommandPalette\(\) \{\s*restoreCommandPaletteSelection\(\)/);
-  assert.match(app, /Decoration\.inline\(match\.from, match\.to/);
-  assert.match(app, /Decoration\.inline\(range\.from, range\.to/);
-  assert.match(app, /targetEditor\.state\.tr\.setMeta\(pageSearchPluginKey, state\)/);
+  assert.match(pageSearch, /Decoration\.inline\(match\.from, match\.to/);
+  assert.match(pageSearch, /Decoration\.inline\(range\.from, range\.to/);
+  assert.match(pageSearch, /targetEditor\.state\.tr\.setMeta\(pageSearchPluginKey, state\)/);
   assert.match(app, /targetEditor\.state\.tr\.setMeta\(commandPaletteSelectionPluginKey, state\)/);
-  assert.match(app, /function openPageSearch/);
-  assert.match(app, /function closePageSearch/);
-  assert.match(app, /function movePageSearch/);
-  assert.match(app, /const \[pageSearchOpen, setPageSearchOpen\] = useState\(false\)/);
-  assert.match(app, /const \[pageSearchQuery, setPageSearchQuery\] = useState\(""\)/);
-  assert.match(app, /const \[pageSearchIndex, setPageSearchIndex\] = useState\(0\)/);
+  assert.match(pageSearch, /function openSearch/);
+  assert.match(pageSearch, /function closeSearch/);
+  assert.match(pageSearch, /function move/);
+  assert.match(pageSearch, /const \[open, setOpen\] = useState\(false\)/);
+  assert.match(pageSearch, /const \[query, setQuery\] = useState\(""\)/);
+  assert.match(pageSearch, /const \[index, setIndex\] = useState\(0\)/);
   assert.match(app, /event\.key\.toLowerCase\(\) !== "s"/);
   assert.match(app, /event\.key\.toLowerCase\(\) !== "p"/);
   assert.match(app, /event\.key\.toLowerCase\(\) !== "f"/);
@@ -1975,11 +2043,11 @@ test("command save shortcut is wrapped in the webview", () => {
   assert.match(app, /openPageSearchRef\.current\(\)/);
   assert.match(app, /closeActiveDocumentTabRef\.current\(\)/);
   assert.match(app, /setCommandPaletteOpen\(true\)/);
-  assert.match(app, /className="page-search-bar"/);
-  assert.match(app, /aria-label="Find in page"/);
-  assert.match(app, /aria-label="Previous match"/);
-  assert.match(app, /aria-label="Next match"/);
-  assert.match(app, /aria-label="Close find in page"/);
+  assert.match(editorPane, /className="page-search-bar"/);
+  assert.match(editorPane, /aria-label="Find in page"/);
+  assert.match(editorPane, /aria-label="Previous match"/);
+  assert.match(editorPane, /aria-label="Next match"/);
+  assert.match(editorPane, /aria-label="Close find in page"/);
   assert.match(app, /window\.addEventListener\("keydown", handleGlobalSaveShortcut\)/);
   assert.match(app, /window\.addEventListener\("keydown", handleGlobalCommandPaletteShortcut\)/);
   assert.match(app, /window\.addEventListener\("keydown", handleGlobalPageSearchShortcut, \{ capture: true \}\)/);
@@ -2000,12 +2068,17 @@ test("renaming a page title immediately saves the active file", () => {
 
 test("quick command palette exposes initial editor commands", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const commandPalette = readFileSync("src/command-palette/commands.ts", "utf8");
+  const editorCommands = readFileSync("src/editor/commands.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
 
-  assert.match(app, /type CommandPaletteCommand/);
-  assert.match(app, /type CommandPaletteScope = "root" \| "ai" \| "insert" \| "format" \| "table"/);
+  assert.match(commandPalette, /type CommandPaletteCommand/);
+  assert.match(commandPalette, /type CommandPaletteScope = "root" \| "ai" \| "insert" \| "format" \| "table"/);
   assert.match(app, /commandPaletteCommands/);
   assert.match(app, /insertCommandPaletteCommands/);
   assert.match(app, /canvasInsertCommandPaletteCommands/);
@@ -2017,11 +2090,11 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /activeDocumentIsCanvas\s*\?\s*canvasInsertCommandPaletteCommands\s*:\s*insertCommandPaletteCommands/);
   assert.match(app, /activeCommandPaletteCommands/);
   assert.match(app, /setCanvasCommandRequest/);
-  assert.match(app, /commandRequest=\{isActiveGroup \? canvasCommandRequest : null\}/);
+  assert.match(editorPane, /commandRequest=\{isActiveGroup \? canvasCommandRequest : null\}/);
   assert.match(app, /id: "create-tidbit"/);
   assert.match(app, /title: "Create Tidbit"/);
   assert.match(app, /expandDateTemplate\(tidbitSettings\.pathPattern\)/);
-  assert.match(app, /"create_vault_markdown_file"/);
+  assert.match(vaultPersistence, /"create_vault_markdown_file"/);
   assert.match(app, /id: "insert-rich-link"/);
   assert.match(app, /title: "Insert rich link"/);
   assert.match(app, /id: "insert-columns"/);
@@ -2043,34 +2116,36 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /id: "insert-menu"/);
   assert.match(app, /title: "Insert \.\.\."/);
   assert.match(app, /function formatSelectionAsKeyboardKey\(\)/);
-  assert.match(app, /function createDelimitedMarkdownMarkExtension/);
-  assert.match(app, /function findSingleTildeDelimiter/);
-  assert.match(app, /name: "highlight"/);
-  assert.match(app, /delimiter: "=="/);
-  assert.match(app, /tag: "mark"/);
-  assert.match(app, /name: "superscript"/);
-  assert.match(app, /delimiter: "\^"/);
-  assert.match(app, /tag: "sup"/);
-  assert.match(app, /name: "subscript"/);
-  assert.match(app, /delimiter: "~"/);
-  assert.match(app, /tag: "sub"/);
-  assert.match(app, /function formatSelectionWithMark\(markType: string, label: string\)/);
-  assert.match(app, /marks: \[\{ type: markType \}\]/);
+  const markdownExtensions = readFileSync("src/editor/markdown-extensions.tsx", "utf8");
+
+  assert.match(markdownExtensions, /function createDelimitedMarkdownMarkExtension/);
+  assert.match(markdownExtensions, /function findSingleTildeDelimiter/);
+  assert.match(editorOptions, /name: "highlight"/);
+  assert.match(editorOptions, /delimiter: "=="/);
+  assert.match(editorOptions, /tag: "mark"/);
+  assert.match(editorOptions, /name: "superscript"/);
+  assert.match(editorOptions, /delimiter: "\^"/);
+  assert.match(editorOptions, /tag: "sup"/);
+  assert.match(editorOptions, /name: "subscript"/);
+  assert.match(editorOptions, /delimiter: "~"/);
+  assert.match(editorOptions, /tag: "sub"/);
+  assert.match(editorCommands, /function formatSelectionWithMark/);
+  assert.match(editorCommands, /marks: \[\{ type: markType \}\]/);
   assert.match(app, /id: "format-strikethrough"/);
   assert.match(app, /title: "Strikethrough"/);
-  assert.match(app, /formatSelectionWithMark\("strike", "strikethrough"\)/);
+  assert.match(app, /formatSelectionWithMark\(editor, "strike", "strikethrough", setStatus\)/);
   assert.match(app, /id: "format-highlight"/);
   assert.match(app, /title: "Highlight"/);
-  assert.match(app, /formatSelectionWithMark\("highlight", "a highlight"\)/);
+  assert.match(app, /formatSelectionWithMark\(editor, "highlight", "a highlight", setStatus\)/);
   assert.match(app, /id: "format-superscript"/);
   assert.match(app, /title: "Superscript"/);
-  assert.match(app, /formatSelectionWithMark\("superscript", "superscript"\)/);
+  assert.match(app, /formatSelectionWithMark\(editor, "superscript", "superscript", setStatus\)/);
   assert.match(app, /id: "format-subscript"/);
   assert.match(app, /title: "Subscript"/);
-  assert.match(app, /formatSelectionWithMark\("subscript", "subscript"\)/);
+  assert.match(app, /formatSelectionWithMark\(editor, "subscript", "subscript", setStatus\)/);
   assert.match(app, /id: "format-keyboard"/);
   assert.match(app, /title: "Keyboard"/);
-  assert.match(app, /formatSelectionWithMark\("keyboardKey", "a keyboard key"\)/);
+  assert.match(app, /formatSelectionWithMark\(editor, "keyboardKey", "a keyboard key", setStatus\)/);
   assert.match(app, /Wrap selected text in <kbd> tags/);
   assert.match(css, /\.editor-surface mark/);
   assert.match(css, /\.editor-surface sup,/);
@@ -2088,13 +2163,13 @@ test("quick command palette exposes initial editor commands", () => {
   assert.match(app, /id: "canvas-create-group"/);
   assert.match(app, /title: "Create Group"/);
   assert.match(app, /setCommandPaletteScope\("insert"\)/);
-  assert.match(app, /Insert commands/);
-  assert.match(app, /Canvas insert commands/);
-  assert.match(app, /Type an insert command/);
-  assert.match(app, /Type a canvas insert command/);
+  assert.match(commandPalette, /Insert commands/);
+  assert.match(commandPalette, /Canvas insert commands/);
+  assert.match(commandPalette, /Type an insert command/);
+  assert.match(commandPalette, /Type a canvas insert command/);
   assert.match(app, /setCommandPaletteScope\("format"\)/);
-  assert.match(app, /Format commands/);
-  assert.match(app, /Type a format command/);
+  assert.match(commandPalette, /Format commands/);
+  assert.match(commandPalette, /Type a format command/);
   assert.match(app, /function appendTableOfContentsBlock\(\)/);
   assert.match(app, /insertContent\("```toc\\n```", \{ contentType: "markdown" \}\)/);
   assert.match(app, /role="combobox"/);
@@ -2118,6 +2193,9 @@ test("quick command palette exposes initial editor commands", () => {
 
 test("AI commands use vault settings and review output before editing", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
+  const commandPalette = readFileSync("src/command-palette/commands.ts", "utf8");
+  const editorCommands = readFileSync("src/editor/commands.ts", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const aiBuilderModule = readFileSync("src/lib/ai-builder.ts", "utf8");
   const settings = readFileSync("src/lib/settings.ts", "utf8");
@@ -2202,11 +2280,11 @@ test("AI commands use vault settings and review output before editing", () => {
   assert.match(app, /title: "AI \.\.\."/);
   assert.match(app, /setCommandPaletteScope\("ai"\)/);
   assert.match(app, /commandPaletteScope === "ai"[\s\S]*aiCommandPaletteCommands[\s\S]*commandPaletteScope === "insert"[\s\S]*activeInsertCommandPaletteCommands[\s\S]*commandPaletteScope === "format"[\s\S]*formatCommandPaletteCommands[\s\S]*commandPaletteScope === "table"[\s\S]*tableCommandPaletteCommands[\s\S]*commandPaletteCommands/);
-  assert.match(app, /AI commands/);
-  assert.match(app, /Type an AI command/);
+  assert.match(commandPalette, /AI commands/);
+  assert.match(commandPalette, /Type an AI command/);
   assert.match(app, /Enable AI commands in Settings before using this command/);
   assert.match(app, /const settings = savedAiSettings\(\)/);
-  assert.match(app, /function currentCursorContext/);
+  assert.match(editorCommands, /function currentCursorContext/);
   assert.match(app, /function openAiPageBuilder/);
   assert.match(app, /function stripJsonCodeFence/);
   assert.match(app, /function parseAiPageBuilderResponse/);
@@ -2241,8 +2319,8 @@ test("AI commands use vault settings and review output before editing", () => {
   assert.match(app, /async function aiBuilderSearchVaultNotes/);
   assert.match(app, /async function aiBuilderSearchVaultTasks/);
   assert.match(app, /async function aiBuilderVaultContext/);
-  assert.match(app, /invoke<SearchResult\[\]>\("search_vault"/);
-  assert.match(app, /invoke<OpenedFile>\("read_vault_file"/);
+  assert.match(vaultPersistence, /"search_vault"/);
+  assert.match(vaultPersistence, /"read_vault_file"/);
   assert.match(app, /function normalizeMalformedVaultImageMarkdown/);
   assert.match(app, /function normalizeAiMarkdownForApply/);
   assert.match(app, /invalid nested form `!\[Logo\]\(!\[\[logo\.png\]\]\)`/);
@@ -2369,6 +2447,9 @@ test("AI commands use vault settings and review output before editing", () => {
 
 test("table row and column actions are contextual command palette entries", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const commandPalette = readFileSync("src/command-palette/commands.ts", "utf8");
+  const editorCommands = readFileSync("src/editor/commands.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(app, /const cursorInsideTable/);
@@ -2388,19 +2469,19 @@ test("table row and column actions are contextual command palette entries", () =
   assert.match(app, /id: "table-menu"/);
   assert.match(app, /title: "Table \.\.\."/);
   assert.match(app, /setCommandPaletteScope\("table"\)/);
-  assert.match(app, /Table commands/);
-  assert.match(app, /Type a table command/);
-  assert.match(app, /type TableColumnAlignment = "left" \| "center" \| "right"/);
+  assert.match(commandPalette, /Table commands/);
+  assert.match(commandPalette, /Type a table command/);
+  assert.match(editorCommands, /type TableColumnAlignment = "left" \| "center" \| "right"/);
   assert.match(app, /function handleEditorContextMenu/);
   assert.match(app, /target\?\.closest\("table"\)/);
-  assert.match(app, /onContextMenu=\{\(event\) => handleEditorContextMenu\(event, groupEditor, groupId\)\}/);
-  assert.match(app, /TableMap\.get\(table\)/);
-  assert.match(app, /map\.cellsInRect/);
-  assert.match(app, /tr\.setNodeMarkup\(tableStart \+ cellPosition/);
-  assert.match(app, /Avoid CellSelection here/);
-  assert.match(app, /Cmd\+Z would restore a visible whole-column selection/);
-  assert.match(app, /const restorePosition = state\.selection\.from/);
-  assert.match(app, /tr\.setSelection\(TextSelection\.create\(tr\.doc, restorePosition\)\)/);
+  assert.match(editorPane, /onContextMenu=\{\(event\) => onEditorContextMenu\(event, groupEditor, groupId\)\}/);
+  assert.match(editorCommands, /TableMap\.get\(table\)/);
+  assert.match(editorCommands, /map\.cellsInRect/);
+  assert.match(editorCommands, /tr\.setNodeMarkup\(tableStart \+ cellPosition/);
+  assert.match(editorCommands, /Avoid CellSelection here/);
+  assert.match(editorCommands, /Cmd\+Z would restore a visible whole-column selection/);
+  assert.match(editorCommands, /const restorePosition = state\.selection\.from/);
+  assert.match(editorCommands, /tr\.setSelection\(TextSelection\.create\(tr\.doc, restorePosition\)\)/);
   assert.doesNotMatch(app, /CellSelection\.colSelection/);
   assert.doesNotMatch(app, /setCellAttribute\("align", alignment\)/);
   assert.match(app, /onMouseDown=\{\(event\) => event\.preventDefault\(\)\}/);
@@ -2422,16 +2503,18 @@ test("table row and column actions are contextual command palette entries", () =
 
 test("list task quote code table columns and callout toolbar actions render as icons", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const toolbarIcons = readFileSync("src/toolbar-icons.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const packageJson = JSON.parse(readFileSync("package.json", "utf8"));
 
-  assert.match(app, /import \{ TaskItem \} from "@tiptap\/extension-task-item"/);
-  assert.match(app, /import \{ TaskList \} from "@tiptap\/extension-task-list"/);
-  assert.match(app, /TaskItem\.configure\(\{\s*nested: true,/);
-  assert.match(app, /TaskList/);
+  assert.match(editorOptions, /import \{ TaskItem \} from "@tiptap\/extension-task-item"/);
+  assert.match(editorOptions, /import \{ TaskList \} from "@tiptap\/extension-task-list"/);
+  assert.match(editorOptions, /TaskItem\.configure\(\{[\s\S]*nested: true,/);
+  assert.match(editorOptions, /TaskList/);
   assert.match(app, /toggleTaskList\(\)/);
-  assert.match(app, /renderToolbarIcon\(action\.icon\)/);
+  assert.match(editorPane, /renderToolbarIcon\(action\.icon\)/);
   assert.match(toolbarIcons, /export type ToolbarIconName/);
   assert.match(toolbarIcons, /export function renderToolbarIcon/);
   assert.match(app, /icon: "bullet-list"/);
@@ -2443,8 +2526,8 @@ test("list task quote code table columns and callout toolbar actions render as i
   assert.match(app, /icon: "table"/);
   assert.match(app, /icon: "columns"/);
   assert.match(app, /icon: "callout"/);
-  assert.match(app, /aria-label=\{action\.title\}/);
-  assert.match(app, /action\.icon \? renderToolbarIcon\(action\.icon\) : action\.label/);
+  assert.match(editorPane, /aria-label=\{action\.title\}/);
+  assert.match(editorPane, /action\.icon \? renderToolbarIcon\(action\.icon\) : action\.label/);
   assert.match(css, /\.tool-button svg/);
   assert.match(css, /ul\[data-type="taskList"\]/);
   assert.match(css, /li\[data-type="taskItem"\]/);
@@ -2458,36 +2541,42 @@ test("list task quote code table columns and callout toolbar actions render as i
 
 test("toolbar state refreshes when editor selection changes", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
 
   assert.match(app, /editorStateVersion/);
   assert.match(app, /setEditorStateVersion\(\(version\) => version \+ 1\)/);
-  assert.match(app, /onSelectionUpdate: \(\{ editor \}: \{ editor: Editor \}\) => \{/);
+  assert.match(editorOptions, /onSelectionUpdate: \(\{ editor \}: \{ editor: Editor \}\) => \{/);
   assert.match(app, /\[editor, editorFocused, editorStateVersion, markdown\]/);
 });
 
 test("code block language picker renders inside the active code block", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const codeBlockLanguage = readFileSync("src/editor/code-block-language.tsx", "utf8");
+  const codeBlockRenderers = readFileSync("src/editor/code-block-renderers.ts", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /function codeBlockContainsSelection\(selection: Selection, position: number, nodeSize: number\)/);
-  assert.match(app, /const contentStart = position \+ 1;/);
-  assert.match(app, /const contentEnd = position \+ nodeSize - 1;/);
-  assert.match(app, /selection\.from >= contentStart && selection\.to <= contentEnd/);
-  assert.match(app, /function codeBlockDecorationsContainLanguageControl/);
-  assert.match(app, /includes\("code-block-language-active"\)/);
-  assert.match(app, /function CodeBlockNodeView/);
-  assert.match(app, /new PluginKey\("codeBlockLanguageControl"\)/);
-  assert.match(app, /codeBlockContainsSelection\(state\.selection, position, node\.nodeSize\)/);
-  assert.match(app, /addKeyboardShortcuts\(\) \{/);
-  assert.match(app, /Tab: \(\) => \{/);
-  assert.match(app, /return this\.editor\.commands\.insertContent\("    "\);/);
-  assert.match(app, /"Shift-Tab": \(\) => this\.editor\.isActive\(this\.name\),/);
-  assert.match(app, /ReactNodeViewRenderer\(CodeBlockNodeView, \{\s*update: \(\{ updateProps \}\) => \{/);
-  assert.match(app, /updateProps\(\);/);
-  assert.match(app, /CodeBlockWithLanguageControl\.configure\(\{\s*lowlight,/);
-  assert.match(app, /class: "code-block-language-active"/);
-  assert.match(app, /className="code-block-language-control"/);
-  assert.match(app, /<NodeViewContent<"code"> as="code" \/>/);
+  assert.match(codeBlockLanguage, /Responsibilities:/);
+  assert.match(codeBlockLanguage, /Contracts:/);
+  assert.match(codeBlockRenderers, /function codeBlockContainsSelection\(/);
+  assert.match(codeBlockRenderers, /const contentStart = position \+ 1;/);
+  assert.match(codeBlockRenderers, /const contentEnd = position \+ nodeSize - 1;/);
+  assert.match(codeBlockRenderers, /selection\.from >= contentStart && selection\.to <= contentEnd/);
+  assert.match(codeBlockLanguage, /function codeBlockDecorationsContainLanguageControl/);
+  assert.match(codeBlockLanguage, /includes\("code-block-language-active"\)/);
+  assert.match(codeBlockLanguage, /function CodeBlockNodeView/);
+  assert.match(codeBlockLanguage, /new PluginKey\("codeBlockLanguageControl"\)/);
+  assert.match(codeBlockLanguage, /codeBlockContainsSelection\(state\.selection, position, node\.nodeSize\)/);
+  assert.match(codeBlockLanguage, /addKeyboardShortcuts\(\) \{/);
+  assert.match(codeBlockLanguage, /Tab: \(\) => \{/);
+  assert.match(codeBlockLanguage, /return this\.editor\.commands\.insertContent\("    "\);/);
+  assert.match(codeBlockLanguage, /"Shift-Tab": \(\) => this\.editor\.isActive\(this\.name\),/);
+  assert.match(codeBlockLanguage, /ReactNodeViewRenderer\(CodeBlockNodeView, \{\s*update: \(\{ updateProps \}\) => \{/);
+  assert.match(codeBlockLanguage, /updateProps\(\);/);
+  assert.match(editorOptions, /CodeBlockWithLanguageControl\.configure\(\{\s*lowlight,/);
+  assert.match(codeBlockLanguage, /class: "code-block-language-active"/);
+  assert.match(codeBlockLanguage, /className="code-block-language-control"/);
+  assert.match(codeBlockLanguage, /<NodeViewContent<"code"> as="code" \/>/);
   assert.match(app, /<datalist id="code-language-options">/);
   assert.doesNotMatch(app, /disabled=\{!codeBlockActive\}/);
   assert.doesNotMatch(app, /function updateCodeLanguage/);
@@ -2502,20 +2591,22 @@ test("code block language picker renders inside the active code block", () => {
 
 test("mermaid code blocks render diagrams while keeping fenced source editable", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const codeBlockRenderers = readFileSync("src/editor/code-block-renderers.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
-  assert.match(app, /lowlight\.register\("mermaid", plaintext\)/);
-  assert.match(app, /function loadMermaidRenderer/);
-  assert.match(app, /import\("mermaid"\)\.then/);
-  assert.match(app, /mermaid\.initialize\(\{/);
-  assert.match(app, /function createMermaidCodeWidget/);
-  assert.match(app, /function renderMermaidDiagram/);
-  assert.match(app, /mermaid\.render\(renderId, source\)/);
-  assert.match(app, /new PluginKey\("mermaidCodeBlockRenderer"\)/);
-  assert.match(app, /node\.attrs\.language !== "mermaid"/);
-  assert.match(app, /class: selected \? "mermaid-code-block editing" : "mermaid-code-block rendered"/);
-  assert.match(app, /MermaidCodeBlockRenderer/);
-  assert.match(app, /data-mermaid-edit/);
+  assert.match(editorOptions, /lowlight\.register\("mermaid", plaintext\)/);
+  assert.match(codeBlockRenderers, /function loadMermaidRenderer/);
+  assert.match(codeBlockRenderers, /import\("mermaid"\)\.then/);
+  assert.match(codeBlockRenderers, /mermaid\.initialize\(\{/);
+  assert.match(codeBlockRenderers, /function createMermaidCodeWidget/);
+  assert.match(codeBlockRenderers, /function renderMermaidDiagram/);
+  assert.match(codeBlockRenderers, /mermaid\.render\(renderId, source\)/);
+  assert.match(codeBlockRenderers, /new PluginKey\("mermaidCodeBlockRenderer"\)/);
+  assert.match(codeBlockRenderers, /node\.attrs\.language !== "mermaid"/);
+  assert.match(codeBlockRenderers, /class: selected \? "mermaid-code-block editing" : "mermaid-code-block rendered"/);
+  assert.match(editorOptions, /MermaidCodeBlockRenderer/);
+  assert.match(codeBlockRenderers, /dataset\.mermaidEdit/);
   assert.match(css, /\.editor-surface pre\.mermaid-code-block\.rendered/);
   assert.match(css, /\.mermaid-code-render/);
   assert.match(css, /\.mermaid-code-body svg/);
@@ -2531,8 +2622,11 @@ test("tauri starts with the requested default window size", () => {
 
 test("split editor groups find an already open file across both panes", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
+  const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const main = readFileSync("src/main.tsx", "utf8");
+  const documentsState = readFileSync("src/app-state/documents.ts", "utf8");
   const groups = {
     primary: {
       id: "primary",
@@ -2555,25 +2649,25 @@ test("split editor groups find an already open file across both panes", () => {
   assert.match(app, /setVaultDrawerItem\("files"\)/);
   assert.match(app, /const fileDirectory = parentDirectory\(file\.relativePath\)/);
   assert.match(app, /void revealFileInVaultDrawer\(tab\.activeFile\)/);
-  assert.match(app, /function setEditorMarkdownContent\(targetEditor: Editor, markdown: string\)/);
-  assert.match(app, /targetEditor\.commands\.setContent\(\{\s*type: "doc"/);
+  assert.match(documentsState, /function setEditorMarkdownContent\(targetEditor: Editor, markdown: string\)/);
+  assert.match(documentsState, /targetEditor\.commands\.setContent\(\{\s*type: "doc"/);
   assert.match(app, /function hydrateDocumentTabAfterCommit\(tab: DocumentTab/);
   assert.match(app, /window\.requestAnimationFrame\(\(\) => \{/);
   assert.match(app, /hydrateDocumentTabAfterCommit\(closeResult\.nextActiveTab, groupId\)/);
-  assert.match(app, /function createEmptyEditorGroups\(\)/);
-  assert.match(app, /function hasNoOpenDocumentTabs\(groups: Record<EditorGroupId, EditorGroupState>\)/);
-  assert.match(app, /function clearEditorContent\(targetEditor: Editor \| null\)/);
+  assert.match(documentsState, /function createEmptyEditorGroups\(\)/);
+  assert.match(documentsState, /function hasNoOpenDocumentTabs\(groups: Record<EditorGroupId, EditorGroupState>\)/);
+  assert.match(documentsState, /function clearEditorContent\(targetEditor: Editor \| null\)/);
   assert.match(app, /function clearActiveDocument\(\)/);
   assert.match(app, /clearEditorContent\(primaryEditor\)/);
   assert.match(app, /clearEditorContent\(secondaryEditor\)/);
-  assert.match(app, /if \(!tab \|\| tab\.kind !== "markdown"\) \{/);
+  assert.match(editorOptions, /if \(!tab \|\| tab\.kind !== "markdown"\) \{/);
   assert.match(app, /if \(hasNoOpenDocumentTabs\(editorGroupsRef\.current\)\) \{/);
   assert.match(app, /replaceEditorGroupsWithPrimaryTab\(tab\)/);
   assert.match(app, /Closed \$\{tabTitle\(tab\)\}; no document open/);
-  assert.match(app, /Open or create a note to start editing\./);
-  assert.match(app, /className="editor-surface-frame"/);
-  assert.match(app, /className="empty-document-placeholder"/);
-  assert.match(app, /className="editor-pane no-document-pane"/);
+  assert.match(editorPane, /Open or create a note to start editing\./);
+  assert.match(editorPane, /className="editor-surface-frame"/);
+  assert.match(editorPane, /className="empty-document-placeholder"/);
+  assert.match(editorPane, /className="editor-pane no-document-pane"/);
   assert.doesNotMatch(app, /commands\.setContent\(tab\.markdown, \{ contentType: "markdown" \}\)/);
   assert.match(css, /\.editor-surface-frame/);
   assert.match(css, /\.empty-document-placeholder/);
