@@ -8,7 +8,7 @@ import { isAiBuilderMarkerComment } from "./markdown-extensions";
 
 // Responsibilities:
 // - Provide insertion affordances around widget-like top-level editor blocks.
-// - Handle gap-cursor movement around tables and selected block nodes.
+// - Handle cursor movement around tables, code blocks, and selected block nodes.
 // Contracts:
 // - Decorations are UI only; insertion creates real paragraphs only after explicit user action.
 // - AI Builder marker comments stay hidden anchors and never receive boundary controls.
@@ -71,6 +71,19 @@ function insertParagraphAtPosition(view: EditorView, position: number) {
   const transaction = view.state.tr.insert(position, paragraph);
   transaction.setSelection(TextSelection.create(transaction.doc, position + 1));
   view.dispatch(transaction.scrollIntoView());
+  view.focus();
+
+  return true;
+}
+
+function moveTextSelectionNear(view: EditorView, position: number, bias: -1 | 1) {
+  const resolvedPosition = view.state.doc.resolve(position);
+
+  view.dispatch(
+    view.state.tr
+      .setSelection(TextSelection.near(resolvedPosition, bias))
+      .scrollIntoView(),
+  );
   view.focus();
 
   return true;
@@ -223,6 +236,55 @@ function moveGapCursorAfterTableBoundary(view: EditorView) {
   return moveGapCursorTo(view, afterTable);
 }
 
+function codeBlockBoundary(view: EditorView, direction: "up" | "down") {
+  const { selection } = view.state;
+
+  if (!selection.empty || !view.endOfTextblock(direction)) {
+    return null;
+  }
+
+  const codeBlockDepth = ancestorDepthByName(selection.$head, "codeBlock");
+
+  if (codeBlockDepth === null) {
+    return null;
+  }
+
+  return {
+    before: selection.$head.before(codeBlockDepth),
+    after: selection.$head.after(codeBlockDepth),
+  };
+}
+
+function moveCursorOutOfCodeBlock(view: EditorView, direction: "up" | "down") {
+  const boundary = codeBlockBoundary(view, direction);
+
+  if (!boundary) {
+    return false;
+  }
+
+  if (direction === "down") {
+    const nodeAfter = view.state.doc.resolve(boundary.after).nodeAfter;
+
+    if (!nodeAfter) {
+      return insertParagraphAtPosition(view, boundary.after);
+    }
+
+    return nodeAfter.isTextblock
+      ? moveTextSelectionNear(view, boundary.after, 1)
+      : moveGapCursorTo(view, boundary.after);
+  }
+
+  const nodeBefore = view.state.doc.resolve(boundary.before).nodeBefore;
+
+  if (!nodeBefore) {
+    return insertParagraphAtPosition(view, boundary.before);
+  }
+
+  return nodeBefore.isTextblock
+    ? moveTextSelectionNear(view, boundary.before, -1)
+    : moveGapCursorTo(view, boundary.before);
+}
+
 function moveGapCursorBeforeSelectedBlock(view: EditorView) {
   const { selection } = view.state;
 
@@ -261,9 +323,12 @@ export function createBlockBoundaryInsertionExtension() {
           insertParagraphAtGapCursor(this.editor.view) ||
           moveGapCursorBeforeSelectedBlock(this.editor.view),
         ArrowDown: () =>
+          moveCursorOutOfCodeBlock(this.editor.view, "down") ||
           moveGapCursorAfterTableBoundary(this.editor.view) ||
           moveGapCursorAfterSelectedBlock(this.editor.view),
-        ArrowUp: () => moveGapCursorBeforeSelectedBlock(this.editor.view),
+        ArrowUp: () =>
+          moveCursorOutOfCodeBlock(this.editor.view, "up") ||
+          moveGapCursorBeforeSelectedBlock(this.editor.view),
       };
     },
 
