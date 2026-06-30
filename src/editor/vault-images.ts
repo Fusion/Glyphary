@@ -12,6 +12,7 @@ import {
 // Contracts:
 // - Obsidian-style `![[asset]]` round-trips as vault syntax.
 // - Normal Markdown images keep safe local asset references when possible.
+// - Remote YouTube image URLs render as thumbnails without rewriting Markdown.
 
 export function createVaultImageExtension(
   resolveVaultImageSrc: (target: string) => string,

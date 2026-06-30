@@ -10,7 +10,7 @@
 
 +-----------------------------------------------------------+
 
-Glyphary is a fully open-source, fast, responsive, macOS-only Markdown workspace
+Glyphary is a fully open-source, fast, responsive desktop Markdown workspace
 for local vaults. It edits extended Markdown in true WYSIWYG mode, so tables,
 columns, callouts, card links, image galleries, task lists, and expand/collapse
 blocks are edited visually instead of through raw syntax.
@@ -26,6 +26,8 @@ blocks are edited visually instead of through raw syntax.
 - **Fast local search**: built-in vault search is extremely fast and does not require an external `rg` install.
 - **Command palette**: use quick commands for inserts, table actions, rich links, Excalidraw drawings, tidbits, canvas actions, and more.
 - **Canvas support**: create, open, rename, edit, move, color, connect, and save Obsidian-compatible canvas nodes and edges.
+- **Base views**: open `.base` files to browse vault notes through table or gallery views backed by local frontmatter.
+- **Native file actions**: right-click files and folders to create, rename, move, delete, or reveal the item in Finder.
 - **Native Excalidraw integration**: create drawings from Glyphary and store them as vault files.
 - **Daily notes and tidbits**: open calendar notes, create quick notes, and capture tidbits from anywhere when the app is running.
 - **AI assistance**: connect an OpenAI-compatible backend for writing help, summaries, outlines, title generation, and page building.
@@ -66,6 +68,12 @@ then save back to the original canvas file.
   <img src="https://glyphary.github.io/assets/screenshots/canvas.png" alt="Glyphary canvas editor" />
 </p>
 
+## Base Views
+
+Glyphary can open `.base` files as local database-style views over your vault.
+Definitions query Markdown frontmatter and render matching notes as tables or
+gallery cards, including optional first-image thumbnails.
+
 ## Search And Commands
 
 Search, recent files, tasks, and quick commands are built into the workspace so
@@ -76,9 +84,15 @@ canvas commands.
 Content search groups matches by file, shows the match count for each result,
 and sorts the list from the most recently modified page down to older notes.
 
+File and folder context menus include `Reveal in Finder`, so you can jump from a
+vault entry to the native file manager without leaving the workspace.
+
 When no document is open, Glyphary keeps the workspace calm: document-specific
 commands wait until a note or canvas is open. Configure the New Tab file in
 Settings to make `Cmd+T` open a favorite vault page such as a home note.
+
+Remote YouTube URLs used as Markdown images render as video thumbnails in the
+page; clicking the thumbnail opens the original video URL.
 
 <p align="center">
   <img src="https://glyphary.github.io/assets/screenshots/vault-search.png" alt="Glyphary vault search" />
