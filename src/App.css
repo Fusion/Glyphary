@@ -248,20 +248,20 @@ body {
 }
 
 :root[data-window-glass="enabled"] {
-  --glass-app-overlay: rgba(243, 241, 235, calc(var(--glyphary-glass-opacity, 0.58) * 0.18));
-  --glass-surface-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.55));
-  --glass-muted-overlay: rgba(250, 248, 242, calc(var(--glyphary-glass-opacity, 0.58) * 0.38));
-  --glass-inner-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.26));
-  --glass-control-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.34));
+  --glass-app-overlay: rgba(243, 241, 235, calc(var(--glyphary-glass-opacity, 0.58) * 0.06));
+  --glass-surface-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.22));
+  --glass-muted-overlay: rgba(250, 248, 242, calc(var(--glyphary-glass-opacity, 0.58) * 0.14));
+  --glass-inner-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.1));
+  --glass-control-overlay: rgba(255, 253, 250, calc(var(--glyphary-glass-opacity, 0.58) * 0.2));
   --glass-border-overlay: rgba(222, 217, 206, calc(var(--glyphary-glass-opacity, 0.58) * 0.83));
 }
 
 :root[data-window-glass="enabled"][data-resolved-theme="dark"] {
-  --glass-app-overlay: rgba(21, 24, 21, calc(var(--glyphary-glass-opacity, 0.58) * 0.24));
-  --glass-surface-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.64));
-  --glass-muted-overlay: rgba(32, 39, 32, calc(var(--glyphary-glass-opacity, 0.58) * 0.44));
-  --glass-inner-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.32));
-  --glass-control-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.42));
+  --glass-app-overlay: rgba(21, 24, 21, calc(var(--glyphary-glass-opacity, 0.58) * 0.08));
+  --glass-surface-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.26));
+  --glass-muted-overlay: rgba(32, 39, 32, calc(var(--glyphary-glass-opacity, 0.58) * 0.16));
+  --glass-inner-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.12));
+  --glass-control-overlay: rgba(28, 33, 29, calc(var(--glyphary-glass-opacity, 0.58) * 0.22));
   --glass-border-overlay: rgba(52, 59, 53, calc(var(--glyphary-glass-opacity, 0.58) * 0.9));
 }
 
@@ -301,6 +301,10 @@ body {
   backdrop-filter: blur(22px) saturate(1.16);
 }
 
+:root[data-window-glass="enabled"] .command-palette-card {
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
 :root[data-window-glass="enabled"] .settings-screen {
   background: color-mix(in srgb, var(--app-bg) 78%, transparent);
   backdrop-filter: blur(12px) saturate(1.08);
@@ -330,6 +334,18 @@ body {
 :root[data-window-glass="enabled"] .calendar-toolbar,
 :root[data-window-glass="enabled"] .settings-tabs {
   background: var(--glass-muted-overlay);
+}
+
+:root[data-window-glass="enabled"] .document-tabs,
+:root[data-window-glass="enabled"] .vault-content,
+:root[data-window-glass="enabled"] .drawer-content,
+:root[data-window-glass="enabled"] .drawer-header,
+:root[data-window-glass="enabled"] .drawer-rail,
+:root[data-window-glass="enabled"] .vault-rail,
+:root[data-window-glass="enabled"] .metadata-shell,
+:root[data-window-glass="enabled"] .toolbar,
+:root[data-window-glass="enabled"] .pane-header {
+  background: transparent;
 }
 
 :root[data-window-glass="enabled"] .titlebar {
