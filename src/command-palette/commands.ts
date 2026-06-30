@@ -98,6 +98,8 @@ export function shouldReportCommandPaletteStatus(command: CommandPaletteCommand)
     command.id !== "insert-rich-link" &&
     command.id !== "insert-excalidraw" &&
     command.id !== "create-tidbit" &&
+    command.id !== "star-note" &&
+    command.id !== "unstar-note" &&
     !command.id.startsWith("format-") &&
     !command.id.startsWith("ai-")
   );

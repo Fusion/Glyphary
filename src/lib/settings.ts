@@ -116,6 +116,7 @@ export const defaultAiSettings: AiSettings = {
   apiKey: "",
 };
 export const defaultNewTabFile = "";
+export const defaultStarredFiles: string[] = [];
 
 export function readPersistedWorkspace() {
   try {
@@ -131,6 +132,18 @@ export function readPersistedWorkspace() {
       return null;
     }
 
+    const readFiles = (files: unknown) =>
+      Array.isArray(files)
+        ? files
+            .filter(
+              (file): file is PersistedWorkspace["recentFiles"][number] =>
+                file &&
+                typeof file.name === "string" &&
+                typeof file.relativePath === "string",
+            )
+            .slice(0, 20)
+        : [];
+
     return {
       vaultRoot: parsed.vaultRoot,
       currentDir: typeof parsed.currentDir === "string" ? parsed.currentDir : "",
@@ -143,16 +156,8 @@ export function readPersistedWorkspace() {
               relativePath: parsed.activeFile.relativePath,
             }
           : null,
-      recentFiles: Array.isArray(parsed.recentFiles)
-        ? parsed.recentFiles
-            .filter(
-              (file): file is PersistedWorkspace["recentFiles"][number] =>
-                file &&
-                typeof file.name === "string" &&
-                typeof file.relativePath === "string",
-            )
-            .slice(0, 20)
-        : [],
+      openFiles: readFiles(parsed.openFiles),
+      recentFiles: readFiles(parsed.recentFiles),
     };
   } catch {
     return null;
@@ -284,6 +289,23 @@ export function normalizeNewTabFile(value: string | undefined | null) {
 
 export function sameNewTabFile(left: string | undefined | null, right: string | undefined | null) {
   return normalizeNewTabFile(left) === normalizeNewTabFile(right);
+}
+
+export function normalizeStarredFiles(files: string[] | undefined | null) {
+  const seen = new Set<string>();
+
+  return (files ?? [])
+    .map((file) => normalizeNewTabFile(file))
+    .filter((file) => !file.split(/[\\/]+/).some((part) => part === "." || part === ".."))
+    .filter((file) => /\.(md|markdown)$/i.test(file))
+    .filter((file) => {
+      if (seen.has(file)) {
+        return false;
+      }
+
+      seen.add(file);
+      return true;
+    });
 }
 
 export type ShortcutKeyboardEvent = Pick<

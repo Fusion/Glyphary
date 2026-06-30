@@ -121,6 +121,7 @@ import {
   cssColorToHex,
   defaultAiSettings,
   defaultNewTabFile,
+  defaultStarredFiles,
   isRunningOnMacOs,
   keyboardEventMatchesShortcut,
   normalizeAiSettings,
@@ -133,6 +134,7 @@ import {
   normalizeFrontmatterPillSettings,
   normalizeNewTabFile,
   normalizePluginSettings,
+  normalizeStarredFiles,
   normalizeTidbitSettings,
   normalizeVaultAppearanceSettings,
   maximumCalendarPreviewDelayMs,
@@ -1305,6 +1307,7 @@ function App() {
   const [vaultSettings, setVaultSettings] = useState<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
     newTabFile: defaultNewTabFile,
+    starredFiles: defaultStarredFiles,
     frontmatterPills: defaultFrontmatterPillSettings,
     files: defaultFileDisplaySettings,
     autosave: defaultAutosaveSettings,
@@ -1531,6 +1534,7 @@ function App() {
   const vaultSettingsRef = useRef<VaultSettings>({
     assetDirectory: defaultVaultAssetDirectory,
     newTabFile: defaultNewTabFile,
+    starredFiles: defaultStarredFiles,
     frontmatterPills: defaultFrontmatterPillSettings,
     files: defaultFileDisplaySettings,
     autosave: defaultAutosaveSettings,
@@ -2198,6 +2202,24 @@ function App() {
     setEditorGroups(nextGroups);
   }
 
+  function fileBackedTabs(groups = editorGroupsRef.current) {
+    const seen = new Set<string>();
+
+    return (["primary", "secondary"] as const).flatMap((groupId) =>
+      groups[groupId].tabs
+        .map((tab) => tab.activeFile)
+        .filter((file): file is ActiveFile => Boolean(file))
+        .filter((file) => {
+          if (seen.has(file.relativePath)) {
+            return false;
+          }
+
+          seen.add(file.relativePath);
+          return true;
+        }),
+    );
+  }
+
   function updateGroupTab(
     groupId: EditorGroupId,
     tabId: string,
@@ -2244,6 +2266,7 @@ function App() {
     setActiveGroupId("primary");
     setSplitOpen(false);
     setEditorGroupsAndRef(nextGroups);
+    persistWorkspace({ openFiles: fileBackedTabs(nextGroups) });
   }
 
   function clearActiveDocument() {
@@ -2275,6 +2298,7 @@ function App() {
     };
 
     setEditorGroupsAndRef(nextGroups);
+    persistWorkspace({ openFiles: fileBackedTabs(nextGroups) });
   }
 
   function findOpenFileTab(relativePath: string) {
@@ -2533,6 +2557,7 @@ function App() {
     });
 
     if (!closeResult.wasActiveTab) {
+      persistWorkspace({ openFiles: fileBackedTabs() });
       setStatus(`Closed ${tabTitle(tab)}`);
       return;
     }
@@ -2800,6 +2825,25 @@ function App() {
       (tab) => tab.id === editorGroups[activeGroupId]?.activeTabId,
     ) ?? null;
   const activeDocumentIsCanvas = activeDocumentTab?.kind === "canvas";
+  const starredFiles = useMemo(
+    () => normalizeStarredFiles(vaultSettings.starredFiles),
+    [vaultSettings.starredFiles],
+  );
+  const starredFileEntries = useMemo(
+    () =>
+      starredFiles.map((relativePath) => ({
+        name: relativePath.split("/").at(-1) ?? relativePath,
+        relativePath,
+      })),
+    [starredFiles],
+  );
+  const activeMarkdownFilePath =
+    activeDocumentTab?.kind === "markdown"
+      ? activeDocumentTab.activeFile?.relativePath ?? ""
+      : "";
+  const activeNoteStarred = activeMarkdownFilePath
+    ? starredFiles.includes(activeMarkdownFilePath)
+    : false;
   activeEditorRef.current = editor;
 
   function captureCommandPaletteSelection() {
@@ -3018,6 +3062,43 @@ function App() {
         setTaskResults([]);
         await loadEntries(workspace.vaultRoot, workspace.currentDir);
         await rebuildWikiLinkIndex(workspace.vaultRoot);
+
+        if (workspace.openFiles.length > 0) {
+          const tabs: DocumentTab[] = [];
+
+          for (const persistedFile of workspace.openFiles) {
+            try {
+              tabs.push(
+                createDocumentTabFromFile(
+                  await readVaultFile(workspace.vaultRoot, persistedFile.relativePath),
+                ),
+              );
+            } catch {
+              // Missing files are skipped so one stale path does not block
+              // restoring the rest of the workspace.
+            }
+          }
+
+          if (tabs.length > 0) {
+            const activePath = workspace.activeFile?.relativePath;
+            const activeTab =
+              tabs.find((tab) => tab.activeFile?.relativePath === activePath) ?? tabs[0];
+            const nextGroups = createEmptyEditorGroups();
+
+            nextGroups.primary = {
+              id: "primary",
+              tabs,
+              activeTabId: activeTab.id,
+            };
+            activeGroupIdRef.current = "primary";
+            setActiveGroupId("primary");
+            setSplitOpen(false);
+            setEditorGroupsAndRef(nextGroups);
+            hydrateDocumentTab(activeTab, "primary");
+            setStatus(`Restored ${tabs.length} tab${tabs.length === 1 ? "" : "s"}`);
+            return;
+          }
+        }
 
         if (workspace.activeFile) {
           const file = await readVaultFile(
@@ -3756,6 +3837,7 @@ function App() {
       vaultRoot: nextVaultRoot,
       currentDir: next.currentDir ?? currentDir,
       activeFile: next.activeFile === undefined ? activeFile : next.activeFile,
+      openFiles: next.openFiles ?? fileBackedTabs(),
       recentFiles: next.recentFiles ?? recentFilesRef.current,
     });
   }
@@ -3773,6 +3855,75 @@ function App() {
       activeFile: file,
       recentFiles: file ? recordRecentFile(file) : recentFilesRef.current,
     });
+  }
+
+  function samePathList(left: string[], right: string[]) {
+    return left.length === right.length && left.every((path, index) => path === right[index]);
+  }
+
+  async function persistStarredFiles(nextFiles: string[]) {
+    const previousSettings = vaultSettingsRef.current;
+    const starredFiles = normalizeStarredFiles(nextFiles);
+    const nextSettings = {
+      ...previousSettings,
+      starredFiles,
+    };
+
+    if (samePathList(starredFiles, normalizeStarredFiles(previousSettings.starredFiles))) {
+      return true;
+    }
+
+    vaultSettingsRef.current = nextSettings;
+    setVaultSettings(nextSettings);
+
+    if (!vaultRootRef.current || !isTauri()) {
+      return true;
+    }
+
+    try {
+      const saved = await writeVaultSettings(vaultRootRef.current, nextSettings);
+      const committedSettings = {
+        ...nextSettings,
+        ...saved,
+        starredFiles: normalizeStarredFiles(saved.starredFiles),
+      };
+
+      vaultSettingsRef.current = committedSettings;
+      setVaultSettings(committedSettings);
+      return true;
+    } catch (error) {
+      vaultSettingsRef.current = previousSettings;
+      setVaultSettings(previousSettings);
+      setStatus(error instanceof Error ? error.message : String(error));
+      return false;
+    }
+  }
+
+  async function toggleActiveNoteStar() {
+    if (!activeMarkdownFilePath) {
+      setStatus("Open a Markdown note before starring it");
+      return;
+    }
+
+    const current = normalizeStarredFiles(vaultSettingsRef.current.starredFiles);
+    const next = current.includes(activeMarkdownFilePath)
+      ? current.filter((path) => path !== activeMarkdownFilePath)
+      : [activeMarkdownFilePath, ...current];
+
+    if (await persistStarredFiles(next)) {
+      setStatus(
+        current.includes(activeMarkdownFilePath)
+          ? `Unstarred ${activeMarkdownFilePath}`
+          : `Starred ${activeMarkdownFilePath}`,
+      );
+    }
+  }
+
+  async function updateStarredFiles(mapper: (path: string) => string | null) {
+    const current = normalizeStarredFiles(vaultSettingsRef.current.starredFiles);
+    const next = current.map(mapper).filter((path): path is string => Boolean(path));
+
+    await persistStarredFiles(next);
   }
 
   async function loadEntries(root: string, relative: string) {
@@ -3976,6 +4127,7 @@ function App() {
         : {
           assetDirectory: defaultVaultAssetDirectory,
           newTabFile: defaultNewTabFile,
+          starredFiles: defaultStarredFiles,
           frontmatterPills: defaultFrontmatterPillSettings,
           files: defaultFileDisplaySettings,
           autosave: defaultAutosaveSettings,
@@ -4005,10 +4157,12 @@ function App() {
     const ai = normalizeAiSettings(settings.ai);
     const canvas = normalizeCanvasSettings(settings.canvas);
     const newTabFile = normalizeNewTabFile(settings.newTabFile);
+    const starredFiles = normalizeStarredFiles(settings.starredFiles);
 
     const normalizedSettings = {
       ...settings,
       newTabFile,
+      starredFiles,
       frontmatterPills,
       files: fileDisplaySettings,
       autosave,
@@ -4079,6 +4233,7 @@ function App() {
       const settings = await writeVaultSettings(vaultRoot, {
           assetDirectory: settingsDraft,
           newTabFile: normalizeNewTabFile(newTabFileDraft),
+          starredFiles: normalizeStarredFiles(vaultSettingsRef.current.starredFiles),
           frontmatterPills: normalizeFrontmatterPillSettings(frontmatterPillDraft),
           files: normalizeFileDisplaySettings(fileDisplayDraft),
           autosave: normalizeAutosaveSettings(autosaveDraft),
@@ -4118,9 +4273,11 @@ function App() {
       const ai = normalizeAiSettings(settings.ai);
       const canvas = normalizeCanvasSettings(settings.canvas);
       const newTabFile = normalizeNewTabFile(settings.newTabFile);
+      const starredFiles = normalizeStarredFiles(settings.starredFiles);
       const normalizedSettings = {
         ...settings,
         newTabFile,
+        starredFiles,
         frontmatterPills,
         files: fileDisplaySettings,
         autosave,
@@ -4239,6 +4396,9 @@ function App() {
       persistActiveFile(file);
       replaceFileInWikiLinkIndex(previousRelativePath, file);
       moveAiBuilderHistoryKey(previousRelativePath, file.relativePath);
+      await updateStarredFiles((path) =>
+        path === previousRelativePath ? file.relativePath : path,
+      );
       await loadEntries(vaultRoot, currentDir);
     }
 
@@ -5326,6 +5486,11 @@ function App() {
       const renamed = await renameVaultDirectory(vaultRoot, entry.relativePath, nextName);
 
       applyRenamedDirectoryToOpenState(entry, renamed);
+      await updateStarredFiles((path) =>
+        path === entry.relativePath || path.startsWith(`${entry.relativePath}/`)
+          ? `${renamed.relativePath}${path.slice(entry.relativePath.length)}`
+          : path,
+      );
       await loadEntries(
         vaultRoot,
         rebasePathAfterDirectoryRename(currentDir, entry, renamed),
@@ -5357,6 +5522,9 @@ function App() {
       replaceOpenFilePath(entry.relativePath, renamedFile);
       replaceFileInWikiLinkIndex(entry.relativePath, renamedFile);
       moveAiBuilderHistoryKey(entry.relativePath, renamedFile.relativePath);
+      await updateStarredFiles((path) =>
+        path === entry.relativePath ? renamedFile.relativePath : path,
+      );
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Renamed ${entry.name} to ${renamed.name}`);
     } catch (error) {
@@ -5383,6 +5551,11 @@ function App() {
       const nextCurrentDir = rebasePathAfterDirectoryRename(currentDir, entry, moved);
 
       applyRenamedDirectoryToOpenState(entry, moved);
+      await updateStarredFiles((path) =>
+        path === entry.relativePath || path.startsWith(`${entry.relativePath}/`)
+          ? `${moved.relativePath}${path.slice(entry.relativePath.length)}`
+          : path,
+      );
       await loadEntries(vaultRoot, nextCurrentDir);
       await rebuildWikiLinkIndex(vaultRoot);
       setStatus(`Moved folder ${entry.name} to ${moved.relativePath}`);
@@ -5406,6 +5579,9 @@ function App() {
 
       replaceOpenFilePath(entry.relativePath, movedFile);
       replaceFileInWikiLinkIndex(entry.relativePath, movedFile);
+      await updateStarredFiles((path) =>
+        path === entry.relativePath ? movedFile.relativePath : path,
+      );
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Moved ${entry.name} to ${moved.relativePath}`);
     } catch (error) {
@@ -5424,6 +5600,7 @@ function App() {
 
       removeDeletedFileFromOpenState(entry.relativePath);
       removeFileFromWikiLinkIndex(entry.relativePath);
+      await updateStarredFiles((path) => (path === entry.relativePath ? null : path));
       await loadEntries(vaultRoot, currentDir);
       setStatus(`Deleted ${entry.relativePath}`);
     } catch (error) {
@@ -7029,6 +7206,18 @@ function App() {
           },
         ]
       : []),
+    ...(activeMarkdownFilePath
+      ? [
+          {
+            id: activeNoteStarred ? "unstar-note" : "star-note",
+            title: activeNoteStarred ? "Unstar Note" : "Star Note",
+            description: activeNoteStarred
+              ? "Remove the current note from Starred"
+              : "Add the current note to Starred",
+            run: toggleActiveNoteStar,
+          },
+        ]
+      : []),
     {
       id: "create-tidbit",
       title: "Create Tidbit",
@@ -7233,6 +7422,10 @@ function App() {
       return "Recent";
     }
 
+    if (vaultDrawerItem === "starred") {
+      return "Starred";
+    }
+
     if (vaultDrawerItem === "tasks") {
       return "Tasks";
     }
@@ -7249,6 +7442,10 @@ function App() {
 
     if (vaultDrawerItem === "recent") {
       return vaultRoot ? "Recently opened files" : "Open a vault";
+    }
+
+    if (vaultDrawerItem === "starred") {
+      return vaultRoot ? "Starred notes" : "Open a vault";
     }
 
     if (vaultDrawerItem === "tasks") {
@@ -7308,6 +7505,7 @@ function App() {
       setSearching(true);
       const results = await searchVaultFiles(vaultRoot, query, {
         includeContent: searchMode === "content",
+        markdownOnly: true,
       });
 
       setSearchResults(results);
@@ -7833,6 +8031,21 @@ function App() {
               </svg>
             </button>
             <button
+              className={vaultDrawerItem === "starred" && vaultDrawerOpen ? "vault-tab active" : "vault-tab"}
+              type="button"
+              aria-label={
+                vaultDrawerOpen && vaultDrawerItem === "starred"
+                  ? "Close starred notes drawer"
+                  : "Open starred notes drawer"
+              }
+              title={vaultDrawerOpen && vaultDrawerItem === "starred" ? "Close Starred" : "Open Starred"}
+              onClick={() => toggleVaultDrawerItem("starred")}
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="m12 4.4 2.2 4.5 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5-3.6-3.5 5-.7z" />
+              </svg>
+            </button>
+            <button
               className={vaultDrawerItem === "tasks" && vaultDrawerOpen ? "vault-tab active" : "vault-tab"}
               type="button"
               aria-label={
@@ -7941,6 +8154,33 @@ function App() {
                   ) : null}
                   {!vaultRoot ? (
                     <p className="empty-vault">Open a vault to track recent files.</p>
+                  ) : null}
+                </div>
+              ) : vaultDrawerItem === "starred" ? (
+                <div className="vault-list recent-list" role="list" aria-label="Starred notes">
+                  {starredFileEntries.map((file) => (
+                    <button
+                      className={
+                        activeFile?.relativePath === file.relativePath
+                          ? "vault-entry recent-entry active"
+                          : "vault-entry recent-entry"
+                      }
+                      key={file.relativePath}
+                      type="button"
+                      onClick={() => openFile(file.relativePath)}
+                    >
+                      <VaultFileIcon relativePath={file.relativePath} />
+                      <span className="recent-entry-text">
+                        <strong>{file.name}</strong>
+                        <em>{file.relativePath}</em>
+                      </span>
+                    </button>
+                  ))}
+                  {vaultRoot && starredFileEntries.length === 0 ? (
+                    <p className="empty-vault">No starred notes yet.</p>
+                  ) : null}
+                  {!vaultRoot ? (
+                    <p className="empty-vault">Open a vault to star notes.</p>
                   ) : null}
                 </div>
               ) : vaultDrawerItem === "tasks" ? (

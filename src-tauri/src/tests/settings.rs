@@ -101,6 +101,7 @@ fn reads_default_vault_settings_when_missing() {
     assert!(!settings.files.show_dotfiles);
     assert!(settings.autosave.enabled);
     assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
+    assert!(settings.starred_files.is_empty());
     assert_eq!(
         settings.editor.calendar_preview_delay_ms,
         DEFAULT_CALENDAR_PREVIEW_DELAY_MS
@@ -175,6 +176,12 @@ fn writes_vault_settings_file() {
         VaultSettings {
             asset_directory: "media/images".into(),
             new_tab_file: " Meta/Home2.md ".into(),
+            starred_files: vec![
+                "Notes/B.md".into(),
+                "Notes/B.md".into(),
+                "image.png".into(),
+                " Notes/A.markdown ".into(),
+            ],
             frontmatter_pills: FrontmatterPillSettings {
                 enabled: false,
                 header_name: "topics".into(),
@@ -212,6 +219,10 @@ fn writes_vault_settings_file() {
 
     assert_eq!(settings.asset_directory, "media/images");
     assert_eq!(settings.new_tab_file, "Meta/Home2.md");
+    assert_eq!(
+        settings.starred_files,
+        vec!["Notes/B.md", "Notes/A.markdown"]
+    );
     assert!(!settings.frontmatter_pills.enabled);
     assert_eq!(settings.frontmatter_pills.header_name, "topics");
     assert!(settings.files.show_dotfiles);

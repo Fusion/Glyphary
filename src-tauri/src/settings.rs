@@ -25,6 +25,7 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
         .collect::<Vec<_>>()
         .join("/");
     let new_tab_file = clean_optional_relative(&settings.new_tab_file)?;
+    let starred_files = clean_starred_files(settings.starred_files)?;
 
     let theme = clean_theme(settings.theme)?;
     let frontmatter_pills = clean_frontmatter_pill_settings(settings.frontmatter_pills)?;
@@ -42,6 +43,7 @@ pub(crate) fn clean_settings(settings: VaultSettings) -> Result<VaultSettings, S
         Ok(VaultSettings {
             asset_directory,
             new_tab_file,
+            starred_files,
             frontmatter_pills,
             files: settings.files,
             autosave: settings.autosave,
@@ -64,6 +66,25 @@ pub(crate) fn clean_editor_settings(settings: EditorSettings) -> EditorSettings 
             .clamp(MIN_CALENDAR_PREVIEW_DELAY_MS, MAX_CALENDAR_PREVIEW_DELAY_MS),
         vim_mode: settings.vim_mode,
     }
+}
+pub(crate) fn clean_starred_files(files: Vec<String>) -> Result<Vec<String>, String> {
+    let mut seen = BTreeSet::new();
+    let mut cleaned = Vec::new();
+
+    for file in files {
+        let file = clean_optional_relative(&file)?;
+        let lower = file.to_lowercase();
+
+        if file.is_empty() || (!lower.ends_with(".md") && !lower.ends_with(".markdown")) {
+            continue;
+        }
+
+        if seen.insert(file.clone()) {
+            cleaned.push(file);
+        }
+    }
+
+    Ok(cleaned)
 }
 pub(crate) fn clean_optional_relative(relative: &str) -> Result<String, String> {
     let relative = relative.trim();

@@ -211,6 +211,7 @@ impl Default for VaultSettings {
         Self {
             asset_directory: DEFAULT_ASSET_DIRECTORY.into(),
             new_tab_file: String::new(),
+            starred_files: Vec::new(),
             frontmatter_pills: FrontmatterPillSettings::default(),
             files: FileDisplaySettings::default(),
             autosave: AutosaveSettings::default(),

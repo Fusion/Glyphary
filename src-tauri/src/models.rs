@@ -50,6 +50,8 @@ pub(crate) struct VaultSettings {
     pub(crate) asset_directory: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub(crate) new_tab_file: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) starred_files: Vec<String>,
     #[serde(default)]
     pub(crate) frontmatter_pills: FrontmatterPillSettings,
     #[serde(default)]

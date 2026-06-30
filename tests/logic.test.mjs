@@ -1567,6 +1567,8 @@ test("global tidbit capture is vault-gated and opens a lightweight editor window
 test("vault drawer exposes files search recent and task views", () => {
   const app = readFileSync("src/App.tsx", "utf8");
   const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
+  const commandPalette = readFileSync("src/command-palette/commands.ts", "utf8");
+  const settings = readFileSync("src/lib/settings.ts", "utf8");
   const vaultTasks = readFileSync("src/tasks/vault-tasks.ts", "utf8");
   const vaultSearch = readFileSync("src/search/vault-search.ts", "utf8");
   const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
@@ -1575,12 +1577,20 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(appTypes, /export type TaskFilter = "incomplete" \| "complete" \| "all"/);
   assert.match(appTypes, /export type TaskSort = "name" \| "date"/);
   assert.match(appTypes, /modifiedMs\?: number/);
-  assert.match(appTypes, /export type VaultDrawerItem = "files" \| "search" \| "recent" \| "tasks"/);
+  assert.match(appTypes, /starredFiles\?: string\[\] \| null/);
+  assert.match(appTypes, /export type VaultDrawerItem = "files" \| "search" \| "starred" \| "recent" \| "tasks"/);
+  assert.match(settings, /export const defaultStarredFiles: string\[\] = \[\]/);
+  assert.match(settings, /export function normalizeStarredFiles/);
   assert.match(app, /recentFilesWithOpenedFile/);
   assert.match(appTypes, /recentFiles: ActiveFile\[\]/);
   assert.match(app, /Recently opened files/);
+  assert.match(app, /starredFiles: defaultStarredFiles/);
   assert.match(app, /toggleVaultDrawerItem\("recent"\)/);
+  assert.match(app, /toggleVaultDrawerItem\("starred"\)/);
   assert.match(app, /toggleVaultDrawerItem\("tasks"\)/);
+  assert.match(app, /Starred notes/);
+  assert.match(app, /id: activeNoteStarred \? "unstar-note" : "star-note"/);
+  assert.match(commandPalette, /command\.id !== "star-note"/);
   assert.match(app, /useState<TaskFilter>\("incomplete"\)/);
   assert.match(app, /useState<TaskSort>\("name"\)/);
   assert.match(app, /taskListQuery/);
@@ -1607,6 +1617,7 @@ test("vault drawer exposes files search recent and task views", () => {
   assert.match(vaultSearch, /seenPaths\.has\(result\.relativePath\)/);
   assert.match(vaultSearch, /\.sort\(\(left, right\) => \(right\.modifiedMs \?\? 0\) - \(left\.modifiedMs \?\? 0\)\)/);
   assert.match(vaultSearch, /matchCount: matchCounts\.get\(result\.relativePath\) \?\? 1/);
+  assert.match(app, /async function searchVault\(\) \{[\s\S]*markdownOnly: true/);
   assert.match(app, /visibleSearchResults\.map\(\(\{ matchCount, result \}, index\) =>/);
   assert.match(app, /matchCount === 1 \? "1 match" : `\$\{matchCount\} matches`/);
   assert.match(app, /async function openFile\(\s*relativePath: string,[\s\S]*revealInVaultDrawer\?: boolean/);
@@ -2666,11 +2677,13 @@ test("tauri starts with the requested default window size", () => {
 
 test("split editor groups find an already open file across both panes", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const appTypes = readFileSync("src/lib/app-types.ts", "utf8");
   const editorOptions = readFileSync("src/editor/editor-options.ts", "utf8");
   const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const main = readFileSync("src/main.tsx", "utf8");
   const documentsState = readFileSync("src/app-state/documents.ts", "utf8");
+  const settings = readFileSync("src/lib/settings.ts", "utf8");
   const groups = {
     primary: {
       id: "primary",
@@ -2693,6 +2706,12 @@ test("split editor groups find an already open file across both panes", () => {
   assert.match(app, /setVaultDrawerItem\("files"\)/);
   assert.match(app, /const fileDirectory = parentDirectory\(file\.relativePath\)/);
   assert.match(app, /void revealFileInVaultDrawer\(tab\.activeFile\)/);
+  assert.match(appTypes, /openFiles: ActiveFile\[\]/);
+  assert.match(settings, /openFiles: readFiles\(parsed\.openFiles\)/);
+  assert.match(app, /function fileBackedTabs\(groups = editorGroupsRef\.current\)/);
+  assert.match(app, /openFiles: next\.openFiles \?\? fileBackedTabs\(\)/);
+  assert.match(app, /if \(workspace\.openFiles\.length > 0\)/);
+  assert.match(app, /Restored \$\{tabs\.length\} tab/);
   assert.match(documentsState, /function setEditorMarkdownContent\(targetEditor: Editor, markdown: string\)/);
   assert.match(documentsState, /targetEditor\.commands\.setContent\(\{\s*type: "doc"/);
   assert.match(app, /function hydrateDocumentTabAfterCommit\(tab: DocumentTab/);

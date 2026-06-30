@@ -242,6 +242,7 @@ export type SettingsDragState = {
 export type VaultSettings = {
   assetDirectory: string;
   newTabFile?: string | null;
+  starredFiles?: string[] | null;
   frontmatterPills?: FrontmatterPillSettings | null;
   files?: FileDisplaySettings | null;
   autosave?: AutosaveSettings | null;
@@ -302,7 +303,7 @@ export type TaskSort = "name" | "date";
 export type AppearanceMode = "auto" | "light" | "dark";
 export type SettingsTab = "main" | "appearance" | "canvas" | "plugins" | "ai" | "debug";
 export type DrawerItem = "source" | "toc" | "calendar";
-export type VaultDrawerItem = "files" | "search" | "recent" | "tasks";
+export type VaultDrawerItem = "files" | "search" | "starred" | "recent" | "tasks";
 export type ResizeSide = "vault" | "drawer";
 
 export type FolderContextMenuState = {
@@ -347,6 +348,7 @@ export type PersistedWorkspace = {
   vaultRoot: string;
   currentDir: string;
   activeFile: ActiveFile | null;
+  openFiles: ActiveFile[];
   recentFiles: ActiveFile[];
 };
 
