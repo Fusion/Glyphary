@@ -161,6 +161,10 @@ pub(crate) fn default_calendar_preview_delay_ms() -> u32 {
     DEFAULT_CALENDAR_PREVIEW_DELAY_MS
 }
 
+pub(crate) fn default_true() -> bool {
+    true
+}
+
 pub(crate) fn default_status_bar_visible() -> bool {
     true
 }
@@ -233,6 +237,17 @@ impl Default for FrontmatterPillSettings {
         Self {
             enabled: true,
             header_name: DEFAULT_FRONTMATTER_PILL_HEADER.into(),
+        }
+    }
+}
+
+impl Default for FileDisplaySettings {
+    fn default() -> Self {
+        Self {
+            show_files_in_folder_tree: false,
+            show_file_previews_in_folder_tree: true,
+            show_images_in_file_previews: true,
+            show_dotfiles: false,
         }
     }
 }

@@ -65,6 +65,9 @@ fn hides_dotfiles_unless_vault_settings_enable_them() {
         root.to_string_lossy().into_owned(),
         VaultSettings {
             files: FileDisplaySettings {
+                show_files_in_folder_tree: false,
+                show_file_previews_in_folder_tree: true,
+                show_images_in_file_previews: true,
                 show_dotfiles: true,
             },
             ..VaultSettings::default()
@@ -99,6 +102,8 @@ fn reads_default_vault_settings_when_missing() {
         DEFAULT_FRONTMATTER_PILL_HEADER
     );
     assert!(!settings.files.show_dotfiles);
+    assert!(!settings.files.show_files_in_folder_tree);
+    assert!(settings.files.show_file_previews_in_folder_tree);
     assert!(settings.autosave.enabled);
     assert_eq!(settings.tidbits.path_pattern, DEFAULT_TIDBIT_PATH_PATTERN);
     assert!(settings.starred_files.is_empty());
@@ -137,6 +142,27 @@ fn reads_default_vault_settings_when_missing() {
     assert!(settings.canvas.show_navigation_preview);
     assert!(!settings.canvas.snap_to_grid);
     assert!(settings.theme.is_none());
+
+    fs::remove_dir_all(root).expect("test root should be removed");
+}
+
+#[test]
+fn reads_older_file_display_settings() {
+    let root = test_root();
+    fs::create_dir_all(root.join(SETTINGS_DIRECTORY_NAME))
+        .expect("settings directory should be created");
+    fs::write(
+        vault_settings_path(&root),
+        r#"{"files":{"showDotfiles":true}}"#,
+    )
+    .expect("settings file should be written");
+
+    let settings =
+        read_vault_settings(root.to_string_lossy().into_owned()).expect("settings should read");
+
+    assert!(settings.files.show_dotfiles);
+    assert!(!settings.files.show_files_in_folder_tree);
+    assert!(settings.files.show_file_previews_in_folder_tree);
 
     fs::remove_dir_all(root).expect("test root should be removed");
 }
@@ -187,6 +213,9 @@ fn writes_vault_settings_file() {
                 header_name: "topics".into(),
             },
             files: FileDisplaySettings {
+                show_files_in_folder_tree: true,
+                show_file_previews_in_folder_tree: false,
+                show_images_in_file_previews: true,
                 show_dotfiles: true,
             },
             autosave: AutosaveSettings { enabled: false },
@@ -226,6 +255,8 @@ fn writes_vault_settings_file() {
     assert!(!settings.frontmatter_pills.enabled);
     assert_eq!(settings.frontmatter_pills.header_name, "topics");
     assert!(settings.files.show_dotfiles);
+    assert!(settings.files.show_files_in_folder_tree);
+    assert!(!settings.files.show_file_previews_in_folder_tree);
     assert!(!settings.autosave.enabled);
     assert_eq!(
         settings.tidbits.path_pattern,

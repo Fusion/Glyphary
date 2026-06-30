@@ -200,6 +200,10 @@ test("local vault image references are accepted while URLs and path escapes are 
     cleanVaultAssetReference("Pasted%20image%2020220413143858.png"),
     "Pasted image 20220413143858.png",
   );
+  assert.equal(
+    cleanVaultAssetReference("Pasted%20image%2020220413152337.png"),
+    "Pasted image 20220413152337.png",
+  );
   assert.equal(cleanVaultAssetReference("![[vllm-logo.png]]"), null);
   assert.equal(cleanVaultAssetReference("!%5B%5Bvllm-logo.png%5D%5D"), null);
   assert.equal(cleanVaultAssetReference("https://example.com/image.png"), null);
@@ -520,7 +524,9 @@ test("gallery markdown containers are wired into the editor", () => {
 
 test("editor images can be opened in a full-size preview", () => {
   const app = readFileSync("src/App.tsx", "utf8");
+  const appState = readFileSync("src/app-state/documents.ts", "utf8");
   const editorPane = readFileSync("src/editor/EditorPane.tsx", "utf8");
+  const vaultImages = readFileSync("src/editor/vault-images.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
 
   assert.match(app, /type ImagePreviewState/);
@@ -528,6 +534,19 @@ test("editor images can be opened in a full-size preview", () => {
   assert.match(app, /function openImagePreviewFromEditor/);
   assert.match(app, /target instanceof HTMLImageElement/);
   assert.match(editorPane, /onDoubleClick=\{onOpenImagePreview\}/);
+  assert.match(editorPane, /onErrorCapture=\{handleEditorImageError\}/);
+  assert.match(editorPane, /vaultImagePathCandidates\(vaultRoot, reference/);
+  assert.match(editorPane, /candidate !== target\.currentSrc/);
+  assert.match(editorPane, /target\.src = candidates\[nextIndex\]/);
+  assert.match(appState, /function vaultImagePathCandidates/);
+  assert.match(appState, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultAssetDirectory\}\/\$\{cleanReference\}`\)/);
+  assert.match(appState, /convertFileSrc\(`\$\{root\}\/Attachments\/\$\{cleanReference\}`\)/);
+  assert.match(vaultImages, /start: \(src: string\) => src\.indexOf\("!\[\["\)/);
+  assert.doesNotMatch(vaultImages, /markdownImageTarget/);
+  assert.match(vaultImages, /assetReference/);
+  assert.match(vaultImages, /attrs\.assetReference \? \{ "data-asset-reference": attrs\.assetReference \} : \{\}/);
+  assert.match(vaultImages, /attrs\.vaultTarget \? \{ "data-vault-target": attrs\.vaultTarget \} : \{\}/);
+  assert.match(vaultImages, /data-asset-reference/);
   assert.match(app, /closeImagePreviewOnEscape/);
   assert.match(app, /className="image-preview-screen"/);
   assert.match(app, /aria-label="Image preview"/);
@@ -1672,6 +1691,7 @@ test("vault rows expose context menu actions for folders and files", () => {
   const vaultTree = readFileSync("src/vault/VaultFolderTree.tsx", "utf8");
   const vaultIcons = readFileSync("src/vault/VaultIcons.tsx", "utf8");
   const vaultPersistence = readFileSync("src/vault/persistence.ts", "utf8");
+  const documentsState = readFileSync("src/app-state/documents.ts", "utf8");
   const css = readFileSync("src/App.css", "utf8");
   const backend = readFileSync("src-tauri/src/lib.rs", "utf8");
   const vaultBackend = readFileSync("src-tauri/src/vault.rs", "utf8");
@@ -1699,7 +1719,21 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(app, /deleteFileFromContextMenu/);
   assert.match(vaultTree, /function VaultFolderTree/);
   assert.match(vaultTree, /isMoveFolderDestinationDisabled/);
-  assert.match(vaultTree, /children\.filter\(\(entry\) => entry\.isDir\)/);
+  assert.match(vaultTree, /showFiles \? children : children\.filter\(\(entry\) => entry\.isDir\)/);
+  assert.match(vaultTree, /function TreeFilePreview/);
+  assert.match(vaultTree, /readVaultFile\(root, relativePath\)/);
+  assert.match(vaultTree, /showFilePreviews \? \(/);
+  assert.match(vaultTree, /splitMetaHeader\(content\)/);
+  assert.match(vaultTree, /firstImageReference\(file\.content\)/);
+  assert.match(vaultTree, /vaultImagePathCandidates\(root, firstImageReference\(file\.content\)/);
+  assert.match(documentsState, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultAssetDirectory\}\/\$\{cleanReference\}`\)/);
+  assert.match(documentsState, /convertFileSrc\(`\$\{root\}\/Attachments\/\$\{cleanReference\}`\)/);
+  assert.match(vaultTree, /cleanVaultAssetReference\(wikilinkMatch\[1\]\)/);
+  assert.match(vaultTree, /cleanVaultAssetReference\(target\)/);
+  assert.match(vaultTree, /loading="lazy"/);
+  assert.match(vaultTree, /imageIndex: nextIndex/);
+  assert.match(vaultTree, /className="file-preview-thumbnail"/);
+  assert.match(vaultTree, /<VaultFileIcon relativePath=\{entry\.relativePath\} \/>/);
   assert.match(app, /folderActionDialog/);
   assert.match(app, /openFolderActionDialog\("create-folder"/);
   assert.match(app, /openFolderActionDialog\("create-canvas"/);
@@ -1724,14 +1758,35 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(app, /Rename Canvas/);
   assert.match(app, /Delete File/);
   assert.match(app, /<VaultFolderTree/);
+  assert.match(app, /showFiles=\{savedFileDisplaySettings\(\)\.showFilesInFolderTree\}/);
+  assert.match(app, /savedFileDisplaySettings\(\)\.showFilesInFolderTree \? \(/);
+  assert.match(app, /activeFilePath=\{activeFile\?\.relativePath\}/);
+  assert.match(app, /hideHeader/);
+  assert.match(app, /onEntryContextMenu=\{handleFolderContextMenu\}/);
+  assert.match(app, /onFileOpen=\{\(relativePath\) => openFile\(relativePath\)\}/);
+  assert.match(app, /showFilePreviews=\{savedFileDisplaySettings\(\)\.showFilePreviewsInFolderTree\}/);
+  assert.match(app, /showPreviewImages=\{savedFileDisplaySettings\(\)\.showImagesInFilePreviews\}/);
+  assert.match(app, /import \{ TreeFilePreview, VaultFolderTree \}/);
+  assert.match(app, /<span className="vault-entry-text">/);
+  assert.match(app, /showImage=\{savedFileDisplaySettings\(\)\.showImagesInFilePreviews\}/);
   assert.match(vaultTree, /<FolderIcon \/>/);
+  assert.match(vaultTree, /onEntryContextMenu\?\.\(entry, event\)/);
+  assert.match(vaultTree, /onDoubleClick=\{\(\) => onFileOpen\?\.\(entry\.relativePath\)\}/);
+  assert.match(vaultTree, /hideHeader \? null/);
+  assert.match(vaultTree, /relativePath \? \(/);
+  assert.match(vaultTree, /<span className="folder-tree-expander-placeholder" \/>/);
   assert.match(vaultIcons, /function FolderIcon/);
   assert.match(app, /Rename/);
   assert.match(css, /\.folder-context-menu/);
   assert.match(css, /\.folder-action-dialog-card/);
   assert.match(css, /\.folder-action-dialog-warning/);
   assert.match(css, /\.vault-folder-tree/);
+  assert.match(css, /\.vault-list \.vault-folder-tree-picker/);
+  assert.match(css, /\.folder-action-dialog-card \.vault-folder-tree/);
   assert.match(css, /\.folder-tree-select/);
+  assert.match(css, /\.folder-tree-file/);
+  assert.match(css, /\.vault-entry-text/);
+  assert.match(css, /\.file-preview-thumbnail/);
   assert.match(vaultBackend, /pub\(crate\) fn create_note_in_directory/);
   assert.match(vaultBackend, /pub\(crate\) fn create_canvas_in_directory/);
   assert.match(vaultBackend, /pub\(crate\) fn create_directory_in_directory/);
@@ -1862,15 +1917,19 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(documentsState, /Responsibilities:/);
   assert.match(documentsState, /Contracts:/);
   assert.match(documentsState, /function joinVaultImagePath/);
+  assert.match(documentsState, /function vaultImagePathCandidates/);
   assert.match(documentsState, /function joinVaultRelativeImagePath/);
-  assert.match(documentsState, /if \(!cleanReference\.includes\("\/"\)\) \{/);
-  assert.match(documentsState, /return joinVaultImagePath\(root, cleanReference\)/);
+  assert.match(documentsState, /if \(cleanReference\.includes\("\/"\)\) \{/);
+  assert.match(documentsState, /const candidates = vaultImagePathCandidates\(root, reference\)/);
   assert.match(documentsState, /defaultVaultImageDirectory/);
   assert.match(documentsState, /convertFileSrc\(`\$\{root\}\/\$\{defaultVaultImageDirectory\}\/\$\{cleanReference\}`\)/);
   assert.match(editorOptions, /createVaultImageExtension\(resolveVaultImageSrc, resolveVaultAssetSrc\)/);
   assert.match(app, /assetDirectory: defaultVaultImageDirectory/);
   assert.match(settings, /defaultFileDisplaySettings/);
   assert.match(settings, /showDotfiles: false/);
+  assert.match(settings, /showFilesInFolderTree: false/);
+  assert.match(settings, /showFilePreviewsInFolderTree: true/);
+  assert.match(settings, /showImagesInFilePreviews: true/);
   assert.match(settings, /defaultNewTabFile = ""/);
   assert.match(settings, /function normalizeNewTabFile/);
   assert.match(settings, /function sameNewTabFile/);
@@ -1892,6 +1951,19 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.doesNotMatch(app, /Attachment directory/);
   assert.match(app, /defaultTidbitPathPattern/);
   assert.match(app, /Show dotfiles and dot folders/);
+  assert.match(app, /Show files in folder trees/);
+  assert.match(app, /Show file previews/);
+  assert.match(app, /Show images in file previews/);
+  assert.match(app, /settings-check-control settings-sub-check-control/);
+  assert.match(app, /disabled=\{!vaultRoot \|\| !fileDisplayDraft\.showFilePreviewsInFolderTree\}/);
+  assert.match(app, /const checked = event\.currentTarget\.checked/);
+  assert.match(app, /showFilesInFolderTree: checked/);
+  assert.match(app, /showFilePreviewsInFolderTree: checked/);
+  assert.match(app, /showImagesInFilePreviews: checked/);
+  assert.match(css, /\.settings-panel \.settings-sub-check-control/);
+  assert.doesNotMatch(app, /showFilesInFolderTree: event\.currentTarget\.checked/);
+  assert.doesNotMatch(app, /showFilePreviewsInFolderTree: event\.currentTarget\.checked/);
+  assert.doesNotMatch(app, /showImagesInFilePreviews: event\.currentTarget\.checked/);
   assert.match(app, /Autosave current page once per minute/);
   assert.match(app, /window\.setInterval/);
   assert.match(app, /60_000/);

@@ -181,8 +181,7 @@ export function createGlypharyEditorOptions({
         loadPreview: loadExcalidrawPreview,
       }),
       // Vault images resolve late through callbacks because the same editor
-      // instance can survive vault changes; bare ![[image.png]] embeds are
-      // always backed by _assets_/images.
+      // instance can survive vault changes.
       createVaultImageExtension(resolveVaultImageSrc, resolveVaultAssetSrc),
       createBlockBoundaryInsertionExtension(),
       TableKit.configure({

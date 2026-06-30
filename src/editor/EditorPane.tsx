@@ -3,6 +3,7 @@ import type {
   Dispatch,
   MouseEvent as ReactMouseEvent,
   SetStateAction,
+  SyntheticEvent,
 } from "react";
 import type { Editor } from "@tiptap/core";
 import { EditorContent } from "@tiptap/react";
@@ -22,7 +23,11 @@ import type {
   EditorGroupState,
   VaultSettings,
 } from "../lib/app-types";
-import { joinVaultRelativeImagePath, tabTitle } from "../app-state/documents";
+import {
+  joinVaultRelativeImagePath,
+  tabTitle,
+  vaultImagePathCandidates,
+} from "../app-state/documents";
 import type { PageSearchController } from "../search/page-search";
 
 // Responsibilities:
@@ -141,6 +146,31 @@ export function EditorPane({
       onSetActiveDocumentDirty(true);
       onSetStatus(`Unsaved changes in ${paneActiveFile.name}`);
     }
+  }
+
+  function handleEditorImageError(event: SyntheticEvent<HTMLDivElement>) {
+    const target = event.target;
+
+    if (!(target instanceof HTMLImageElement)) {
+      return;
+    }
+
+    const reference = target.dataset.vaultTarget || target.dataset.assetReference || "";
+    const currentIndex = Number(target.dataset.vaultFallbackIndex ?? "0");
+    const candidates = vaultImagePathCandidates(vaultRoot, reference, {
+      assetDirectory: vaultSettings.assetDirectory,
+      relativePath: paneActiveFile?.relativePath,
+    });
+    const nextIndex = candidates.findIndex((candidate, index) =>
+      index > currentIndex && candidate !== target.currentSrc && candidate !== target.src
+    );
+
+    if (nextIndex === -1) {
+      return;
+    }
+
+    target.dataset.vaultFallbackIndex = String(nextIndex);
+    target.src = candidates[nextIndex];
   }
 
   return (
@@ -275,6 +305,7 @@ export function EditorPane({
                 className="editor-surface markdown-rendered markdown-preview-view"
                 editor={groupEditor}
                 onDoubleClick={onOpenImagePreview}
+                onErrorCapture={handleEditorImageError}
                 onContextMenu={(event) => onEditorContextMenu(event, groupEditor, groupId)}
               />
               {!paneMarkdown.trim() ? (

@@ -86,9 +86,16 @@ pub(crate) struct EditorSettings {
     pub(crate) vim_mode: bool,
 }
 
-#[derive(Debug, Deserialize, Serialize, Default)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct FileDisplaySettings {
+    #[serde(default)]
+    pub(crate) show_files_in_folder_tree: bool,
+    #[serde(default = "crate::defaults::default_true")]
+    pub(crate) show_file_previews_in_folder_tree: bool,
+    #[serde(default = "crate::defaults::default_true")]
+    pub(crate) show_images_in_file_previews: bool,
+    #[serde(default)]
     pub(crate) show_dotfiles: bool,
 }
 

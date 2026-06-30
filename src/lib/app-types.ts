@@ -189,6 +189,9 @@ export type EditorBehaviorSettings = {
 };
 
 export type FileDisplaySettings = {
+  showFilesInFolderTree: boolean;
+  showFilePreviewsInFolderTree: boolean;
+  showImagesInFilePreviews: boolean;
   showDotfiles: boolean;
 };
 
@@ -334,14 +337,6 @@ export type VaultFolderTreeNodeState = {
   error: string | null;
   loaded: boolean;
   loading: boolean;
-};
-
-export type VaultFolderTreeProps = {
-  root: string;
-  selectedPath: string;
-  movingEntry?: VaultEntry | null;
-  onSelect: (relativePath: string) => void;
-  onStatus: (message: string) => void;
 };
 
 export type PersistedWorkspace = {

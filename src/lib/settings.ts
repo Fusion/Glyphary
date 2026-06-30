@@ -65,6 +65,9 @@ export const defaultEditorBehaviorSettings: EditorBehaviorSettings = {
 };
 
 export const defaultFileDisplaySettings: FileDisplaySettings = {
+  showFilesInFolderTree: false,
+  showFilePreviewsInFolderTree: true,
+  showImagesInFilePreviews: true,
   showDotfiles: false,
 };
 
@@ -230,6 +233,13 @@ export function sameEditorBehaviorSettings(
 
 export function normalizeFileDisplaySettings(settings: FileDisplaySettings | undefined | null) {
   return {
+    showFilesInFolderTree:
+      settings?.showFilesInFolderTree ?? defaultFileDisplaySettings.showFilesInFolderTree,
+    showFilePreviewsInFolderTree:
+      settings?.showFilePreviewsInFolderTree ??
+      defaultFileDisplaySettings.showFilePreviewsInFolderTree,
+    showImagesInFilePreviews:
+      settings?.showImagesInFilePreviews ?? defaultFileDisplaySettings.showImagesInFilePreviews,
     showDotfiles: settings?.showDotfiles ?? defaultFileDisplaySettings.showDotfiles,
   };
 }

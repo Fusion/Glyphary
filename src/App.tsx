@@ -222,7 +222,7 @@ import {
   rebasePathAfterDirectoryRename,
   relativePathFileName,
 } from "./vault/file-flow";
-import { VaultFolderTree } from "./vault/VaultFolderTree";
+import { TreeFilePreview, VaultFolderTree } from "./vault/VaultFolderTree";
 import { FolderIcon, VaultFileIcon } from "./vault/VaultIcons";
 import {
   allowVaultAssets,
@@ -8096,35 +8096,60 @@ function App() {
                     role="list"
                     onContextMenu={handleVaultListContextMenu}
                   >
-                    {entries.map((entry) => (
-                      <button
-                        className={
-                          activeFile?.relativePath === entry.relativePath
-                            ? "vault-entry active"
-                            : "vault-entry"
-                        }
-                        key={entry.relativePath}
-                        onMouseDown={(event) => handleVaultEntryMouseDown(entry, event)}
-                        onClick={(event) => {
-                          if (entry.isDir) {
-                            handleDirectoryClick(entry, event);
+                    {vaultRoot && savedFileDisplaySettings().showFilesInFolderTree ? (
+                      <VaultFolderTree
+                        activeFilePath={activeFile?.relativePath}
+                        hideHeader
+                        root={vaultRoot}
+                        selectedPath={currentDir}
+                        showFilePreviews={savedFileDisplaySettings().showFilePreviewsInFolderTree}
+                        showPreviewImages={savedFileDisplaySettings().showImagesInFilePreviews}
+                        showFiles
+                        onEntryContextMenu={handleFolderContextMenu}
+                        onFileOpen={(relativePath) => openFile(relativePath)}
+                        onSelect={(relativePath) => enterDirectory(relativePath)}
+                        onStatus={setStatus}
+                      />
+                    ) : (
+                      entries.map((entry) => (
+                        <button
+                          className={
+                            activeFile?.relativePath === entry.relativePath
+                              ? "vault-entry active"
+                              : "vault-entry"
                           }
-                        }}
-                        onDoubleClick={() => {
-                          if (entry.isDir) {
-                            handleDirectoryDoubleClick(entry);
-                          } else {
-                            openFile(entry.relativePath);
-                          }
-                        }}
-                        onContextMenu={(event) => handleFolderContextMenu(entry, event)}
-                        type="button"
-                      >
-                        {entry.isDir ? <FolderIcon /> : <VaultFileIcon relativePath={entry.relativePath} />}
-                        <strong>{entry.name}</strong>
-                      </button>
-                    ))}
-                    {vaultRoot && entries.length === 0 ? (
+                          key={entry.relativePath}
+                          onMouseDown={(event) => handleVaultEntryMouseDown(entry, event)}
+                          onClick={(event) => {
+                            if (entry.isDir) {
+                              handleDirectoryClick(entry, event);
+                            }
+                          }}
+                          onDoubleClick={() => {
+                            if (entry.isDir) {
+                              handleDirectoryDoubleClick(entry);
+                            } else {
+                              openFile(entry.relativePath);
+                            }
+                          }}
+                          onContextMenu={(event) => handleFolderContextMenu(entry, event)}
+                          type="button"
+                        >
+                          {entry.isDir ? <FolderIcon /> : <VaultFileIcon relativePath={entry.relativePath} />}
+                          <span className="vault-entry-text">
+                            <strong>{entry.name}</strong>
+                            {!entry.isDir && savedFileDisplaySettings().showFilePreviewsInFolderTree ? (
+                              <TreeFilePreview
+                                root={vaultRoot}
+                                relativePath={entry.relativePath}
+                                showImage={savedFileDisplaySettings().showImagesInFilePreviews}
+                              />
+                            ) : null}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                    {vaultRoot && !savedFileDisplaySettings().showFilesInFolderTree && entries.length === 0 ? (
                       <p className="empty-vault">This directory is empty.</p>
                     ) : null}
                   </div>
@@ -8789,13 +8814,64 @@ function App() {
                         checked={fileDisplayDraft.showDotfiles}
                         disabled={!vaultRoot}
                         type="checkbox"
-                        onChange={(event) =>
-                          setFileDisplayDraft({
-                            showDotfiles: event.currentTarget.checked,
-                          })
-                        }
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+
+                          setFileDisplayDraft((settings) => ({
+                            ...settings,
+                            showDotfiles: checked,
+                          }));
+                        }}
                       />
                       <span>Show dotfiles and dot folders</span>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={fileDisplayDraft.showFilesInFolderTree}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+
+                          setFileDisplayDraft((settings) => ({
+                            ...settings,
+                            showFilesInFolderTree: checked,
+                          }));
+                        }}
+                      />
+                      <span>Show files in folder trees</span>
+                    </label>
+                    <label className="settings-check-control">
+                      <input
+                        checked={fileDisplayDraft.showFilePreviewsInFolderTree}
+                        disabled={!vaultRoot}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+
+                          setFileDisplayDraft((settings) => ({
+                            ...settings,
+                            showFilePreviewsInFolderTree: checked,
+                          }));
+                        }}
+                      />
+                      <span>Show file previews</span>
+                    </label>
+                    <label className="settings-check-control settings-sub-check-control">
+                      <input
+                        checked={fileDisplayDraft.showImagesInFilePreviews}
+                        disabled={!vaultRoot || !fileDisplayDraft.showFilePreviewsInFolderTree}
+                        type="checkbox"
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+
+                          setFileDisplayDraft((settings) => ({
+                            ...settings,
+                            showImagesInFilePreviews: checked,
+                          }));
+                        }}
+                      />
+                      <span>Show images in file previews</span>
                     </label>
                     <label>
                       <span>Tidbit path pattern</span>
@@ -10543,6 +10619,9 @@ function App() {
                 key={`${folderActionDialog.action}:${folderActionDialog.entry.relativePath}`}
                 root={vaultRoot}
                 selectedPath={folderActionDialog.value}
+                showFilePreviews={savedFileDisplaySettings().showFilePreviewsInFolderTree}
+                showPreviewImages={savedFileDisplaySettings().showImagesInFilePreviews}
+                showFiles={savedFileDisplaySettings().showFilesInFolderTree}
                 movingEntry={
                   folderActionDialog.action === "move-folder" ? folderActionDialog.entry : null
                 }

@@ -11,6 +11,7 @@ import {
 import {
   cleanVaultAssetReference,
   fileNameWithoutMarkdownExtension,
+  parentDirectory,
 } from "../lib/paths";
 
 // Responsibilities:
@@ -124,17 +125,37 @@ export function joinVaultImagePath(root: string, reference: string) {
   return convertFileSrc(`${root}/${defaultVaultImageDirectory}/${cleanReference}`);
 }
 
-export function joinVaultRelativeImagePath(root: string, reference: string) {
+export function vaultImagePathCandidates(
+  root: string,
+  reference: string,
+  options: { assetDirectory?: string; relativePath?: string } = {},
+) {
   const wikilinkMatch = reference.match(/^!\[\[([^\]\n]+)\]\]$/);
   const cleanReference = cleanVaultAssetReference(wikilinkMatch?.[1] ?? reference);
 
   if (!root || !cleanReference) {
-    return "";
+    return [];
   }
 
-  if (!cleanReference.includes("/")) {
-    return joinVaultImagePath(root, cleanReference);
+  if (cleanReference.includes("/")) {
+    return [convertFileSrc(`${root}/${cleanReference}`)];
   }
 
-  return convertFileSrc(`${root}/${cleanReference}`);
+  const assetDirectory = options.assetDirectory || defaultVaultImageDirectory;
+  const noteDirectory = options.relativePath ? parentDirectory(options.relativePath) : "";
+  const sources = [
+    convertFileSrc(`${root}/${assetDirectory}/${cleanReference}`),
+    convertFileSrc(`${root}/${defaultVaultImageDirectory}/${cleanReference}`),
+    convertFileSrc(`${root}/${defaultVaultAssetDirectory}/${cleanReference}`),
+    convertFileSrc(`${root}/Attachments/${cleanReference}`),
+    noteDirectory ? convertFileSrc(`${root}/${noteDirectory}/${cleanReference}`) : "",
+  ];
+
+  return Array.from(new Set(sources.filter(Boolean)));
+}
+
+export function joinVaultRelativeImagePath(root: string, reference: string) {
+  const candidates = vaultImagePathCandidates(root, reference);
+
+  return candidates[0] ?? "";
 }

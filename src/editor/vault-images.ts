@@ -38,12 +38,14 @@ export function createVaultImageExtension(
         vaultTarget: {
           default: null,
           parseHTML: (element) => element.getAttribute("data-vault-target"),
-          renderHTML: () => ({}),
+          renderHTML: (attrs) =>
+            attrs.vaultTarget ? { "data-vault-target": attrs.vaultTarget } : {},
         },
         assetReference: {
           default: null,
           parseHTML: (element) => element.getAttribute("data-asset-reference"),
-          renderHTML: () => ({}),
+          renderHTML: (attrs) =>
+            attrs.assetReference ? { "data-asset-reference": attrs.assetReference } : {},
         },
       };
     },
@@ -53,12 +55,7 @@ export function createVaultImageExtension(
     },
 
     renderHTML({ HTMLAttributes }) {
-      const { vaultTarget, ...renderedAttributes } = HTMLAttributes;
-
-      // vaultTarget is an editor-only marker used to round-trip ![[asset]]
-      // syntax. It must not leak into the rendered DOM; src already points to
-      // the Tauri asset URL that the webview can display.
-      return ["img", mergeAttributes(renderedAttributes)];
+      return ["img", mergeAttributes(HTMLAttributes)];
     },
 
     markdownTokenName: "image",
