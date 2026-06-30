@@ -7263,6 +7263,7 @@ function App() {
                         hideHeader
                         root={vaultRoot}
                         selectedPath={currentDir}
+                        unframed={!savedFileDisplaySettings().showFolderTreeBackground}
                         showFilePreviews={savedFileDisplaySettings().showFilePreviewsInFolderTree}
                         showPreviewImages={savedFileDisplaySettings().showImagesInFilePreviews}
                         showFiles

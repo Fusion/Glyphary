@@ -190,6 +190,7 @@ export type EditorBehaviorSettings = {
 
 export type FileDisplaySettings = {
   showFilesInFolderTree: boolean;
+  showFolderTreeBackground: boolean;
   showFilePreviewsInFolderTree: boolean;
   showImagesInFilePreviews: boolean;
   baseCardImageLayout: "side" | "top";

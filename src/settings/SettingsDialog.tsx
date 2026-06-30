@@ -348,6 +348,22 @@ export function SettingsDialog(props: SettingsDialogProps) {
                     />
                     <span>Show files in folder trees</span>
                   </label>
+                  <label className="settings-check-control settings-sub-check-control">
+                    <input
+                      checked={fileDisplayDraft.showFolderTreeBackground}
+                      disabled={!vaultRoot || !fileDisplayDraft.showFilesInFolderTree}
+                      type="checkbox"
+                      onChange={(event) => {
+                        const checked = event.currentTarget.checked;
+
+                        setFileDisplayDraft((settings) => ({
+                          ...settings,
+                          showFolderTreeBackground: checked,
+                        }));
+                      }}
+                    />
+                    <span>Show folder tree background</span>
+                  </label>
                   <label className="settings-check-control">
                     <input
                       checked={fileDisplayDraft.showFilePreviewsInFolderTree}

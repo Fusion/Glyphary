@@ -5674,6 +5674,14 @@ body.workspace-resizing * {
   max-height: 300px;
 }
 
+.vault-list .vault-folder-tree.unframed {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+}
+
 .vault-list .vault-folder-tree {
   flex: 1;
 }

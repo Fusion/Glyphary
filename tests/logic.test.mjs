@@ -1779,6 +1779,7 @@ test("vault rows expose context menu actions for folders and files", () => {
   assert.match(fileActions, /Delete File/);
   assert.match(app, /<VaultFolderTree/);
   assert.match(app, /showFiles=\{savedFileDisplaySettings\(\)\.showFilesInFolderTree\}/);
+  assert.match(app, /unframed=\{!savedFileDisplaySettings\(\)\.showFolderTreeBackground\}/);
   assert.match(app, /savedFileDisplaySettings\(\)\.showFilesInFolderTree \? \(/);
   assert.match(app, /activeFilePath=\{activeFile\?\.relativePath\}/);
   assert.match(app, /hideHeader/);
@@ -1961,6 +1962,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(settings, /defaultFileDisplaySettings/);
   assert.match(settings, /showDotfiles: false/);
   assert.match(settings, /showFilesInFolderTree: false/);
+  assert.match(settings, /showFolderTreeBackground: false/);
   assert.match(settings, /showFilePreviewsInFolderTree: true/);
   assert.match(settings, /showImagesInFilePreviews: true/);
   assert.match(settings, /baseCardImageLayout: "side"/);
@@ -1986,6 +1988,7 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(settingsDialog, /defaultTidbitPathPattern/);
   assert.match(settingsDialog, /Show dotfiles and dot folders/);
   assert.match(settingsDialog, /Show files in folder trees/);
+  assert.match(settingsDialog, /Show folder tree background/);
   assert.match(settingsDialog, /Show file previews/);
   assert.match(settingsDialog, /Show images in file previews/);
   assert.match(settingsDialog, /Base card image layout/);
@@ -1995,10 +1998,12 @@ test("app css exposes the Obsidian theme compatibility surface", () => {
   assert.match(settingsDialog, /disabled=\{!vaultRoot \|\| !fileDisplayDraft\.showFilePreviewsInFolderTree\}/);
   assert.match(settingsDialog, /const checked = event\.currentTarget\.checked/);
   assert.match(settingsDialog, /showFilesInFolderTree: checked/);
+  assert.match(settingsDialog, /showFolderTreeBackground: checked/);
   assert.match(settingsDialog, /showFilePreviewsInFolderTree: checked/);
   assert.match(settingsDialog, /showImagesInFilePreviews: checked/);
   assert.match(css, /\.settings-panel \.settings-sub-check-control/);
   assert.doesNotMatch(settingsDialog, /showFilesInFolderTree: event\.currentTarget\.checked/);
+  assert.doesNotMatch(settingsDialog, /showFolderTreeBackground: event\.currentTarget\.checked/);
   assert.doesNotMatch(settingsDialog, /showFilePreviewsInFolderTree: event\.currentTarget\.checked/);
   assert.doesNotMatch(settingsDialog, /showImagesInFilePreviews: event\.currentTarget\.checked/);
   assert.match(settingsDialog, /Autosave current page once per minute/);

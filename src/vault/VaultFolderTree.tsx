@@ -18,6 +18,7 @@ type VaultFolderTreeProps = {
   selectedPath: string;
   activeFilePath?: string | null;
   hideHeader?: boolean;
+  unframed?: boolean;
   showFilePreviews?: boolean;
   showPreviewImages?: boolean;
   showFiles?: boolean;
@@ -44,6 +45,7 @@ export function VaultFolderTree({
   selectedPath,
   activeFilePath = null,
   hideHeader = false,
+  unframed = false,
   showFilePreviews = true,
   showPreviewImages = true,
   showFiles = false,
@@ -217,7 +219,11 @@ export function VaultFolderTree({
           <strong>{displayPath(selectedPath)}</strong>
         </div>
       )}
-      <div className="vault-folder-tree" role="tree" aria-label="Vault folders">
+      <div
+        className={unframed ? "vault-folder-tree unframed" : "vault-folder-tree"}
+        role="tree"
+        aria-label="Vault folders"
+      >
         {renderNode("", "Vault root", 0)}
       </div>
     </div>

@@ -250,6 +250,7 @@ impl Default for FileDisplaySettings {
     fn default() -> Self {
         Self {
             show_files_in_folder_tree: false,
+            show_folder_tree_background: false,
             show_file_previews_in_folder_tree: true,
             show_images_in_file_previews: true,
             base_card_image_layout: DEFAULT_BASE_CARD_IMAGE_LAYOUT.into(),

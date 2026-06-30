@@ -66,6 +66,7 @@ export const defaultEditorBehaviorSettings: EditorBehaviorSettings = {
 
 export const defaultFileDisplaySettings: FileDisplaySettings = {
   showFilesInFolderTree: false,
+  showFolderTreeBackground: false,
   showFilePreviewsInFolderTree: true,
   showImagesInFilePreviews: true,
   baseCardImageLayout: "side",
@@ -241,6 +242,9 @@ export function normalizeFileDisplaySettings(
   return {
     showFilesInFolderTree:
       settings?.showFilesInFolderTree ?? defaultFileDisplaySettings.showFilesInFolderTree,
+    showFolderTreeBackground:
+      settings?.showFolderTreeBackground ??
+      defaultFileDisplaySettings.showFolderTreeBackground,
     showFilePreviewsInFolderTree:
       settings?.showFilePreviewsInFolderTree ??
       defaultFileDisplaySettings.showFilePreviewsInFolderTree,

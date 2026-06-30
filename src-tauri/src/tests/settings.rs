@@ -66,6 +66,7 @@ fn hides_dotfiles_unless_vault_settings_enable_them() {
         VaultSettings {
             files: FileDisplaySettings {
                 show_files_in_folder_tree: false,
+                show_folder_tree_background: false,
                 show_file_previews_in_folder_tree: true,
                 show_images_in_file_previews: true,
                 base_card_image_layout: "top".into(),
@@ -216,6 +217,7 @@ fn writes_vault_settings_file() {
             },
             files: FileDisplaySettings {
                 show_files_in_folder_tree: true,
+                show_folder_tree_background: false,
                 show_file_previews_in_folder_tree: false,
                 show_images_in_file_previews: true,
                 base_card_image_layout: "top".into(),
